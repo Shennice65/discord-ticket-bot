@@ -25,23 +25,14 @@ class TicketView(discord.ui.View):
         if cog:
             await cog.create_observation_ticket(interaction)
 
-class OpponentSelect(discord.ui.UserSelect):
-    def __init__(self, private_link: Optional[str] = None):
-        super().__init__(placeholder="Select an opponent...", min_values=1, max_values=1)
-        self.private_link = private_link
+class RankedModal(discord.ui.Modal, title="Ranked 1v1 Ticket Request"):
+    opponent_name = discord.ui.TextInput(
+        label="Opponent's Discord Username",
+        placeholder="Type the exact username (e.g., shenn)",
+        required=True,
+        max_length=100
+    )
     
-    async def callback(self, interaction: discord.Interaction):
-        selected_user = self.values[0]
-        cog = interaction.client.get_cog('Tickets')
-        if cog:
-            await cog.create_ranked_ticket(interaction, selected_user, self.private_link)
-
-class OpponentSelectView(discord.ui.View):
-    def __init__(self, private_link: Optional[str] = None):
-        super().__init__(timeout=60)
-        self.add_item(OpponentSelect(private_link))
-
-class RankedModal(discord.ui.Modal, title="Ranked 1v1 Ticket"):
     private_link = discord.ui.TextInput(
         label="Private Server Link (Optional)",
         placeholder="Enter private server link if applicable",
@@ -50,12 +41,14 @@ class RankedModal(discord.ui.Modal, title="Ranked 1v1 Ticket"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        view = OpponentSelectView(self.private_link.value if self.private_link.value else None)
-        await interaction.response.send_message(
-            "**Select your opponent from the dropdown below:**",
-            view=view,
-            ephemeral=True
-        )
+        await interaction.response.defer(ephemeral=True)
+        cog = interaction.client.get_cog('Tickets')
+        if cog:
+            await cog.create_ranked_ticket(
+                interaction, 
+                self.opponent_name.value,
+                self.private_link.value if self.private_link.value else None
+            )
 
 class CloseRankedModal(discord.ui.Modal, title="Close Ranked 1v1 Ticket"):
     observer = discord.ui.TextInput(
@@ -162,13 +155,51 @@ class Tickets(commands.Cog):
         await interaction.channel.send(embed=embed, view=TicketView())
         await interaction.response.send_message("Ticket panel setup complete!", ephemeral=True)
     
-    async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User, private_link: Optional[str]):
+    @commands.command(name="forcesetup")
+    @commands.has_permissions(administrator=True)
+    async def force_setup(self, ctx):
+        """Force create the ticket panel"""
+        embed = discord.Embed(
+            title="Ticket System",
+            description="Click a button below to create a ticket!\n\n"
+                       "**Ranked 1v1** - Request a ranked 1v1 match\n"
+                       "**Personal Observation** - Request a personal observation session",
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="An observer will assist you shortly after ticket creation")
+        
+        view = TicketView()
+        await ctx.send(embed=embed, view=view)
+    
+    async def create_ranked_ticket(self, interaction: discord.Interaction, opponent_name: str, private_link: Optional[str]):
+        """Create a ranked 1v1 ticket"""
         guild = interaction.guild
         user = interaction.user
         
-        opponent_member = guild.get_member(opponent.id)
+        # Search for the opponent in the guild
+        opponent_member = None
+        for member in guild.members:
+            if member.name.lower() == opponent_name.lower() or member.display_name.lower() == opponent_name.lower():
+                opponent_member = member
+                break
+        
+        # If not found by exact match, try partial match
         if not opponent_member:
-            await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
+            for member in guild.members:
+                if opponent_name.lower() in member.name.lower() or opponent_name.lower() in member.display_name.lower():
+                    opponent_member = member
+                    break
+        
+        if not opponent_member:
+            await interaction.followup.send(
+                f"Could not find user '{opponent_name}' in this server. Please check the username and try again.",
+                ephemeral=True
+            )
+            return
+        
+        # Prevent self-1v1
+        if opponent_member.id == user.id:
+            await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
             return
         
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
@@ -186,21 +217,27 @@ class Tickets(commands.Cog):
         if observer_role:
             overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
-        channel_name = f"ranked-{user.name}-vs-{opponent.name}".lower().replace(" ", "-")[:100]
+        channel_name = f"ranked-{user.name}-vs-{opponent_member.name}".lower().replace(" ", "-")[:100]
         try:
             channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
-                topic=f"Ranked 1v1 | {user.name} vs {opponent.name}"
+                topic=f"Ranked 1v1 | {user.name} vs {opponent_member.name}"
             )
         except Exception as e:
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        ticket_id = await self.db.create_ticket(channel.id, user.id, "Ranked 1v1", opponent=opponent.name, private_link=private_link)
+        ticket_id = await self.db.create_ticket(
+            channel.id, 
+            user.id, 
+            "Ranked 1v1", 
+            opponent=opponent_member.name, 
+            private_link=private_link
+        )
         
-        embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent.name)
+        embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent_member.name)
         if private_link:
             embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
@@ -210,9 +247,10 @@ class Tickets(commands.Cog):
             embed=embed
         )
         
-        await interaction.edit_original_response(content=f"Ticket created! {channel.mention}")
+        await interaction.followup.send(f"Ticket created! {channel.mention}", ephemeral=True)
     
     async def create_observation_ticket(self, interaction: discord.Interaction):
+        """Create a personal observation ticket"""
         guild = interaction.guild
         user = interaction.user
         
