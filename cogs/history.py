@@ -16,19 +16,19 @@ class ClearHistoryView(discord.ui.View):
         self.confirmed = False
         self.clear_type = None
     
-    @discord.ui.button(label="🗑️ Clear Ranked 1v1", style=discord.ButtonStyle.danger, custom_id="clear_ranked")
+    @discord.ui.button(label="Clear Ranked 1v1", style=discord.ButtonStyle.danger, custom_id="clear_ranked")
     async def clear_ranked(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ConfirmClearModal(self.user_id, self.user_name, "ranked")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="🗑️ Clear Observations", style=discord.ButtonStyle.danger, custom_id="clear_obs")
+    @discord.ui.button(label="Clear Observations", style=discord.ButtonStyle.danger, custom_id="clear_obs")
     async def clear_obs(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ConfirmClearModal(self.user_id, self.user_name, "observations")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary, custom_id="cancel_clear")
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, custom_id="cancel_clear")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="❌ Clear cancelled.", embed=None, view=None)
+        await interaction.response.edit_message(content="Clear cancelled.", embed=None, view=None)
 
 class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
     def __init__(self, user_id: int, user_name: str, clear_type: str):
@@ -50,7 +50,7 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
     async def on_submit(self, interaction: discord.Interaction):
         if self.confirm_username.value != self.user_name:
             await interaction.response.send_message(
-                f"❌ Username mismatch! You typed '{self.confirm_username.value}' but needed '{self.user_name}'.",
+                f"Username mismatch! You typed '{self.confirm_username.value}' but needed '{self.user_name}'.",
                 ephemeral=True
             )
             return
@@ -71,7 +71,7 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
         if log_channel:
             target_user = await interaction.client.fetch_user(self.user_id)
             embed = discord.Embed(
-                title="🗑️ History Cleared",
+                title="History Cleared",
                 color=discord.Color.orange(),
                 timestamp=discord.utils.utcnow()
             )
@@ -83,7 +83,7 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
             await log_channel.send(embed=embed)
         
         embed = discord.Embed(
-            title="✅ History Cleared",
+            title="History Cleared",
             description=f"Successfully cleared **{deleted_count}** {type_name} entries for **{self.user_name}**.",
             color=discord.Color.green()
         )
@@ -104,7 +104,7 @@ class History(commands.Cog):
         is_observer = observer_role in interaction.user.roles if observer_role else False
         
         if not is_observer and target_user.id != interaction.user.id:
-            await interaction.response.send_message("❌ You can only view your own history!", ephemeral=True)
+            await interaction.response.send_message("You can only view your own history!", ephemeral=True)
             return
         
         await interaction.response.defer()
@@ -135,7 +135,7 @@ class History(commands.Cog):
         is_observer = observer_role in interaction.user.roles if observer_role else False
         
         if not is_observer:
-            await interaction.response.send_message("❌ Only observers can clear history!", ephemeral=True)
+            await interaction.response.send_message("Only observers can clear history!", ephemeral=True)
             return
         
         modal = ConfirmClearModal(user.id, user.name, type.value)

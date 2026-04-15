@@ -36,6 +36,7 @@ class Database:
                     starting_rank TEXT,
                     ending_rank TEXT,
                     winner TEXT,
+                    note TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (ticket_id) REFERENCES tickets(id)
                 )
@@ -50,11 +51,22 @@ class Database:
                     observer_name TEXT,
                     starting_rank TEXT,
                     ending_rank TEXT,
-                    optional_note TEXT,
+                    note TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (ticket_id) REFERENCES tickets(id)
                 )
             ''')
+            
+            # Add note column to existing tables if they don't have it
+            try:
+                await db.execute('ALTER TABLE ranked_results ADD COLUMN note TEXT')
+            except:
+                pass
+            
+            try:
+                await db.execute('ALTER TABLE observation_results ADD COLUMN note TEXT')
+            except:
+                pass
             
             await db.commit()
     
@@ -90,23 +102,23 @@ class Database:
                 return dict(row) if row else None
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
-                                starting_rank: str, ending_rank: str, winner: str):
+                                starting_rank: str, ending_rank: str, winner: str, note: Optional[str] = None):
         """Add ranked 1v1 result"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute('''
-                INSERT INTO ranked_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner))
+                INSERT INTO ranked_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner, note)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner, note))
             await db.commit()
     
     async def add_observation_result(self, ticket_id: int, observer_id: int, observer_name: str,
-                                     starting_rank: str, ending_rank: str, optional_note: Optional[str] = None):
+                                     starting_rank: str, ending_rank: str, note: Optional[str] = None):
         """Add personal observation result"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute('''
-                INSERT INTO observation_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, optional_note)
+                INSERT INTO observation_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, note)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (ticket_id, observer_id, observer_name, starting_rank, ending_rank, optional_note))
+            ''', (ticket_id, observer_id, observer_name, starting_rank, ending_rank, note))
             await db.commit()
     
     async def get_user_history(self, user_id: int, limit: int = 10) -> Dict[str, List]:
@@ -117,7 +129,7 @@ class Database:
             # Get ranked history
             ranked_history = []
             async with db.execute('''
-                SELECT t.*, r.observer_name, r.starting_rank, r.ending_rank, r.winner, r.created_at as result_date
+                SELECT t.*, r.observer_name, r.starting_rank, r.ending_rank, r.winner, r.note, r.created_at as result_date
                 FROM tickets t
                 JOIN ranked_results r ON t.id = r.ticket_id
                 WHERE t.user_id = ? AND t.status = 'closed'
@@ -130,7 +142,7 @@ class Database:
             # Get observation history
             obs_history = []
             async with db.execute('''
-                SELECT t.*, o.observer_name, o.starting_rank, o.ending_rank, o.optional_note, o.created_at as result_date
+                SELECT t.*, o.observer_name, o.starting_rank, o.ending_rank, o.note, o.created_at as result_date
                 FROM tickets t
                 JOIN observation_results o ON t.id = o.ticket_id
                 WHERE t.user_id = ? AND t.status = 'closed'

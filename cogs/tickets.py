@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import asyncio
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from config import Config
 from database import Database
@@ -13,45 +13,49 @@ class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="🎮 Ranked 1v1", style=discord.ButtonStyle.primary, custom_id="ranked_1v1")
+    @discord.ui.button(label="Ranked 1v1", style=discord.ButtonStyle.primary, custom_id="ranked_1v1")
     async def ranked_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = RankedModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="👁️ Personal Observation", style=discord.ButtonStyle.secondary, custom_id="personal_obs")
+    @discord.ui.button(label="Personal Observation", style=discord.ButtonStyle.secondary, custom_id="personal_obs")
     async def obs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ObservationModal()
-        await interaction.response.send_modal(modal)
-
-class RankedModal(discord.ui.Modal, title="Ranked 1v1 Ticket"):
-    opponent = discord.ui.TextInput(
-        label="Opponent's Name",
-        placeholder="Enter the opponent's Discord name or IGN",
-        required=True,
-        max_length=100
-    )
-    
-    async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         cog = interaction.client.get_cog('Tickets')
         if cog:
-            await cog.create_ranked_ticket(interaction, self.opponent.value)
+            await cog.create_observation_ticket(interaction)
 
-class ObservationModal(discord.ui.Modal, title="Personal Observation Ticket"):
+class OpponentSelect(discord.ui.UserSelect):
+    def __init__(self, private_link: Optional[str] = None):
+        super().__init__(placeholder="Select an opponent...", min_values=1, max_values=1)
+        self.private_link = private_link
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_user = self.values[0]
+        cog = interaction.client.get_cog('Tickets')
+        if cog:
+            await cog.create_ranked_ticket(interaction, selected_user, self.private_link)
+
+class OpponentSelectView(discord.ui.View):
+    def __init__(self, private_link: Optional[str] = None):
+        super().__init__(timeout=60)
+        self.add_item(OpponentSelect(private_link))
+
+class RankedModal(discord.ui.Modal, title="Ranked 1v1 Ticket"):
     private_link = discord.ui.TextInput(
         label="Private Server Link (Optional)",
-        placeholder="Enter your private server link if applicable",
+        placeholder="Enter private server link if applicable",
         required=False,
         max_length=200
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        cog = interaction.client.get_cog('Tickets')
-        if cog:
-            await cog.create_observation_ticket(interaction, self.private_link.value or None)
+        view = OpponentSelectView(self.private_link.value if self.private_link.value else None)
+        await interaction.response.send_message(
+            "**Select your opponent from the dropdown below:**",
+            view=view,
+            ephemeral=True
+        )
 
 class CloseRankedModal(discord.ui.Modal, title="Close Ranked 1v1 Ticket"):
     observer = discord.ui.TextInput(
@@ -82,9 +86,16 @@ class CloseRankedModal(discord.ui.Modal, title="Close Ranked 1v1 Ticket"):
         max_length=100
     )
     
+    note = discord.ui.TextInput(
+        label="Closing Note (Optional)",
+        placeholder="Any additional notes about this match...",
+        required=False,
+        max_length=500,
+        style=discord.TextStyle.paragraph
+    )
+    
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.process_ranked_close(interaction, self)
@@ -111,9 +122,9 @@ class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
         max_length=50
     )
     
-    optional_note = discord.ui.TextInput(
-        label="Optional Note",
-        placeholder="Any additional notes (optional)",
+    note = discord.ui.TextInput(
+        label="Closing Note (Optional)",
+        placeholder="Any additional notes about this observation...",
         required=False,
         max_length=500,
         style=discord.TextStyle.paragraph
@@ -121,7 +132,6 @@ class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.process_observation_close(interaction, self)
@@ -134,32 +144,36 @@ class Tickets(commands.Cog):
     
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"✅ Tickets cog loaded")
+        print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
     
     @app_commands.command(name="setup", description="Setup the ticket panel in this channel")
     @app_commands.default_permissions(administrator=True)
     async def setup(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="🎫 Ticket System",
+            title="Ticket System",
             description="Click a button below to create a ticket!\n\n"
-                       "**🎮 Ranked 1v1** - Request a ranked 1v1 match\n"
-                       "**👁️ Personal Observation** - Request a personal observation session",
+                       "**Ranked 1v1** - Request a ranked 1v1 match\n"
+                       "**Personal Observation** - Request a personal observation session",
             color=discord.Color.blue()
         )
         embed.set_footer(text="An observer will assist you shortly after ticket creation")
         
         await interaction.channel.send(embed=embed, view=TicketView())
-        await interaction.response.send_message("✅ Ticket panel setup complete!", ephemeral=True)
+        await interaction.response.send_message("Ticket panel setup complete!", ephemeral=True)
     
-    async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: str):
-        """Create a ranked 1v1 ticket"""
+    async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User, private_link: Optional[str]):
         guild = interaction.guild
         user = interaction.user
         
+        opponent_member = guild.get_member(opponent.id)
+        if not opponent_member:
+            await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
+            return
+        
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
         if not category:
-            await interaction.followup.send("❌ Ticket category not configured!", ephemeral=True)
+            await interaction.followup.send("Ticket category not configured!", ephemeral=True)
             return
         
         observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
@@ -167,42 +181,44 @@ class Tickets(commands.Cog):
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            opponent_member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
         }
         if observer_role:
             overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
-        channel_name = f"ranked-{user.name}".lower().replace(" ", "-")
+        channel_name = f"ranked-{user.name}-vs-{opponent.name}".lower().replace(" ", "-")[:100]
         try:
             channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
-                topic=f"Ranked 1v1 | User: {user.id} | Opponent: {opponent}"
+                topic=f"Ranked 1v1 | {user.name} vs {opponent.name}"
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to create channel: {e}", ephemeral=True)
+            await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        ticket_id = await self.db.create_ticket(channel.id, user.id, "Ranked 1v1", opponent=opponent)
+        ticket_id = await self.db.create_ticket(channel.id, user.id, "Ranked 1v1", opponent=opponent.name, private_link=private_link)
         
-        embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent)
+        embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent.name)
+        if private_link:
+            embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
         observer_mention = observer_role.mention if observer_role else "@Observers"
         await channel.send(
-            content=f"{user.mention} {observer_mention}",
+            content=f"{user.mention} {opponent_member.mention} {observer_mention}",
             embed=embed
         )
         
-        await interaction.followup.send(f"✅ Ticket created! {channel.mention}", ephemeral=True)
+        await interaction.edit_original_response(content=f"Ticket created! {channel.mention}")
     
-    async def create_observation_ticket(self, interaction: discord.Interaction, private_link: Optional[str]):
-        """Create a personal observation ticket"""
+    async def create_observation_ticket(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
         
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
         if not category:
-            await interaction.followup.send("❌ Ticket category not configured!", ephemeral=True)
+            await interaction.followup.send("Ticket category not configured!", ephemeral=True)
             return
         
         observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
@@ -220,17 +236,15 @@ class Tickets(commands.Cog):
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
-                topic=f"Personal Observation | User: {user.id}"
+                topic=f"Personal Observation | User: {user.name}"
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to create channel: {e}", ephemeral=True)
+            await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation", private_link=private_link)
+        ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
         
         embed = TicketEmbeds.ticket_created("Personal Observation", user)
-        if private_link:
-            embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
         observer_mention = observer_role.mention if observer_role else "@Observers"
         await channel.send(
@@ -238,18 +252,17 @@ class Tickets(commands.Cog):
             embed=embed
         )
         
-        await interaction.followup.send(f"✅ Ticket created! {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"Ticket created! {channel.mention}", ephemeral=True)
     
     @app_commands.command(name="close", description="Close the current ticket")
     async def close(self, interaction: discord.Interaction):
-        """Close a ticket - only works in ticket channels"""
         if not interaction.channel.name.startswith(("ranked-", "obs-")):
-            await interaction.response.send_message("❌ This command can only be used in ticket channels!", ephemeral=True)
+            await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
             return
         
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_data:
-            await interaction.response.send_message("❌ Ticket not found in database!", ephemeral=True)
+            await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
             return
         
         observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
@@ -257,7 +270,7 @@ class Tickets(commands.Cog):
         is_owner = interaction.user.id == ticket_data['user_id']
         
         if not (is_observer or is_owner):
-            await interaction.response.send_message("❌ You don't have permission to close this ticket!", ephemeral=True)
+            await interaction.response.send_message("You don't have permission to close this ticket!", ephemeral=True)
             return
         
         if ticket_data['ticket_type'] == "Ranked 1v1":
@@ -268,10 +281,9 @@ class Tickets(commands.Cog):
         await interaction.response.send_modal(modal)
     
     async def process_ranked_close(self, interaction: discord.Interaction, modal: CloseRankedModal):
-        """Process closing a ranked ticket"""
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_data:
-            await interaction.followup.send("❌ Ticket not found!", ephemeral=True)
+            await interaction.followup.send("Ticket not found!", ephemeral=True)
             return
         
         await self.db.add_ranked_result(
@@ -280,7 +292,8 @@ class Tickets(commands.Cog):
             modal.observer.value,
             modal.starting_rank.value,
             modal.ending_rank.value,
-            modal.winner.value
+            modal.winner.value,
+            modal.note.value if modal.note.value else None
         )
         
         await self.db.close_ticket(interaction.channel.id, interaction.user.id)
@@ -292,20 +305,20 @@ class Tickets(commands.Cog):
                 'observer_name': modal.observer.value,
                 'starting_rank': modal.starting_rank.value,
                 'ending_rank': modal.ending_rank.value,
-                'winner': modal.winner.value
+                'winner': modal.winner.value,
+                'note': modal.note.value if modal.note.value else None
             }
             embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
             await log_channel.send(embed=embed)
         
-        await interaction.followup.send("✅ Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
+        await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
         await asyncio.sleep(5)
         await interaction.channel.delete()
     
     async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal):
-        """Process closing an observation ticket"""
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_data:
-            await interaction.followup.send("❌ Ticket not found!", ephemeral=True)
+            await interaction.followup.send("Ticket not found!", ephemeral=True)
             return
         
         await self.db.add_observation_result(
@@ -314,7 +327,7 @@ class Tickets(commands.Cog):
             modal.observer.value,
             modal.starting_rank.value,
             modal.ending_rank.value,
-            modal.optional_note.value if modal.optional_note.value else None
+            modal.note.value if modal.note.value else None
         )
         
         await self.db.close_ticket(interaction.channel.id, interaction.user.id)
@@ -326,12 +339,12 @@ class Tickets(commands.Cog):
                 'observer_name': modal.observer.value,
                 'starting_rank': modal.starting_rank.value,
                 'ending_rank': modal.ending_rank.value,
-                'optional_note': modal.optional_note.value if modal.optional_note.value else None
+                'note': modal.note.value if modal.note.value else None
             }
             embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
             await log_channel.send(embed=embed)
         
-        await interaction.followup.send("✅ Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
+        await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
