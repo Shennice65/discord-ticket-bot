@@ -29,23 +29,36 @@ class TicketBot(commands.Bot):
                 guild = discord.Object(id=Config.GUILD_ID)
                 self.tree.copy_global_to(guild=guild)
                 synced = await self.tree.sync(guild=guild)
-                print(f"✅ Synced {len(synced)} commands to guild {Config.GUILD_ID}")
+                print(f"Synced {len(synced)} commands to guild {Config.GUILD_ID}")
             else:
                 synced = await self.tree.sync()
-                print(f"✅ Synced {len(synced)} commands globally (may take up to 1 hour)")
+                print(f"Synced {len(synced)} commands globally")
         except Exception as e:
-            print(f"❌ Sync error: {e}")
+            print(f"Sync error: {e}")
     
     async def on_ready(self):
-        print(f"✅ Logged in as {self.user} (ID: {self.user.id})")
-        print(f"✅ Bot is in {len(self.guilds)} guilds")
+        print(f"Logged in as {self.user} (ID: {self.user.id})")
+        print(f"Bot is in {len(self.guilds)} guilds")
         print("------")
+    
+    @commands.command(name="sync")
+    @commands.has_permissions(administrator=True)
+    async def sync_commands(self, ctx):
+        """Manually sync slash commands"""
+        msg = await ctx.send("Syncing commands...")
+        try:
+            if Config.GUILD_ID:
+                guild = discord.Object(id=Config.GUILD_ID)
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+            else:
+                synced = await self.tree.sync()
+            await msg.edit(content=f"Synced {len(synced)} commands successfully!")
+        except Exception as e:
+            await msg.edit(content=f"Error: {e}")
 
 async def main():
-    # Start the keep-alive web server FIRST
     keep_alive()
-    
-    # Then start the bot
     bot = TicketBot()
     await bot.start(Config.TOKEN)
 
