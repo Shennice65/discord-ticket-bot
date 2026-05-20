@@ -35,7 +35,6 @@ class RankedModal(discord.ui.Modal, title="Ranked 1v1 - Private Server Link"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        # Show user select dropdown
         view = OpponentSelectView(self.private_link.value if self.private_link.value else None)
         await interaction.response.send_message(
             "**Select your opponent from the dropdown below:**\n"
@@ -77,14 +76,14 @@ class CloseRankedModal(discord.ui.Modal, title="Close Ranked 1v1 Ticket"):
     
     starting_rank = discord.ui.TextInput(
         label="Starting Rank",
-        placeholder="e.g., Gold 2, Diamond 1",
+        placeholder="e.g., Legends 12, Champions 9, Legends 5",
         required=True,
         max_length=50
     )
     
     ending_rank = discord.ui.TextInput(
         label="Ending Rank",
-        placeholder="e.g., Gold 3, Diamond 1 (or 'Remain')",
+        placeholder="e.g., Legends 14, Champions 10 (or 'Remain')",
         required=True,
         max_length=50
     )
@@ -121,14 +120,14 @@ class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
     
     starting_rank = discord.ui.TextInput(
         label="Starting Rank",
-        placeholder="e.g., Gold 2, Diamond 1",
+        placeholder="e.g., Legends 12, Champions 9, Legends 5",
         required=True,
         max_length=50
     )
     
     ending_rank = discord.ui.TextInput(
         label="Ending Rank",
-        placeholder="e.g., Gold 3, Diamond 1 (or 'Remain')",
+        placeholder="e.g., Legends 14, Champions 10 (or 'Remain')",
         required=True,
         max_length=50
     )
@@ -200,7 +199,6 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
             return
         
-        # Prevent self-1v1
         if opponent_member.id == user.id:
             await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
             return
@@ -250,7 +248,6 @@ class Tickets(commands.Cog):
             embed=embed
         )
         
-        # Edit the original dropdown message
         await interaction.edit_original_response(
             content=f"Ticket created! {channel.mention}",
             view=None
