@@ -209,6 +209,7 @@ class Tickets(commands.Cog):
             return
         
         observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
+        observer_mention = observer_role.mention if observer_role else "@Observers"
         
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -242,7 +243,6 @@ class Tickets(commands.Cog):
         if private_link:
             embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
-        observer_mention = observer_role.mention if observer_role else "@Observers"
         await channel.send(
             content=f"{user.mention} {opponent_member.mention} {observer_mention}",
             embed=embed
@@ -264,6 +264,7 @@ class Tickets(commands.Cog):
             return
         
         observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
+        observer_mention = observer_role.mention if observer_role else "@Observers"
         
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -288,7 +289,6 @@ class Tickets(commands.Cog):
         
         embed = TicketEmbeds.ticket_created("Personal Observation", user)
         
-        observer_mention = observer_role.mention if observer_role else "@Observers"
         await channel.send(
             content=f"{user.mention} {observer_mention}",
             embed=embed
