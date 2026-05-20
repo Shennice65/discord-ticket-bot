@@ -199,7 +199,8 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
             return
         
-        if opponent_member.id == user.id:
+        # Only block self-1v1 if opponent is NOT a bot
+        if opponent_member.id == user.id and not opponent_member.bot:
             await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
             return
         
@@ -243,10 +244,13 @@ class Tickets(commands.Cog):
         if private_link:
             embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
-        await channel.send(
-            content=f"{user.mention} {opponent_member.mention} {observer_mention}",
-            embed=embed
-        )
+        try:
+            await channel.send(
+                content=f"{user.mention} {opponent_member.mention} {observer_mention}",
+                embed=embed
+            )
+        except Exception as e:
+            print(f"Failed to send message to channel: {e}")
         
         await interaction.edit_original_response(
             content=f"Ticket created! {channel.mention}",
@@ -289,10 +293,13 @@ class Tickets(commands.Cog):
         
         embed = TicketEmbeds.ticket_created("Personal Observation", user)
         
-        await channel.send(
-            content=f"{user.mention} {observer_mention}",
-            embed=embed
-        )
+        try:
+            await channel.send(
+                content=f"{user.mention} {observer_mention}",
+                embed=embed
+            )
+        except Exception as e:
+            print(f"Failed to send message to channel: {e}")
         
         await interaction.followup.send(f"Ticket created! {channel.mention}", ephemeral=True)
     
