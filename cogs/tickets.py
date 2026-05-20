@@ -151,7 +151,17 @@ class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
-        bot.loop.create_task(self.db.init())
+        self.db_ready = False
+        bot.loop.create_task(self.initialize_db())
+    
+    async def initialize_db(self):
+        """Initialize database and set ready flag"""
+        await self.db.init()
+        if self.db.pool:
+            self.db_ready = True
+            print("Tickets cog: Database ready")
+        else:
+            print("Tickets cog: Database NOT ready - tickets will not be saved!")
     
     @commands.Cog.listener()
     async def on_ready(self):
@@ -176,7 +186,6 @@ class Tickets(commands.Cog):
     @commands.command(name="forcesetup")
     @commands.has_permissions(administrator=True)
     async def force_setup(self, ctx):
-        """Force create the ticket panel"""
         embed = discord.Embed(
             title="Ticket System",
             description="Click a button below to create a ticket!\n\n"
@@ -199,7 +208,6 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
             return
         
-        # Only block self-1v1 if opponent is NOT a bot
         if opponent_member.id == user.id and not opponent_member.bot:
             await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
             return
@@ -232,13 +240,22 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        ticket_id = await self.db.create_ticket(
-            channel.id, 
-            user.id, 
-            "Ranked 1v1", 
-            opponent=opponent.name, 
-            private_link=private_link
-        )
+        # Save to database if ready, otherwise warn
+        ticket_id = 0
+        if self.db_ready:
+            try:
+                ticket_id = await self.db.create_ticket(
+                    channel.id, 
+                    user.id, 
+                    "Ranked 1v1", 
+                    opponent=opponent.name, 
+                    private_link=private_link
+                )
+                print(f"Ticket saved to database: ID {ticket_id}")
+            except Exception as e:
+                print(f"Failed to save ticket to database: {e}")
+        else:
+            print("Database not ready - ticket not saved!")
         
         embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent.name)
         if private_link:
@@ -289,7 +306,16 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
+        # Save to database if ready
+        ticket_id = 0
+        if self.db_ready:
+            try:
+                ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
+                print(f"Ticket saved to database: ID {ticket_id}")
+            except Exception as e:
+                print(f"Failed to save ticket to database: {e}")
+        else:
+            print("Database not ready - ticket not saved!")
         
         embed = TicketEmbeds.ticket_created("Personal Observation", user)
         
@@ -307,6 +333,10 @@ class Tickets(commands.Cog):
     async def close(self, interaction: discord.Interaction):
         if not interaction.channel.name.startswith(("ranked-", "obs-")):
             await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
+            return
+        
+        if not self.db_ready:
+            await interaction.response.send_message("Database is not connected. Cannot close ticket.", ephemeral=True)
             return
         
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
@@ -335,17 +365,19 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Ticket not found!", ephemeral=True)
             return
         
-        await self.db.add_ranked_result(
-            ticket_data['id'],
-            interaction.user.id,
-            modal.observer.value,
-            modal.starting_rank.value,
-            modal.ending_rank.value,
-            modal.winner.value,
-            modal.note.value if modal.note.value else None
-        )
-        
-        await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+        try:
+            await self.db.add_ranked_result(
+                ticket_data['id'],
+                interaction.user.id,
+                modal.observer.value,
+                modal.starting_rank.value,
+                modal.ending_rank.value,
+                modal.winner.value,
+                modal.note.value if modal.note.value else None
+            )
+            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+        except Exception as e:
+            print(f"Error saving close data: {e}")
         
         log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
         if log_channel:
@@ -370,16 +402,18 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Ticket not found!", ephemeral=True)
             return
         
-        await self.db.add_observation_result(
-            ticket_data['id'],
-            interaction.user.id,
-            modal.observer.value,
-            modal.starting_rank.value,
-            modal.ending_rank.value,
-            modal.note.value if modal.note.value else None
-        )
-        
-        await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+        try:
+            await self.db.add_observation_result(
+                ticket_data['id'],
+                interaction.user.id,
+                modal.observer.value,
+                modal.starting_rank.value,
+                modal.ending_rank.value,
+                modal.note.value if modal.note.value else None
+            )
+            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+        except Exception as e:
+            print(f"Error saving close data: {e}")
         
         log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
         if log_channel:
