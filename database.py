@@ -12,11 +12,22 @@ class Database:
     async def init(self):
         """Initialize database tables and connection pool"""
         if not self.database_url:
-            print("Warning: No DATABASE_URL set, using SQLite fallback")
+            print("Warning: No DATABASE_URL set")
             return
         
         try:
-            self.pool = await asyncpg.create_pool(self.database_url)
+            # Create SSL context for Supabase
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            self.pool = await asyncpg.create_pool(
+                self.database_url,
+                ssl=ssl_context,
+                min_size=1,
+                max_size=5
+            )
             
             async with self.pool.acquire() as conn:
                 # Create tickets table
@@ -67,9 +78,13 @@ class Database:
                 print("Database connected and tables ready")
         except Exception as e:
             print(f"Database connection error: {e}")
+            self.pool = None
     
     async def create_ticket(self, channel_id: int, user_id: int, ticket_type: str, 
                            opponent: Optional[str] = None, private_link: Optional[str] = None) -> int:
+        if not self.pool:
+            print("No database connection")
+            return 0
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow('''
                 INSERT INTO tickets (channel_id, user_id, ticket_type, opponent, private_link)
@@ -79,6 +94,8 @@ class Database:
             return row['id']
     
     async def close_ticket(self, channel_id: int, closed_by: int):
+        if not self.pool:
+            return
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 UPDATE tickets 
@@ -87,6 +104,8 @@ class Database:
             ''', closed_by, channel_id)
     
     async def get_ticket_by_channel(self, channel_id: int) -> Optional[Dict]:
+        if not self.pool:
+            return None
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow('''
                 SELECT * FROM tickets WHERE channel_id = $1
@@ -95,6 +114,8 @@ class Database:
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                 starting_rank: str, ending_rank: str, winner: str, note: Optional[str] = None):
+        if not self.pool:
+            return
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO ranked_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner, note)
@@ -103,6 +124,8 @@ class Database:
     
     async def add_observation_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                      starting_rank: str, ending_rank: str, note: Optional[str] = None):
+        if not self.pool:
+            return
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO observation_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, note)
@@ -110,6 +133,8 @@ class Database:
             ''', ticket_id, observer_id, observer_name, starting_rank, ending_rank, note)
     
     async def get_user_history(self, user_id: int, limit: int = 10) -> Dict[str, List]:
+        if not self.pool:
+            return {'ranked': [], 'observations': []}
         async with self.pool.acquire() as conn:
             ranked_rows = await conn.fetch('''
                 SELECT t.*, r.observer_name, r.starting_rank, r.ending_rank, r.winner, r.note, r.created_at as result_date
@@ -135,6 +160,8 @@ class Database:
             }
     
     async def clear_ranked_history(self, user_id: int) -> int:
+        if not self.pool:
+            return 0
         async with self.pool.acquire() as conn:
             ticket_ids = await conn.fetch('''
                 SELECT id FROM tickets 
@@ -158,6 +185,8 @@ class Database:
             return len(ids)
     
     async def clear_observation_history(self, user_id: int) -> int:
+        if not self.pool:
+            return 0
         async with self.pool.acquire() as conn:
             ticket_ids = await conn.fetch('''
                 SELECT id FROM tickets 
