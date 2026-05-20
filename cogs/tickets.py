@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
+import os
 from datetime import datetime
 from typing import Optional, List
 
@@ -151,18 +152,22 @@ class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
-        self.db_ready = False
-        bot.loop.create_task(self.initialize_db())
-    
-    async def initialize_db(self):
-        await self.db.init()
         self.db_ready = True
-        print("Tickets cog: Database ready")
+        bot.loop.create_task(self.db.init())
     
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
+    
+    @app_commands.command(name="dbcheck", description="Check database status (Admin only)")
+    @app_commands.default_permissions(administrator=True)
+    async def db_check(self, interaction: discord.Interaction):
+        file_exists = os.path.exists('bot_data.json')
+        await interaction.response.send_message(
+            f"DB Ready: {self.db_ready}\nData file exists: {file_exists}",
+            ephemeral=True
+        )
     
     @app_commands.command(name="setup", description="Setup the ticket panel in this channel")
     @app_commands.default_permissions(administrator=True)
@@ -178,21 +183,6 @@ class Tickets(commands.Cog):
         
         await interaction.channel.send(embed=embed, view=TicketView())
         await interaction.response.send_message("Ticket panel setup complete!", ephemeral=True)
-    
-    @commands.command(name="forcesetup")
-    @commands.has_permissions(administrator=True)
-    async def force_setup(self, ctx):
-        embed = discord.Embed(
-            title="Ticket System",
-            description="Click a button below to create a ticket!\n\n"
-                       "**Ranked 1v1** - Request a ranked 1v1 match\n"
-                       "**Personal Observation** - Request a personal observation session",
-            color=discord.Color.blue()
-        )
-        embed.set_footer(text="An observer will assist you shortly after ticket creation")
-        
-        view = TicketView()
-        await ctx.send(embed=embed, view=view)
     
     async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User, private_link: Optional[str]):
         guild = interaction.guild
@@ -235,26 +225,20 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        if self.db_ready:
-            ticket_id = await self.db.create_ticket(
-                channel.id, user.id, "Ranked 1v1", 
-                opponent=opponent.name, private_link=private_link
-            )
-            print(f"Ticket {ticket_id} created")
-        else:
-            print("DB not ready, ticket not saved")
+        ticket_id = await self.db.create_ticket(
+            channel.id, user.id, "Ranked 1v1", 
+            opponent=opponent.name, private_link=private_link
+        )
+        print(f"Ticket {ticket_id} saved")
         
         embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent.name)
         if private_link:
             embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
-        try:
-            await channel.send(
-                content=f"{user.mention} {opponent_member.mention} {observer_mention}",
-                embed=embed
-            )
-        except Exception as e:
-            print(f"Failed to send message: {e}")
+        await channel.send(
+            content=f"{user.mention} {opponent_member.mention} {observer_mention}",
+            embed=embed
+        )
         
         await interaction.edit_original_response(
             content=f"Ticket created! {channel.mention}",
@@ -292,21 +276,15 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        if self.db_ready:
-            ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
-            print(f"Ticket {ticket_id} created")
-        else:
-            print("DB not ready, ticket not saved")
+        ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
+        print(f"Ticket {ticket_id} saved")
         
         embed = TicketEmbeds.ticket_created("Personal Observation", user)
         
-        try:
-            await channel.send(
-                content=f"{user.mention} {observer_mention}",
-                embed=embed
-            )
-        except Exception as e:
-            print(f"Failed to send message: {e}")
+        await channel.send(
+            content=f"{user.mention} {observer_mention}",
+            embed=embed
+        )
         
         await interaction.followup.send(f"Ticket created! {channel.mention}", ephemeral=True)
     
@@ -314,10 +292,6 @@ class Tickets(commands.Cog):
     async def close(self, interaction: discord.Interaction):
         if not interaction.channel.name.startswith(("ranked-", "obs-")):
             await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
-            return
-        
-        if not self.db_ready:
-            await interaction.response.send_message("Database is not connected. Cannot close ticket.", ephemeral=True)
             return
         
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
