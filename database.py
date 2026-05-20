@@ -1,209 +1,197 @@
-import os
 import json
+import aiohttp
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from config import Config
 
 class Database:
     def __init__(self):
-        self.url = Config.TURSO_DATABASE_URL
-        self.token = Config.TURSO_AUTH_TOKEN
-        self.base_url = None
-        self.headers = None
-        
-        if self.url and self.token:
-            # Convert libsql:// to https:// for HTTP API
-            self.base_url = self.url.replace("libsql://", "https://")
-            self.headers = {
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json"
-            }
-    
-    async def _execute(self, sql: str, params: tuple = None):
-        """Execute SQL via HTTP API"""
-        import aiohttp
-        
-        if not self.base_url:
-            print("Turso not configured")
-            return None
-        
-        url = f"{self.base_url}/v2/pipeline"
-        statements = [{"sql": sql}]
-        if params:
-            statements[0]["args"] = list(params)
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json={"statements": statements}, headers=self.headers) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    print(f"Turso error {resp.status}: {text}")
-                    return None
-                return await resp.json()
+        self.token = Config.GIST_TOKEN
+        self.gist_id = None
+        self.data = {"tickets": [], "ranked_results": [], "observation_results": []}
+        self.headers = {
+            "Authorization": f"token {self.token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
     
     async def init(self):
-        """Initialize database tables"""
-        if not self.base_url:
-            print("Warning: Turso credentials not set")
+        """Load data from Gist or create new one"""
+        if not self.token:
+            print("Warning: GIST_TOKEN not set")
             return
         
         try:
-            await self._execute('''
-                CREATE TABLE IF NOT EXISTS tickets (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    channel_id INTEGER UNIQUE,
-                    user_id INTEGER,
-                    ticket_type TEXT,
-                    status TEXT DEFAULT 'open',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    closed_at TIMESTAMP,
-                    closed_by INTEGER,
-                    opponent TEXT,
-                    private_link TEXT
-                )
-            ''')
-            
-            await self._execute('''
-                CREATE TABLE IF NOT EXISTS ranked_results (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ticket_id INTEGER REFERENCES tickets(id),
-                    observer_id INTEGER,
-                    observer_name TEXT,
-                    starting_rank TEXT,
-                    ending_rank TEXT,
-                    winner TEXT,
-                    note TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            await self._execute('''
-                CREATE TABLE IF NOT EXISTS observation_results (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ticket_id INTEGER REFERENCES tickets(id),
-                    observer_id INTEGER,
-                    observer_name TEXT,
-                    starting_rank TEXT,
-                    ending_rank TEXT,
-                    note TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            print("Turso database connected and tables ready")
+            async with aiohttp.ClientSession() as session:
+                # Try to find existing gist
+                url = "https://api.github.com/gists"
+                async with session.get(url, headers=self.headers) as resp:
+                    gists = await resp.json()
+                    for gist in gists:
+                        if "ticket-bot-data" in gist.get("description", ""):
+                            self.gist_id = gist["id"]
+                            files = gist.get("files", {})
+                            if "data.json" in files:
+                                raw_url = files["data.json"]["raw_url"]
+                                async with session.get(raw_url) as data_resp:
+                                    self.data = await data_resp.json()
+                            print(f"Loaded existing gist: {self.gist_id}")
+                            return
+                
+                # Create new gist if not found
+                new_gist = {
+                    "description": "ticket-bot-data",
+                    "public": False,
+                    "files": {
+                        "data.json": {
+                            "content": json.dumps(self.data)
+                        }
+                    }
+                }
+                async with session.post(url, json=new_gist, headers=self.headers) as resp:
+                    result = await resp.json()
+                    self.gist_id = result["id"]
+                    print(f"Created new gist: {self.gist_id}")
         except Exception as e:
-            print(f"Turso connection error: {e}")
+            print(f"Gist init error: {e}")
+    
+    async def _save(self):
+        """Save data back to Gist"""
+        if not self.gist_id or not self.token:
+            return
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"https://api.github.com/gists/{self.gist_id}"
+                data = {
+                    "files": {
+                        "data.json": {
+                            "content": json.dumps(self.data, default=str)
+                        }
+                    }
+                }
+                async with session.patch(url, json=data, headers=self.headers) as resp:
+                    if resp.status != 200:
+                        print(f"Save error: {resp.status}")
+        except Exception as e:
+            print(f"Save error: {e}")
     
     async def create_ticket(self, channel_id: int, user_id: int, ticket_type: str, 
                            opponent: Optional[str] = None, private_link: Optional[str] = None) -> int:
-        result = await self._execute(
-            'INSERT INTO tickets (channel_id, user_id, ticket_type, opponent, private_link) VALUES (?, ?, ?, ?, ?) RETURNING id',
-            (channel_id, user_id, ticket_type, opponent, private_link)
-        )
-        if result and result.get("results"):
-            rows = result["results"][0].get("rows", [])
-            if rows:
-                return rows[0][0]["value"]
-        return 0
+        ticket_id = len(self.data["tickets"]) + 1
+        ticket = {
+            "id": ticket_id,
+            "channel_id": channel_id,
+            "user_id": user_id,
+            "ticket_type": ticket_type,
+            "status": "open",
+            "created_at": str(datetime.utcnow()),
+            "closed_at": None,
+            "closed_by": None,
+            "opponent": opponent,
+            "private_link": private_link
+        }
+        self.data["tickets"].append(ticket)
+        await self._save()
+        return ticket_id
     
     async def close_ticket(self, channel_id: int, closed_by: int):
-        await self._execute(
-            'UPDATE tickets SET status = ?, closed_at = CURRENT_TIMESTAMP, closed_by = ? WHERE channel_id = ?',
-            ('closed', closed_by, channel_id)
-        )
+        for ticket in self.data["tickets"]:
+            if ticket["channel_id"] == channel_id:
+                ticket["status"] = "closed"
+                ticket["closed_at"] = str(datetime.utcnow())
+                ticket["closed_by"] = closed_by
+                break
+        await self._save()
     
     async def get_ticket_by_channel(self, channel_id: int) -> Optional[Dict]:
-        result = await self._execute(
-            'SELECT * FROM tickets WHERE channel_id = ?',
-            (channel_id,)
-        )
-        if result and result.get("results"):
-            rows = result["results"][0].get("rows", [])
-            if rows:
-                cols = result["results"][0]["columns"]
-                return {cols[i]: row[i]["value"] for i, row in enumerate(rows[0])}
+        for ticket in self.data["tickets"]:
+            if ticket["channel_id"] == channel_id:
+                return ticket
         return None
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                 starting_rank: str, ending_rank: str, winner: str, note: Optional[str] = None):
-        await self._execute(
-            'INSERT INTO ranked_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            (ticket_id, observer_id, observer_name, starting_rank, ending_rank, winner, note)
-        )
+        result = {
+            "id": len(self.data["ranked_results"]) + 1,
+            "ticket_id": ticket_id,
+            "observer_id": observer_id,
+            "observer_name": observer_name,
+            "starting_rank": starting_rank,
+            "ending_rank": ending_rank,
+            "winner": winner,
+            "note": note,
+            "created_at": str(datetime.utcnow())
+        }
+        self.data["ranked_results"].append(result)
+        await self._save()
     
     async def add_observation_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                      starting_rank: str, ending_rank: str, note: Optional[str] = None):
-        await self._execute(
-            'INSERT INTO observation_results (ticket_id, observer_id, observer_name, starting_rank, ending_rank, note) VALUES (?, ?, ?, ?, ?, ?)',
-            (ticket_id, observer_id, observer_name, starting_rank, ending_rank, note)
-        )
+        result = {
+            "id": len(self.data["observation_results"]) + 1,
+            "ticket_id": ticket_id,
+            "observer_id": observer_id,
+            "observer_name": observer_name,
+            "starting_rank": starting_rank,
+            "ending_rank": ending_rank,
+            "note": note,
+            "created_at": str(datetime.utcnow())
+        }
+        self.data["observation_results"].append(result)
+        await self._save()
     
     async def get_user_history(self, user_id: int, limit: int = 10) -> Dict[str, List]:
-        ranked = await self._execute('''
-            SELECT t.*, r.observer_name, r.starting_rank, r.ending_rank, r.winner, r.note, r.created_at as result_date
-            FROM tickets t
-            JOIN ranked_results r ON t.id = r.ticket_id
-            WHERE t.user_id = ? AND t.status = 'closed'
-            ORDER BY t.closed_at DESC
-            LIMIT ?
-        ''', (user_id, limit))
+        ranked = []
+        obs = []
         
-        obs = await self._execute('''
-            SELECT t.*, o.observer_name, o.starting_rank, o.ending_rank, o.note, o.created_at as result_date
-            FROM tickets t
-            JOIN observation_results o ON t.id = o.ticket_id
-            WHERE t.user_id = ? AND t.status = 'closed'
-            ORDER BY t.closed_at DESC
-            LIMIT ?
-        ''', (user_id, limit))
+        for ticket in self.data["tickets"]:
+            if ticket["user_id"] == user_id and ticket["status"] == "closed":
+                for result in self.data["ranked_results"]:
+                    if result["ticket_id"] == ticket["id"]:
+                        entry = {**ticket, **result, "result_date": result["created_at"]}
+                        ranked.append(entry)
+                        break
+                for result in self.data["observation_results"]:
+                    if result["ticket_id"] == ticket["id"]:
+                        entry = {**ticket, **result, "result_date": result["created_at"]}
+                        obs.append(entry)
+                        break
         
-        def parse_rows(result):
-            if not result or not result.get("results"):
-                return []
-            results = result["results"][0]
-            cols = results["columns"]
-            rows = results.get("rows", [])
-            return [{cols[i]: row[i]["value"] for i in range(len(cols))} for row in rows]
+        ranked.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
+        obs.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
         
         return {
-            'ranked': parse_rows(ranked),
-            'observations': parse_rows(obs)
+            "ranked": ranked[:limit],
+            "observations": obs[:limit]
         }
     
     async def clear_ranked_history(self, user_id: int) -> int:
-        result = await self._execute(
-            'SELECT id FROM tickets WHERE user_id = ? AND ticket_type = ?',
-            (user_id, 'Ranked 1v1')
-        )
-        if not result or not result.get("results"):
-            return 0
+        count = 0
+        ids_to_delete = []
         
-        rows = result["results"][0].get("rows", [])
-        ids = [row[0]["value"] for row in rows]
-        if not ids:
-            return 0
+        for ticket in self.data["tickets"]:
+            if ticket["user_id"] == user_id and ticket["ticket_type"] == "Ranked 1v1":
+                ids_to_delete.append(ticket["id"])
         
-        placeholders = ','.join(['?'] * len(ids))
-        await self._execute(f'DELETE FROM ranked_results WHERE ticket_id IN ({placeholders})', tuple(ids))
-        await self._execute(f'DELETE FROM tickets WHERE id IN ({placeholders})', tuple(ids))
-        return len(ids)
+        self.data["ranked_results"] = [r for r in self.data["ranked_results"] if r["ticket_id"] not in ids_to_delete]
+        self.data["tickets"] = [t for t in self.data["tickets"] if t["id"] not in ids_to_delete]
+        count = len(ids_to_delete)
+        await self._save()
+        return count
     
     async def clear_observation_history(self, user_id: int) -> int:
-        result = await self._execute(
-            'SELECT id FROM tickets WHERE user_id = ? AND ticket_type = ?',
-            (user_id, 'Personal Observation')
-        )
-        if not result or not result.get("results"):
-            return 0
+        count = 0
+        ids_to_delete = []
         
-        rows = result["results"][0].get("rows", [])
-        ids = [row[0]["value"] for row in rows]
-        if not ids:
-            return 0
+        for ticket in self.data["tickets"]:
+            if ticket["user_id"] == user_id and ticket["ticket_type"] == "Personal Observation":
+                ids_to_delete.append(ticket["id"])
         
-        placeholders = ','.join(['?'] * len(ids))
-        await self._execute(f'DELETE FROM observation_results WHERE ticket_id IN ({placeholders})', tuple(ids))
-        await self._execute(f'DELETE FROM tickets WHERE id IN ({placeholders})', tuple(ids))
-        return len(ids)
+        self.data["observation_results"] = [r for r in self.data["observation_results"] if r["ticket_id"] not in ids_to_delete]
+        self.data["tickets"] = [t for t in self.data["tickets"] if t["id"] not in ids_to_delete]
+        count = len(ids_to_delete)
+        await self._save()
+        return count
     
     async def clear_all_history(self, user_id: int) -> tuple:
         ranked = await self.clear_ranked_history(user_id)
