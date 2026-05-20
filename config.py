@@ -9,4 +9,4 @@ class Config:
     OBSERVER_ROLE_ID = int(os.getenv('OBSERVER_ROLE_ID', 0))
     LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID', 0))
     TICKET_CATEGORY_ID = int(os.getenv('TICKET_CATEGORY_ID', 0))
-    GIST_TOKEN = os.getenv('GIST_TOKEN')
+    DATA_FILE = 'bot_data.json'

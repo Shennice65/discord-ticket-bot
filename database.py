@@ -1,79 +1,40 @@
 import json
-import aiohttp
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from config import Config
 
 class Database:
     def __init__(self):
-        self.token = Config.GIST_TOKEN
-        self.gist_id = None
+        self.data_file = Config.DATA_FILE
         self.data = {"tickets": [], "ranked_results": [], "observation_results": []}
-        self.headers = {
-            "Authorization": f"token {self.token}",
-            "Accept": "application/vnd.github.v3+json"
-        }
     
     async def init(self):
-        """Load data from Gist or create new one"""
-        if not self.token:
-            print("Warning: GIST_TOKEN not set")
-            return
-        
+        """Load data from JSON file"""
         try:
-            async with aiohttp.ClientSession() as session:
-                # Try to find existing gist
-                url = "https://api.github.com/gists"
-                async with session.get(url, headers=self.headers) as resp:
-                    gists = await resp.json()
-                    for gist in gists:
-                        if "ticket-bot-data" in gist.get("description", ""):
-                            self.gist_id = gist["id"]
-                            files = gist.get("files", {})
-                            if "data.json" in files:
-                                raw_url = files["data.json"]["raw_url"]
-                                async with session.get(raw_url) as data_resp:
-                                    self.data = await data_resp.json()
-                            print(f"Loaded existing gist: {self.gist_id}")
-                            return
-                
-                # Create new gist if not found
-                new_gist = {
-                    "description": "ticket-bot-data",
-                    "public": False,
-                    "files": {
-                        "data.json": {
-                            "content": json.dumps(self.data)
-                        }
-                    }
-                }
-                async with session.post(url, json=new_gist, headers=self.headers) as resp:
-                    result = await resp.json()
-                    self.gist_id = result["id"]
-                    print(f"Created new gist: {self.gist_id}")
+            if os.path.exists(self.data_file):
+                with open(self.data_file, 'r') as f:
+                    self.data = json.load(f)
+                print(f"Loaded {len(self.data['tickets'])} tickets from {self.data_file}")
+            else:
+                self._save_sync()
+                print("Created new data file")
+            return True
         except Exception as e:
-            print(f"Gist init error: {e}")
+            print(f"Data init error: {e}")
+            return False
     
-    async def _save(self):
-        """Save data back to Gist"""
-        if not self.gist_id or not self.token:
-            return
-        
+    def _save_sync(self):
+        """Save data synchronously (for init)"""
         try:
-            async with aiohttp.ClientSession() as session:
-                url = f"https://api.github.com/gists/{self.gist_id}"
-                data = {
-                    "files": {
-                        "data.json": {
-                            "content": json.dumps(self.data, default=str)
-                        }
-                    }
-                }
-                async with session.patch(url, json=data, headers=self.headers) as resp:
-                    if resp.status != 200:
-                        print(f"Save error: {resp.status}")
+            with open(self.data_file, 'w') as f:
+                json.dump(self.data, f, default=str, indent=2)
         except Exception as e:
             print(f"Save error: {e}")
+    
+    async def _save(self):
+        """Save data to file"""
+        self._save_sync()
     
     async def create_ticket(self, channel_id: int, user_id: int, ticket_type: str, 
                            opponent: Optional[str] = None, private_link: Optional[str] = None) -> int:
@@ -92,6 +53,7 @@ class Database:
         }
         self.data["tickets"].append(ticket)
         await self._save()
+        print(f"Ticket {ticket_id} saved to file")
         return ticket_id
     
     async def close_ticket(self, channel_id: int, closed_by: int):
@@ -148,13 +110,11 @@ class Database:
             if ticket["user_id"] == user_id and ticket["status"] == "closed":
                 for result in self.data["ranked_results"]:
                     if result["ticket_id"] == ticket["id"]:
-                        entry = {**ticket, **result, "result_date": result["created_at"]}
-                        ranked.append(entry)
+                        ranked.append({**ticket, **result, "result_date": result["created_at"]})
                         break
                 for result in self.data["observation_results"]:
                     if result["ticket_id"] == ticket["id"]:
-                        entry = {**ticket, **result, "result_date": result["created_at"]}
-                        obs.append(entry)
+                        obs.append({**ticket, **result, "result_date": result["created_at"]})
                         break
         
         ranked.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
@@ -166,32 +126,26 @@ class Database:
         }
     
     async def clear_ranked_history(self, user_id: int) -> int:
-        count = 0
         ids_to_delete = []
-        
         for ticket in self.data["tickets"]:
             if ticket["user_id"] == user_id and ticket["ticket_type"] == "Ranked 1v1":
                 ids_to_delete.append(ticket["id"])
         
         self.data["ranked_results"] = [r for r in self.data["ranked_results"] if r["ticket_id"] not in ids_to_delete]
         self.data["tickets"] = [t for t in self.data["tickets"] if t["id"] not in ids_to_delete]
-        count = len(ids_to_delete)
         await self._save()
-        return count
+        return len(ids_to_delete)
     
     async def clear_observation_history(self, user_id: int) -> int:
-        count = 0
         ids_to_delete = []
-        
         for ticket in self.data["tickets"]:
             if ticket["user_id"] == user_id and ticket["ticket_type"] == "Personal Observation":
                 ids_to_delete.append(ticket["id"])
         
         self.data["observation_results"] = [r for r in self.data["observation_results"] if r["ticket_id"] not in ids_to_delete]
         self.data["tickets"] = [t for t in self.data["tickets"] if t["id"] not in ids_to_delete]
-        count = len(ids_to_delete)
         await self._save()
-        return count
+        return len(ids_to_delete)
     
     async def clear_all_history(self, user_id: int) -> tuple:
         ranked = await self.clear_ranked_history(user_id)
