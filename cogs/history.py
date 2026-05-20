@@ -57,7 +57,7 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
         
         await interaction.response.defer(ephemeral=True)
         
-        db = Database(Config.DATABASE_PATH)
+        db = Database()
         await db.init()
         
         if self.clear_type == "ranked":
@@ -93,7 +93,7 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
 class History(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database(Config.DATABASE_PATH)
+        self.db = Database()
     
     @app_commands.command(name="history", description="View a user's ranked and observation history")
     @app_commands.describe(user="The user to check history for (defaults to yourself)")
@@ -109,6 +109,7 @@ class History(commands.Cog):
         
         await interaction.response.defer()
         
+        await self.db.init()
         history = await self.db.get_user_history(target_user.id)
         embed = TicketEmbeds.history_embed(target_user, history)
         

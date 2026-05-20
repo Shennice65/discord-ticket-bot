@@ -150,7 +150,7 @@ class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database(Config.DATABASE_PATH)
+        self.db = Database()
         bot.loop.create_task(self.db.init())
     
     @commands.Cog.listener()
