@@ -22,6 +22,7 @@ class TicketBot(commands.Bot):
         # Load cogs
         await self.load_extension("cogs.tickets")
         await self.load_extension("cogs.history")
+        await self.load_extension("cogs.ranking")
         
         # Sync commands
         try:
