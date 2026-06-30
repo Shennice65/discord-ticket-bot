@@ -9,6 +9,14 @@ from config import Config
 
 TIERS = ["Phantoms", "Champions", "Legends", "Masters", "Novices"]
 
+def is_admin_or_observer(interaction: discord.Interaction) -> bool:
+    if interaction.user.guild_permissions.administrator:
+        return True
+    observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
+    if observer_role and observer_role in interaction.user.roles:
+        return True
+    return False
+
 def parse_rank(rank_str: str):
     """Returns (tier_name, number) or None if invalid."""
     match = re.match(r'^([a-zA-Z]+)\s*(\d+)$', rank_str)
@@ -134,8 +142,10 @@ class Ranking(commands.Cog):
         await interaction.followup.send("Ranking button setup complete!", ephemeral=True)
 
     @app_commands.command(name="removeplayer", description="Remove a player from the leaderboard and shift everyone else up")
-    @app_commands.default_permissions(administrator=True)
     async def remove_player(self, interaction: discord.Interaction, user: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         
         success = await self.db.remove_player_from_ladder(user.id)
@@ -146,8 +156,10 @@ class Ranking(commands.Cog):
 
     @app_commands.command(name="setrank", description="Manually force a player into a specific rank, shifting others to make room")
     @app_commands.describe(user="The player to rank", rank="The exact rank (e.g., Legends 3)")
-    @app_commands.default_permissions(administrator=True)
     async def set_rank(self, interaction: discord.Interaction, user: discord.User, rank: str):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         
         success, actual_rank = await self.db.force_set_player_rank(user.id, rank, bypass_unrank=True)
@@ -157,8 +169,10 @@ class Ranking(commands.Cog):
             await interaction.followup.send(f"❌ Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
             
     @app_commands.command(name="resetrequest", description="Reset a player's 24h ranked match request cooldown")
-    @app_commands.default_permissions(administrator=True)
     async def reset_request(self, interaction: discord.Interaction, user: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         success = await self.db.reset_ranked_cooldown(user.id)
         if success:
@@ -167,8 +181,10 @@ class Ranking(commands.Cog):
             await interaction.followup.send(f"{user.mention} does not currently have an active cooldown.", ephemeral=True)
             
     @app_commands.command(name="clearunrank", description="Clear a player's unrank penalty (1-month re-rank ban and R1 restriction)")
-    @app_commands.default_permissions(administrator=True)
     async def clear_unrank(self, interaction: discord.Interaction, user: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         success = await self.db.clear_unrank_penalty(user.id)
         if success:
