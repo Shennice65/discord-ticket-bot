@@ -5,6 +5,7 @@ import re
 from typing import List
 
 from database import Database
+from config import Config
 
 TIERS = ["Phantoms", "Champions", "Legends", "Masters", "Novices"]
 
@@ -52,6 +53,30 @@ class LeaderboardLauncherView(discord.ui.View):
         content = await cog.generate_leaderboard_content(0)
         view = RankingPaginationView(0)
         await interaction.response.send_message(content=content, view=view, ephemeral=True)
+
+    @discord.ui.button(label="View Observers", style=discord.ButtonStyle.secondary, custom_id="view_observers_btn", emoji="👀")
+    async def view_observers(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.guild:
+            await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
+            return
+            
+        role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
+        if not role:
+            await interaction.response.send_message("Observer role not found or not configured.", ephemeral=True)
+            return
+            
+        observers = [member for member in interaction.guild.members if role in member.roles]
+        
+        if not observers:
+            await interaction.response.send_message("No observers found.", ephemeral=True)
+            return
+            
+        # Format the observers
+        desc = "# 👀 Server Observers\n\n"
+        for observer in observers:
+            desc += f"→ {observer.display_name} {observer.mention}\n"
+                
+        await interaction.response.send_message(desc, ephemeral=True)
 
 
 class Ranking(commands.Cog):

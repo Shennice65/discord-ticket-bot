@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from config import Config
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
+import asyncio
 
 class Database:
     def __init__(self):
@@ -14,6 +15,7 @@ class Database:
         self.ranked_results = None
         self.observation_results = None
         self.player_ranks = None
+        self.ladder_lock = asyncio.Lock()
     
     async def init(self):
         """Connect to MongoDB"""
@@ -57,6 +59,17 @@ class Database:
     async def get_all_player_ranks(self) -> list:
         cursor = self.player_ranks.find({})
         return await cursor.to_list(length=None)
+        
+    async def get_tier_count(self, tier: str) -> int:
+        from ladder_utils import parse_rank
+        all_players = await self.get_all_player_ranks()
+        count = 0
+        for p in all_players:
+            rank_str = p.get("rank", "")
+            parsed = parse_rank(rank_str)
+            if parsed and parsed[0] == tier:
+                count += 1
+        return count
         
     async def get_ranking_config(self) -> dict:
         config = await self.db.bot_config.find_one({"_id": "ranking_setup"})
@@ -171,41 +184,42 @@ class Database:
         """Self-unrank: stores original rank, timestamp, removes from ladder."""
         from ladder_utils import TIERS, parse_rank
         
-        player = await self.player_ranks.find_one({"user_id": user_id})
-        if not player or not player.get("rank"):
-            return False, "You are not currently ranked."
-            
-        if player.get("unranked_at"):
-            return False, "You are already unranked."
-            
-        current_rank = player["rank"]
-        
-        await self.player_ranks.update_one(
-            {"user_id": user_id},
-            {"$set": {
-                "original_rank": current_rank,
-                "unranked_at": str(datetime.utcnow()),
-                "rank": ""
-            }}
-        )
-        
-        all_players = await self.player_ranks.find({}).to_list(length=None)
-        tier_lists = {t: [] for t in TIERS}
-        
-        for p in all_players:
-            if p["user_id"] == user_id:
-                continue
-            rank_str = p.get("rank", "")
-            parsed = parse_rank(rank_str)
-            if parsed and parsed[0] in TIERS:
-                tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
+        async with self.ladder_lock:
+            player = await self.player_ranks.find_one({"user_id": user_id})
+            if not player or not player.get("rank"):
+                return False, "You are not currently ranked."
                 
-        for t in TIERS:
-            tier_lists[t].sort(key=lambda x: x[1])
-            tier_lists[t] = [uid for uid, _ in tier_lists[t]]
+            if player.get("unranked_at"):
+                return False, "You are already unranked."
+                
+            current_rank = player["rank"]
             
-        await self._bulk_reassign_ranks(tier_lists, TIERS)
-        return True, current_rank
+            await self.player_ranks.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "original_rank": current_rank,
+                    "unranked_at": str(datetime.utcnow()),
+                    "rank": ""
+                }}
+            )
+            
+            all_players = await self.player_ranks.find({}).to_list(length=None)
+            tier_lists = {t: [] for t in TIERS}
+            
+            for p in all_players:
+                if p["user_id"] == user_id:
+                    continue
+                rank_str = p.get("rank", "")
+                parsed = parse_rank(rank_str)
+                if parsed and parsed[0] in TIERS:
+                    tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
+                    
+            for t in TIERS:
+                tier_lists[t].sort(key=lambda x: x[1])
+                tier_lists[t] = [uid for uid, _ in tier_lists[t]]
+                
+            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            return True, current_rank
         
     def _get_unrank_cooldown_days(self, player: dict) -> float:
         """Returns days left on unrank cooldown, or 0 if expired."""
@@ -260,27 +274,28 @@ class Database:
     async def remove_player_from_ladder(self, user_id: int) -> bool:
         from ladder_utils import TIERS, parse_rank
         
-        player = await self.player_ranks.find_one({"user_id": user_id})
-        if not player:
-            return False
-            
-        await self.player_ranks.delete_one({"user_id": user_id})
-        
-        all_players = await self.player_ranks.find({}).to_list(length=None)
-        tier_lists = {t: [] for t in TIERS}
-        
-        for p in all_players:
-            rank_str = p.get("rank", "")
-            parsed = parse_rank(rank_str)
-            if parsed and parsed[0] in TIERS:
-                tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
+        async with self.ladder_lock:
+            player = await self.player_ranks.find_one({"user_id": user_id})
+            if not player:
+                return False
                 
-        for t in TIERS:
-            tier_lists[t].sort(key=lambda x: x[1])
-            tier_lists[t] = [uid for uid, _ in tier_lists[t]]
+            await self.player_ranks.delete_one({"user_id": user_id})
             
-        await self._bulk_reassign_ranks(tier_lists, TIERS)
-        return True
+            all_players = await self.player_ranks.find({}).to_list(length=None)
+            tier_lists = {t: [] for t in TIERS}
+            
+            for p in all_players:
+                rank_str = p.get("rank", "")
+                parsed = parse_rank(rank_str)
+                if parsed and parsed[0] in TIERS:
+                    tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
+                    
+            for t in TIERS:
+                tier_lists[t].sort(key=lambda x: x[1])
+                tier_lists[t] = [uid for uid, _ in tier_lists[t]]
+                
+            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            return True
         
     async def force_set_player_rank(self, user_id: int, target_rank: str, bypass_unrank: bool = False) -> tuple:
         from ladder_utils import TIERS, parse_rank
@@ -292,107 +307,109 @@ class Database:
         # Check unrank cooldown (skip for admin bypass)
         if not bypass_unrank:
             player = await self.player_ranks.find_one({"user_id": user_id})
-            cooldown = self._get_unrank_cooldown_days(player) if player else 0.0
-            if cooldown > 0:
-                days = int(cooldown)
-                return False, f"This player unranked themselves and cannot be re-ranked for **{days} more days**."
+        parsed = parse_rank(target_rank)
+        if not parsed:
+            return False, "Invalid target rank format."
             
-        target_tier, target_num = parsed_target
+        target_tier, target_num = parsed
+        if target_tier not in TIERS:
+            return False, "Invalid tier."
+            
         target_idx = target_num - 1
         
-        all_players = await self.player_ranks.find({}).to_list(length=None)
-        tier_lists = {t: [] for t in TIERS}
-        
-        for p in all_players:
-            rank_str = p.get("rank", "")
-            parsed = parse_rank(rank_str)
-            if parsed and parsed[0] in TIERS:
-                tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
+        async with self.ladder_lock:
+            player = await self.player_ranks.find_one({"user_id": user_id})
+            if player and player.get("unranked_at") and not bypass_unrank:
+                return False, "Player is unranked. Use /clearunrank before re-ranking."
                 
-        for t in TIERS:
-            tier_lists[t].sort(key=lambda x: x[1])
-            tier_lists[t] = [uid for uid, num in tier_lists[t]]
+            await self.player_ranks.update_one(
+                {"user_id": user_id},
+                {"$set": {"unranked_at": None}},
+                upsert=True
+            )
             
-        # Remove user from current position if they exist
-        for t in TIERS:
-            if user_id in tier_lists[t]:
-                tier_lists[t].remove(user_id)
-                
-        # Insert user at target index
-        if target_idx < 0:
-            target_idx = 0
-        tier_lists[target_tier].insert(target_idx, user_id)
-        
-        # Re-assign ranks
-        actual_new_rank = ""
-        for t in TIERS:
-            for idx, uid in enumerate(tier_lists[t]):
-                if uid == user_id:
-                    actual_new_rank = f"{t} {idx + 1}"
+            all_players = await self.player_ranks.find({}).to_list(length=None)
+            tier_lists = {t: [] for t in TIERS}
+            
+            for p in all_players:
+                rank_str = p.get("rank", "")
+                p_parsed = parse_rank(rank_str)
+                if p_parsed and p_parsed[0] in TIERS:
+                    tier_lists[p_parsed[0]].append((p["user_id"], p_parsed[1]))
                     
-        await self._bulk_reassign_ranks(tier_lists, TIERS)
-        return True, actual_new_rank
+            for t in TIERS:
+                tier_lists[t].sort(key=lambda x: x[1])
+                tier_lists[t] = [uid for uid, _ in tier_lists[t]]
+                if user_id in tier_lists[t]:
+                    tier_lists[t].remove(user_id)
+                    
+            if target_idx < 0:
+                target_idx = 0
+            tier_lists[target_tier].insert(target_idx, user_id)
+            
+            actual_new_rank = ""
+            for t in TIERS:
+                for idx, uid in enumerate(tier_lists[t]):
+                    if uid == user_id:
+                        actual_new_rank = f"{t} {idx + 1}"
+                        
+            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            return True, actual_new_rank
         
     async def process_match_result(self, winner_id: int, loser_id: int) -> tuple:
         from ladder_utils import TIERS, parse_rank, get_sort_key
         
-        winner_rank = await self.get_player_rank(winner_id)
-        loser_rank = await self.get_player_rank(loser_id)
-        
-        winner_key = get_sort_key(winner_rank)
-        loser_key = get_sort_key(loser_rank)
-        
-        # If winner is already higher or equal rank (lower sort key), no rank change needed
-        if winner_key <= loser_key:
-            return winner_rank, winner_rank, loser_rank, loser_rank
+        async with self.ladder_lock:
+            winner_rank = await self.get_player_rank(winner_id)
+            loser_rank = await self.get_player_rank(loser_id)
             
-        # We need to shift the ladder
-        all_players = await self.player_ranks.find({}).to_list(length=None)
-        tier_lists = {t: [] for t in TIERS}
-        
-        for p in all_players:
-            rank_str = p.get("rank", "")
-            parsed = parse_rank(rank_str)
-            if parsed and parsed[0] in TIERS:
-                tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
-                
-        for t in TIERS:
-            tier_lists[t].sort(key=lambda x: x[1])
-            tier_lists[t] = [uid for uid, num in tier_lists[t]]
+            winner_key = get_sort_key(winner_rank)
+            loser_key = get_sort_key(loser_rank)
             
-        # Remove winner from their current tier list if they were ranked
-        winner_parsed = parse_rank(winner_rank)
-        if winner_parsed and winner_parsed[0] in tier_lists:
-            if winner_id in tier_lists[winner_parsed[0]]:
-                tier_lists[winner_parsed[0]].remove(winner_id)
+            if winner_key <= loser_key:
+                return winner_rank, winner_rank, loser_rank, loser_rank
                 
-        # Insert winner at loser's index in loser's tier list
-        loser_parsed = parse_rank(loser_rank)
-        if loser_parsed and loser_parsed[0] in tier_lists:
-            try:
-                loser_idx = tier_lists[loser_parsed[0]].index(loser_id)
-                tier_lists[loser_parsed[0]].insert(loser_idx, winner_id)
-            except ValueError:
-                # Fallback if loser not found
-                tier_lists[loser_parsed[0]].append(winner_id)
-        else:
-            # Loser had no valid rank, this shouldn't happen but just in case
-            return winner_rank, winner_rank, loser_rank, loser_rank
+            all_players = await self.player_ranks.find({}).to_list(length=None)
+            tier_lists = {t: [] for t in TIERS}
             
-        # Re-assign ranks via bulk write
-        new_winner_rank = ""
-        new_loser_rank = ""
-        
-        for t in TIERS:
-            for idx, uid in enumerate(tier_lists[t]):
-                new_rank = f"{t} {idx + 1}"
-                if uid == winner_id:
-                    new_winner_rank = new_rank
-                elif uid == loser_id:
-                    new_loser_rank = new_rank
+            for p in all_players:
+                rank_str = p.get("rank", "")
+                parsed = parse_rank(rank_str)
+                if parsed and parsed[0] in TIERS:
+                    tier_lists[parsed[0]].append((p["user_id"], parsed[1]))
+                    
+            for t in TIERS:
+                tier_lists[t].sort(key=lambda x: x[1])
+                tier_lists[t] = [uid for uid, num in tier_lists[t]]
                 
-        await self._bulk_reassign_ranks(tier_lists, TIERS)
-        return winner_rank, new_winner_rank, loser_rank, new_loser_rank
+            winner_parsed = parse_rank(winner_rank)
+            if winner_parsed and winner_parsed[0] in tier_lists:
+                if winner_id in tier_lists[winner_parsed[0]]:
+                    tier_lists[winner_parsed[0]].remove(winner_id)
+                    
+            loser_parsed = parse_rank(loser_rank)
+            if loser_parsed and loser_parsed[0] in tier_lists:
+                try:
+                    loser_idx = tier_lists[loser_parsed[0]].index(loser_id)
+                    tier_lists[loser_parsed[0]].insert(loser_idx, winner_id)
+                except ValueError:
+                    tier_lists[loser_parsed[0]].append(winner_id)
+            else:
+                return winner_rank, winner_rank, loser_rank, loser_rank
+                
+            new_winner_rank = ""
+            new_loser_rank = ""
+            
+            for t in TIERS:
+                for idx, uid in enumerate(tier_lists[t]):
+                    new_rank = f"{t} {idx + 1}"
+                    if uid == winner_id:
+                        new_winner_rank = new_rank
+                    elif uid == loser_id:
+                        new_loser_rank = new_rank
+                    
+            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            return winner_rank, new_winner_rank, loser_rank, new_loser_rank
             
     async def create_ticket(self, channel_id: int, user_id: int, ticket_type: str, 
                            opponent: Optional[str] = None, private_link: Optional[str] = None) -> int:
@@ -449,7 +466,7 @@ class Database:
         return await self.tickets.find_one({"channel_id": channel_id})
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
-                                winner_old: str, winner_new: str, loser_old: str, loser_new: str, winner: str, note: Optional[str] = None):
+                                winner_old: str, winner_new: str, loser_old: str, loser_new: str, winner_id: int, winner: str, note: Optional[str] = None):
         result_id = await self.ranked_results.count_documents({}) + 1
         result = {
             "id": result_id,
@@ -462,6 +479,7 @@ class Database:
             "loser_new": loser_new,
             "starting_rank": winner_old, # backwards compatibility
             "ending_rank": winner_new,   # backwards compatibility
+            "winner_id": winner_id,
             "winner": winner,
             "note": note,
             "created_at": str(datetime.utcnow())

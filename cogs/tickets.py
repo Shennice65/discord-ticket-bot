@@ -233,7 +233,7 @@ class Tickets(commands.Cog):
     @tasks.loop(hours=1)
     async def cleanup_stale_tickets(self):
         await self.bot.wait_until_ready()
-        if not self.db.tickets:
+        if self.db.tickets is None:
             return
             
         now_aware = discord.utils.utcnow()
@@ -300,6 +300,11 @@ class Tickets(commands.Cog):
         opponent_member = guild.get_member(opponent.id)
         if not opponent_member:
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
+            return
+            
+        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
+        if existing_ticket:
+            await interaction.followup.send("You already have an open ticket! Please close it before opening a new one.", ephemeral=True)
             return
         
         if opponent_member.id == user.id and not opponent_member.bot:
@@ -381,6 +386,11 @@ class Tickets(commands.Cog):
         guild = interaction.guild
         user = interaction.user
         
+        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
+        if existing_ticket:
+            await interaction.followup.send("You already have an open ticket! Please close it before opening a new one.", ephemeral=True)
+            return
+            
         cooldown = await self.db.get_obs_cooldown(user.id)
         if cooldown > 0:
             days = int(cooldown)
@@ -487,6 +497,14 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Ticket not found!", ephemeral=True)
             return
             
+        idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
+        idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
+        
+        if idx_user != -1 and idx_opp != -1:
+            if abs(idx_user - idx_opp) > 5:
+                await interaction.followup.send("❌ **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
+                return
+                
         winner_id = modal.winner_id
         loser_id = ticket_data['user_id'] if winner_id == ticket_data['opponent_id'] else ticket_data['opponent_id']
         
@@ -500,6 +518,7 @@ class Tickets(commands.Cog):
             new_win,
             old_lose,
             new_lose,
+            modal.winner_id,
             modal.winner_name,
             modal.note.value if modal.note.value else None
         )
@@ -532,6 +551,18 @@ class Tickets(commands.Cog):
             
         user_id = ticket_data['user_id']
         old_rank = await self.db.get_player_rank(user_id)
+        
+        from ladder_utils import parse_rank
+        parsed = parse_rank(end_rank)
+        if parsed:
+            tier, target_num = parsed
+            current_count = await self.db.get_tier_count(tier)
+            
+            # If the user is ALREADY in the target tier, the max they can be is current_count (not +1)
+            # But just a simple target_num > current_count + 1 is safe enough for bounds checking
+            if target_num > current_count + 1:
+                await interaction.followup.send(f"❌ **Invalid Rank Gap!** You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
+                return
         
         success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
         

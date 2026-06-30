@@ -95,10 +95,16 @@ class TicketEmbeds:
         # Calculate Stats
         total_matches = len(history['ranked'])
         if total_matches > 0:
-            wins = sum(
-                1 for entry in history['ranked']
-                if entry.get('winner', '').lower() == user.name.lower() or entry.get('winner', '').lower() in user.name.lower()
-            )
+            wins = 0
+            for entry in history['ranked']:
+                if 'winner_id' in entry and entry['winner_id'] is not None:
+                    if entry['winner_id'] == user.id:
+                        wins += 1
+                else:
+                    w_str = entry.get('winner', '').lower()
+                    if w_str == user.name.lower() or w_str in user.name.lower():
+                        wins += 1
+            
             losses = total_matches - wins
             win_rate = (wins / total_matches) * 100
             
@@ -122,8 +128,13 @@ class TicketEmbeds:
         if history['ranked']:
             for i, entry in enumerate(history['ranked'][:10], 1):
                 date = entry['closed_at'][:10] if entry['closed_at'] else "Unknown"
-                winner_str = entry.get('winner', '').lower()
-                is_win = (winner_str == user.name.lower() or winner_str in user.name.lower())
+                
+                if 'winner_id' in entry and entry['winner_id'] is not None:
+                    is_win = (entry['winner_id'] == user.id)
+                else:
+                    winner_str = entry.get('winner', '').lower()
+                    is_win = (winner_str == user.name.lower() or winner_str in user.name.lower())
+                    
                 emoji = "🟢" if is_win else "🔴"
                 result_text = "WON" if is_win else "LOST"
                 
