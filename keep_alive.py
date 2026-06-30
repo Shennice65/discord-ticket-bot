@@ -58,4 +58,4 @@ def keep_alive():
     t = Thread(target=run)
     t.daemon = True  # Thread will close when main program exits
     t.start()
-    print("✅ Keep-alive web server started on port 8080")
+    print("Keep-alive web server started on port 8080")

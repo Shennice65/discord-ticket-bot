@@ -90,6 +90,41 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
         
         await interaction.edit_original_response(content=None, embed=embed, view=None)
 
+class HistoryView(discord.ui.View):
+    def __init__(self, target_user: discord.Member, history: dict, unrank_info: dict = None, is_observer: bool = False):
+        super().__init__(timeout=180)
+        self.target_user = target_user
+        self.history = history
+        self.unrank_info = unrank_info
+        
+        # We append the clear history view items if they are an observer, but for a cleaner UI,
+        # we can just put a "Clear History" button that sends the modal, similar to what we did before.
+        self.is_observer = is_observer
+
+    @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, emoji="📊", custom_id="hist_overview")
+    async def btn_overview(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = TicketEmbeds.history_overview_embed(self.target_user, self.history, self.unrank_info)
+        await interaction.response.edit_message(embed=embed)
+
+    @discord.ui.button(label="Ranked Matches", style=discord.ButtonStyle.secondary, emoji="⚔️", custom_id="hist_ranked")
+    async def btn_ranked(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = TicketEmbeds.history_ranked_embed(self.target_user, self.history)
+        await interaction.response.edit_message(embed=embed)
+
+    @discord.ui.button(label="Observations", style=discord.ButtonStyle.secondary, emoji="👁️", custom_id="hist_obs")
+    async def btn_obs(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = TicketEmbeds.history_observation_embed(self.target_user, self.history)
+        await interaction.response.edit_message(embed=embed)
+
+    @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, custom_id="hist_clear")
+    async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.is_observer:
+            await interaction.response.send_message("Only observers can clear history.", ephemeral=True)
+            return
+            
+        view = ClearHistoryView(self.target_user.id, self.target_user.name)
+        await interaction.response.send_message("Select history to clear:", view=view, ephemeral=True)
+
 class History(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -107,17 +142,29 @@ class History(commands.Cog):
             await interaction.response.send_message("You can only view your own history!", ephemeral=True)
             return
         
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         
         await self.db.init()
-        history = await self.db.get_user_history(target_user.id)
-        embed = TicketEmbeds.history_embed(target_user, history)
+        history = await self.db.get_user_history(target_user.id, target_user.name)
         
-        if is_observer:
-            view = ClearHistoryView(target_user.id, target_user.name)
-            await interaction.followup.send(embed=embed, view=view)
-        else:
-            await interaction.followup.send(embed=embed)
+        # Fetch unrank status for the profile
+        player = await self.db.player_ranks.find_one({"user_id": target_user.id})
+        unrank_info = None
+        if player and player.get("unranked_at"):
+            cooldown = self.db._get_unrank_cooldown_days(player)
+            unrank_info = {
+                "original_rank": player.get("original_rank", "Unknown"),
+                "cooldown_days": cooldown
+            }
+        
+        embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info)
+        view = HistoryView(target_user, history, unrank_info, is_observer)
+        
+        # If not an observer, remove the clear button
+        if not is_observer:
+            view.remove_item(view.btn_clear)
+            
+        await interaction.followup.send(embed=embed, view=view)
     
     @app_commands.command(name="clearhistory", description="Clear a user's history (Observer only)")
     @app_commands.describe(user="The user to clear history for", type="Type of history to clear")

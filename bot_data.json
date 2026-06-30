@@ -1,0 +1,51 @@
+{
+  "tickets": [
+    {
+      "id": 1,
+      "channel_id": 1521178571576446986,
+      "user_id": 442188857014747136,
+      "ticket_type": "Personal Observation",
+      "status": "closed",
+      "created_at": "2026-06-29 15:40:33.783572",
+      "closed_at": "2026-06-29 15:41:35.461936",
+      "closed_by": 442188857014747136,
+      "opponent": null,
+      "private_link": null
+    },
+    {
+      "id": 2,
+      "channel_id": 1521179329990496256,
+      "user_id": 1449726098161012871,
+      "ticket_type": "Personal Observation",
+      "status": "closed",
+      "created_at": "2026-06-29 15:43:34.230521",
+      "closed_at": "2026-06-29 15:44:18.622683",
+      "closed_by": 1449726098161012871,
+      "opponent": null,
+      "private_link": null
+    }
+  ],
+  "ranked_results": [],
+  "observation_results": [
+    {
+      "id": 1,
+      "ticket_id": 1,
+      "observer_id": 442188857014747136,
+      "observer_name": "vinkdc",
+      "starting_rank": "legends 10",
+      "ending_rank": "legends 9",
+      "note": "ni",
+      "created_at": "2026-06-29 15:41:35.461353"
+    },
+    {
+      "id": 2,
+      "ticket_id": 2,
+      "observer_id": 1449726098161012871,
+      "observer_name": "n",
+      "starting_rank": "n",
+      "ending_rank": "n",
+      "note": null,
+      "created_at": "2026-06-29 15:44:18.621683"
+    }
+  ]
+}

@@ -1,14 +1,58 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import asyncio
 import os
+import re
 from datetime import datetime
 from typing import Optional, List
 
 from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
+
+def validate_and_format_rank(rank_str: str) -> Optional[str]:
+    tiers = {
+        "novice": "Novices", "novices": "Novices",
+        "master": "Masters", "masters": "Masters",
+        "legend": "Legends", "legends": "Legends",
+        "champion": "Champions", "champions": "Champions",
+        "phantom": "Phantoms", "phantoms": "Phantoms"
+    }
+    match = re.match(r'^\s*([a-zA-Z]+)\s*(\d+)\s*$', rank_str)
+    if not match:
+        return None
+    tier_input = match.group(1).lower()
+    number = match.group(2)
+    if tier_input in tiers:
+        return f"{tiers[tier_input]} {number}"
+    return None
+
+class UnrankConfirmView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+    
+    @discord.ui.button(label="Yes, Unrank Me", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        db = Database()
+        await db.init()
+        
+        success, result = await db.unrank_player(interaction.user.id)
+        if success:
+            await interaction.edit_original_response(
+                content=f"You have been unranked. Your previous rank was **{result}**.\n\n"
+                        f"**Warning:** You cannot be re-ranked for **1 month**.\n"
+                        f"You also cannot request R1s until you are ranked back to **{result}** or higher.",
+                view=None
+            )
+        else:
+            await interaction.edit_original_response(content=f"Could not unrank: {result}", view=None)
+    
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Unrank cancelled.", view=None)
+
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -25,6 +69,18 @@ class TicketView(discord.ui.View):
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.create_observation_ticket(interaction)
+    
+    @discord.ui.button(label="Unrank", style=discord.ButtonStyle.danger, custom_id="unrank_self")
+    async def unrank_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = UnrankConfirmView()
+        await interaction.response.send_message(
+            "**Are you sure you want to unrank yourself?**\n\n"
+            "This will remove you from the leaderboard entirely.\n"
+            "You will **not** be able to get re-ranked for **1 month**.\n"
+            "You will **not** be able to request R1s until you reach your original rank again.",
+            view=view,
+            ephemeral=True
+        )
 
 
 class RankedModal(discord.ui.Modal, title="Ranked 1v1 - Private Server Link"):
@@ -56,6 +112,9 @@ class OpponentSelect(discord.ui.UserSelect):
     
     async def callback(self, interaction: discord.Interaction):
         selected_user = self.values[0]
+        # Remove the dropdown view
+        await interaction.response.edit_message(content=f"Opponent {selected_user.mention} selected. Creating ticket...", view=None)
+        
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.create_ranked_ticket(interaction, selected_user, self.private_link)
@@ -67,31 +126,35 @@ class OpponentSelectView(discord.ui.View):
         self.add_item(OpponentSelect(private_link))
 
 
-class CloseRankedModal(discord.ui.Modal, title="Close Ranked 1v1 Ticket"):
+class WinnerSelect(discord.ui.UserSelect):
+    def __init__(self, user_id: int):
+        super().__init__(
+            placeholder="Select the winner...",
+            min_values=1,
+            max_values=1
+        )
+        self.user_id = user_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        winner = self.values[0]
+        modal = CloseRankedModal(winner_name=winner.name, winner_id=winner.id)
+        await interaction.response.send_modal(modal)
+
+class WinnerSelectView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=120)
+        self.add_item(WinnerSelect(user_id))
+
+
+class CloseRankedModal(discord.ui.Modal):
+    def __init__(self, winner_name: str, winner_id: int):
+        super().__init__(title="Close Ranked 1v1 Ticket")
+        self.winner_name = winner_name
+        self.winner_id = winner_id
+        
     observer = discord.ui.TextInput(
         label="Observer Name",
         placeholder="Your name",
-        required=True,
-        max_length=100
-    )
-    
-    starting_rank = discord.ui.TextInput(
-        label="Starting Rank",
-        placeholder="e.g., Legends 12, Champions 9, Legends 5",
-        required=True,
-        max_length=50
-    )
-    
-    ending_rank = discord.ui.TextInput(
-        label="Ending Rank",
-        placeholder="e.g., Legends 14, Champions 10 (or 'Remain')",
-        required=True,
-        max_length=50
-    )
-    
-    winner = discord.ui.TextInput(
-        label="Winner",
-        placeholder="Who won the 1v1?",
         required=True,
         max_length=100
     )
@@ -111,7 +174,10 @@ class CloseRankedModal(discord.ui.Modal, title="Close Ranked 1v1 Ticket"):
             await cog.process_ranked_close(interaction, self)
 
 
-class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
+class CloseObservationModal(discord.ui.Modal):
+    def __init__(self, current_rank: str = ""):
+        super().__init__(title="Close Observation Ticket")
+        
     observer = discord.ui.TextInput(
         label="Observer Name",
         placeholder="Your name",
@@ -119,16 +185,9 @@ class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
         max_length=100
     )
     
-    starting_rank = discord.ui.TextInput(
-        label="Starting Rank",
-        placeholder="e.g., Legends 12, Champions 9, Legends 5",
-        required=True,
-        max_length=50
-    )
-    
     ending_rank = discord.ui.TextInput(
         label="Ending Rank",
-        placeholder="e.g., Legends 14, Champions 10 (or 'Remain')",
+        placeholder="e.g., Legends 14 (NO 'Remain' or 'Same')",
         required=True,
         max_length=50
     )
@@ -142,10 +201,22 @@ class CloseObservationModal(discord.ui.Modal, title="Close Observation Ticket"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
+        end_val = validate_and_format_rank(self.ending_rank.value)
+        
+        if not end_val:
+            await interaction.response.send_message(
+                "❌ **Invalid Rank Format!**\n"
+                "Ranks must be exactly one of the official tiers followed by a number.\n"
+                "Valid tiers: *Novices, Masters, Legends, Champions, Phantoms*\n"
+                "Example: `Legends 12`",
+                ephemeral=True
+            )
+            return
+            
         await interaction.response.defer(ephemeral=True)
         cog = interaction.client.get_cog('Tickets')
         if cog:
-            await cog.process_observation_close(interaction, self)
+            await cog.process_observation_close(interaction, self, end_val)
 
 
 class Tickets(commands.Cog):
@@ -154,6 +225,44 @@ class Tickets(commands.Cog):
         self.db = Database()
         self.db_ready = True
         bot.loop.create_task(self.db.init())
+        self.cleanup_stale_tickets.start()
+        
+    def cog_unload(self):
+        self.cleanup_stale_tickets.cancel()
+
+    @tasks.loop(hours=1)
+    async def cleanup_stale_tickets(self):
+        await self.bot.wait_until_ready()
+        if self.db.tickets is None:
+            return
+            
+        now_aware = discord.utils.utcnow()
+        now_naive = datetime.utcnow()
+        cursor = self.db.tickets.find({"status": "open"})
+        open_tickets = await cursor.to_list(length=None)
+        
+        for ticket in open_tickets:
+            channel = self.bot.get_channel(ticket['channel_id'])
+            if channel:
+                try:
+                    messages = [msg async for msg in channel.history(limit=1)]
+                    if messages:
+                        last_msg = messages[0]
+                        if (now_aware - last_msg.created_at).total_seconds() > 86400:
+                            await self.db.close_ticket(channel.id, self.bot.user.id)
+                            await channel.delete(reason="Stale ticket")
+                    else:
+                        try:
+                            created = datetime.fromisoformat(ticket['created_at'])
+                            if (now_naive - created).total_seconds() > 86400:
+                                await self.db.close_ticket(channel.id, self.bot.user.id)
+                                await channel.delete(reason="Stale ticket")
+                        except ValueError:
+                            pass
+                except Exception as e:
+                    print(f"Cleanup error on {channel.id}: {e}")
+            else:
+                await self.db.close_ticket(ticket['channel_id'], self.bot.user.id)
     
     @commands.Cog.listener()
     async def on_ready(self):
@@ -192,9 +301,35 @@ class Tickets(commands.Cog):
         if not opponent_member:
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
             return
+            
+        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
+        if existing_ticket:
+            await interaction.followup.send("You already have an open ticket! Please close it before opening a new one.", ephemeral=True)
+            return
         
         if opponent_member.id == user.id and not opponent_member.bot:
             await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
+            return
+        
+        # Smurf prevention: check if formerly-ranked player can R1
+        can_r1, r1_reason = await self.db.can_player_r1(user.id)
+        if not can_r1:
+            await interaction.followup.send(r1_reason, ephemeral=True)
+            return
+        
+        idx_user = await self.db.get_global_rank_index(user.id)
+        idx_opp = await self.db.get_global_rank_index(opponent.id)
+        
+        if idx_user != -1 and idx_opp != -1:
+            if abs(idx_user - idx_opp) > 5:
+                await interaction.followup.send("You can only request a 1v1 with someone within 5 ranks of you!", ephemeral=True)
+                return
+                
+        cooldown = await self.db.get_ranked_cooldown(user.id)
+        if cooldown > 0:
+            hours = int(cooldown)
+            minutes = int((cooldown - hours) * 60)
+            await interaction.followup.send(f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**.", ephemeral=True)
             return
         
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
@@ -225,11 +360,13 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        ticket_id = await self.db.create_ticket(
-            channel.id, user.id, "Ranked 1v1", 
-            opponent=opponent.name, private_link=private_link
+        ticket_id = await self.db.create_ranked_ticket_db(
+            channel.id, user.id, 
+            opponent_name=opponent.name, opponent_id=opponent.id, private_link=private_link
         )
         print(f"Ticket {ticket_id} saved")
+        
+        await self.db.update_ranked_cooldown(user.id)
         
         embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent.name)
         if private_link:
@@ -249,6 +386,18 @@ class Tickets(commands.Cog):
         guild = interaction.guild
         user = interaction.user
         
+        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
+        if existing_ticket:
+            await interaction.followup.send("You already have an open ticket! Please close it before opening a new one.", ephemeral=True)
+            return
+            
+        cooldown = await self.db.get_obs_cooldown(user.id)
+        if cooldown > 0:
+            days = int(cooldown)
+            hours = int((cooldown - days) * 24)
+            await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h**.", ephemeral=True)
+            return
+            
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
         if not category:
             await interaction.followup.send("Ticket category not configured!", ephemeral=True)
@@ -279,6 +428,8 @@ class Tickets(commands.Cog):
         ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
         print(f"Ticket {ticket_id} saved")
         
+        await self.db.update_obs_cooldown(user.id)
+        
         embed = TicketEmbeds.ticket_created("Personal Observation", user)
         
         await channel.send(
@@ -303,30 +454,72 @@ class Tickets(commands.Cog):
         is_observer = observer_role in interaction.user.roles if observer_role else False
         is_owner = interaction.user.id == ticket_data['user_id']
         
-        if not (is_observer or is_owner):
-            await interaction.response.send_message("You don't have permission to close this ticket!", ephemeral=True)
-            return
+        if not is_observer:
+            if ticket_data['ticket_type'] == "Ranked 1v1":
+                await interaction.response.send_message("Only observers can close Ranked 1v1 tickets!", ephemeral=True)
+                return
+            elif not is_owner:
+                await interaction.response.send_message("You don't have permission to close this ticket!", ephemeral=True)
+                return
         
-        if ticket_data['ticket_type'] == "Ranked 1v1":
-            modal = CloseRankedModal()
+        if is_observer:
+            if ticket_data['ticket_type'] == "Ranked 1v1":
+                view = WinnerSelectView(ticket_data['user_id'])
+                await interaction.response.send_message("Please select the winner:", view=view, ephemeral=True)
+            else:
+                current_rank = await self.db.get_player_rank(ticket_data['user_id'])
+                modal = CloseObservationModal(current_rank=current_rank)
+                await interaction.response.send_modal(modal)
         else:
-            modal = CloseObservationModal()
-        
-        await interaction.response.send_modal(modal)
+            # User is the owner, not an observer. Close immediately.
+            await interaction.response.defer(ephemeral=True)
+            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                user = await self.bot.fetch_user(ticket_data['user_id'])
+                embed = discord.Embed(
+                    title=f"Ticket Closed by User - {ticket_data['ticket_type']}",
+                    description="Ticket was closed by the user without observer results.",
+                    color=discord.Color.red(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="User", value=f"{user.mention}\n`{user.name}`", inline=True)
+                await log_channel.send(embed=embed)
+                
+            await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
     
     async def process_ranked_close(self, interaction: discord.Interaction, modal: CloseRankedModal):
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_data:
             await interaction.followup.send("Ticket not found!", ephemeral=True)
             return
+            
+        idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
+        idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
+        
+        if idx_user != -1 and idx_opp != -1:
+            if abs(idx_user - idx_opp) > 5:
+                await interaction.followup.send("❌ **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
+                return
+                
+        winner_id = modal.winner_id
+        loser_id = ticket_data['user_id'] if winner_id == ticket_data['opponent_id'] else ticket_data['opponent_id']
+        
+        old_win, new_win, old_lose, new_lose = await self.db.process_match_result(winner_id, loser_id)
         
         await self.db.add_ranked_result(
             ticket_data['id'],
             interaction.user.id,
             modal.observer.value,
-            modal.starting_rank.value,
-            modal.ending_rank.value,
-            modal.winner.value,
+            old_win,
+            new_win,
+            old_lose,
+            new_lose,
+            modal.winner_id,
+            modal.winner_name,
             modal.note.value if modal.note.value else None
         )
         await self.db.close_ticket(interaction.channel.id, interaction.user.id)
@@ -336,9 +529,11 @@ class Tickets(commands.Cog):
             user = await self.bot.fetch_user(ticket_data['user_id'])
             result_data = {
                 'observer_name': modal.observer.value,
-                'starting_rank': modal.starting_rank.value,
-                'ending_rank': modal.ending_rank.value,
-                'winner': modal.winner.value,
+                'winner_old': old_win,
+                'winner_new': new_win,
+                'loser_old': old_lose,
+                'loser_new': new_lose,
+                'winner': modal.winner_name,
                 'note': modal.note.value if modal.note.value else None
             }
             embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
@@ -348,18 +543,39 @@ class Tickets(commands.Cog):
         await asyncio.sleep(5)
         await interaction.channel.delete()
     
-    async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal):
+    async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal, end_rank: str):
         ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_data:
             await interaction.followup.send("Ticket not found!", ephemeral=True)
+            return
+            
+        user_id = ticket_data['user_id']
+        old_rank = await self.db.get_player_rank(user_id)
+        
+        from ladder_utils import parse_rank
+        parsed = parse_rank(end_rank)
+        if parsed:
+            tier, target_num = parsed
+            current_count = await self.db.get_tier_count(tier)
+            
+            # If the user is ALREADY in the target tier, the max they can be is current_count (not +1)
+            # But just a simple target_num > current_count + 1 is safe enough for bounds checking
+            if target_num > current_count + 1:
+                await interaction.followup.send(f"❌ **Invalid Rank Gap!** You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
+                return
+        
+        success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
+        
+        if not success:
+            await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
             return
         
         await self.db.add_observation_result(
             ticket_data['id'],
             interaction.user.id,
             modal.observer.value,
-            modal.starting_rank.value,
-            modal.ending_rank.value,
+            old_rank if old_rank else "Unranked",
+            actual_new_rank,
             modal.note.value if modal.note.value else None
         )
         await self.db.close_ticket(interaction.channel.id, interaction.user.id)
@@ -369,8 +585,8 @@ class Tickets(commands.Cog):
             user = await self.bot.fetch_user(ticket_data['user_id'])
             result_data = {
                 'observer_name': modal.observer.value,
-                'starting_rank': modal.starting_rank.value,
-                'ending_rank': modal.ending_rank.value,
+                'starting_rank': old_rank if old_rank else "Unranked",
+                'ending_rank': actual_new_rank,
                 'note': modal.note.value if modal.note.value else None
             }
             embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
