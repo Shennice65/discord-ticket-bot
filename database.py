@@ -24,7 +24,8 @@ class Database:
                 print("MONGO_URI not found in config! Please set it in .env.")
                 return False
                 
-            self.client = AsyncIOMotorClient(self.uri)
+            import certifi
+            self.client = AsyncIOMotorClient(self.uri, tlsCAFile=certifi.where())
             self.db = self.client.discord_bot_db
             
             self.tickets = self.db.tickets
