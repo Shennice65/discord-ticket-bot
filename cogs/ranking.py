@@ -308,5 +308,35 @@ class Ranking(commands.Cog):
         else:
             await interaction.followup.send(f"{target_user.mention} is currently **Unranked**.", ephemeral=True)
 
+    @app_commands.command(name="undo", description="Undo the most recent rank change for a specific user")
+    @app_commands.describe(user="The user whose rank change you want to undo")
+    async def undo(self, interaction: discord.Interaction, user: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        success, message = await self.db.undo_last_action(user.id)
+        
+        if success:
+            await interaction.followup.send(f"✅ Undo successful! {user.mention} has been {message}. The leaderboard shifted back.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                from datetime import datetime
+                embed = discord.Embed(
+                    title="↩️ Rank Action Undone",
+                    color=discord.Color.purple(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Action Result", value=f"They were {message}", inline=False)
+                embed.add_field(name="Undone By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                embed.set_footer(text=f"User ID: {user.id}")
+                await log_channel.send(embed=embed)
+        else:
+            await interaction.followup.send(f"❌ Undo failed: {message}", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(Ranking(bot))
