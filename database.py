@@ -15,6 +15,7 @@ class Database:
         self.ranked_results = None
         self.observation_results = None
         self.player_ranks = None
+        self.undo_logs = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -32,6 +33,7 @@ class Database:
             self.ranked_results = self.db.ranked_results
             self.observation_results = self.db.observation_results
             self.player_ranks = self.db.player_ranks
+            self.undo_logs = self.db.undo_logs
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -56,6 +58,42 @@ class Database:
         except Exception as e:
             print(f"MongoDB connection error: {e}")
             return False
+            
+    async def log_undo_action(self, target_id: int, action_type: str, old_rank: str, new_rank: str, observer_id: Optional[int] = None):
+        """Log an action so it can be undone later."""
+        await self.undo_logs.insert_one({
+            "target_id": target_id,
+            "action_type": action_type,
+            "old_rank": old_rank,
+            "new_rank": new_rank,
+            "observer_id": observer_id,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+    async def undo_last_action(self, target_id: int) -> tuple:
+        """Undo the most recent rank change for a user. Returns (success, message)."""
+        log = await self.undo_logs.find_one(
+            {"target_id": target_id},
+            sort=[("timestamp", -1)]
+        )
+        
+        if not log:
+            return False, "No actions found to undo for this user."
+            
+        old_rank = log.get("old_rank", "")
+        
+        # If they were unranked before, remove them. Otherwise, force set them back.
+        if not old_rank:
+            await self.remove_player_from_ladder(target_id)
+            action_desc = "removed from the leaderboard (they were unranked before)"
+        else:
+            await self.force_set_player_rank(target_id, old_rank, bypass_unrank=True, is_undo=True)
+            action_desc = f"restored to **{old_rank}**"
+            
+        # Delete the log so it can't be undone again
+        await self.undo_logs.delete_one({"_id": log["_id"]})
+        
+        return True, action_desc
             
     async def get_all_player_ranks(self) -> list:
         cursor = self.player_ranks.find({})
@@ -277,7 +315,7 @@ class Database:
         )
         return result.modified_count > 0
         
-    async def remove_player_from_ladder(self, user_id: int) -> bool:
+    async def remove_player_from_ladder(self, user_id: int, is_undo: bool = False) -> bool:
         from ladder_utils import TIERS, parse_rank
         
         async with self.ladder_lock:
@@ -285,7 +323,11 @@ class Database:
             if not player:
                 return False
                 
+            old_rank = player.get("rank", "")
             await self.player_ranks.delete_one({"user_id": user_id})
+            
+            if not is_undo:
+                await self.log_undo_action(user_id, "remove_player", old_rank, "")
             
             all_players = await self.player_ranks.find({}).to_list(length=None)
             tier_lists = {t: [] for t in TIERS}
@@ -303,7 +345,7 @@ class Database:
             await self._bulk_reassign_ranks(tier_lists, TIERS)
             return True
         
-    async def force_set_player_rank(self, user_id: int, target_rank: str, bypass_unrank: bool = False) -> tuple:
+    async def force_set_player_rank(self, user_id: int, target_rank: str, bypass_unrank: bool = False, is_undo: bool = False) -> tuple:
         from ladder_utils import TIERS, parse_rank
         
         parsed_target = parse_rank(target_rank)
@@ -311,8 +353,8 @@ class Database:
             return False, "Invalid rank format"
             
         # Check unrank cooldown (skip for admin bypass)
-        if not bypass_unrank:
-            player = await self.player_ranks.find_one({"user_id": user_id})
+        player = await self.player_ranks.find_one({"user_id": user_id})
+        
         parsed = parse_rank(target_rank)
         if not parsed:
             return False, "Invalid target rank format."
@@ -353,14 +395,14 @@ class Database:
                 target_idx = 0
             tier_lists[target_tier].insert(target_idx, user_id)
             
-            actual_new_rank = ""
-            for t in TIERS:
-                for idx, uid in enumerate(tier_lists[t]):
-                    if uid == user_id:
-                        actual_new_rank = f"{t} {idx + 1}"
-                        
+            new_actual_rank = f"{target_tier} {target_idx + 1}"
+            
+            if not is_undo:
+                old_rank = player.get("rank", "") if player else ""
+                await self.log_undo_action(user_id, "force_set_rank", old_rank, new_actual_rank)
+                
             await self._bulk_reassign_ranks(tier_lists, TIERS)
-            return True, actual_new_rank
+            return True, new_actual_rank
         
     async def process_match_result(self, winner_id: int, loser_id: int) -> tuple:
         from ladder_utils import TIERS, parse_rank, get_sort_key
@@ -415,6 +457,11 @@ class Database:
                         new_loser_rank = new_rank
                     
             await self._bulk_reassign_ranks(tier_lists, TIERS)
+            
+            # Log undo action for both winner and loser
+            await self.log_undo_action(winner_id, "match_winner", winner_rank, new_winner_rank)
+            await self.log_undo_action(loser_id, "match_loser", loser_rank, new_loser_rank)
+            
             return winner_rank, new_winner_rank, loser_rank, new_loser_rank
             
     async def create_ticket(self, channel_id: int, user_id: int, ticket_type: str, 
