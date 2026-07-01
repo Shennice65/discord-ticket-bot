@@ -126,24 +126,29 @@ class OpponentSelectView(discord.ui.View):
         self.add_item(OpponentSelect(private_link))
 
 
-class WinnerSelect(discord.ui.UserSelect):
-    def __init__(self, user_id: int):
-        super().__init__(
-            placeholder="Select the winner...",
-            min_values=1,
-            max_values=1
-        )
-        self.user_id = user_id
-    
-    async def callback(self, interaction: discord.Interaction):
-        winner = self.values[0]
-        modal = CloseRankedModal(winner_name=winner.name, winner_id=winner.id)
-        await interaction.response.send_modal(modal)
-
-class WinnerSelectView(discord.ui.View):
-    def __init__(self, user_id: int):
+class WinnerButtonView(discord.ui.View):
+    def __init__(self, player1_id: int, player1_name: str, player2_id: int, player2_name: str):
         super().__init__(timeout=120)
-        self.add_item(WinnerSelect(user_id))
+        self.player1_id = player1_id
+        self.player1_name = player1_name
+        self.player2_id = player2_id
+        self.player2_name = player2_name
+        
+        btn1 = discord.ui.Button(label=f"{player1_name}", style=discord.ButtonStyle.primary, custom_id="winner_p1")
+        btn1.callback = self.select_player1
+        self.add_item(btn1)
+        
+        btn2 = discord.ui.Button(label=f"{player2_name}", style=discord.ButtonStyle.primary, custom_id="winner_p2")
+        btn2.callback = self.select_player2
+        self.add_item(btn2)
+    
+    async def select_player1(self, interaction: discord.Interaction):
+        modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id)
+        await interaction.response.send_modal(modal)
+    
+    async def select_player2(self, interaction: discord.Interaction):
+        modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id)
+        await interaction.response.send_modal(modal)
 
 
 class CloseRankedModal(discord.ui.Modal):
@@ -248,13 +253,13 @@ class Tickets(commands.Cog):
                     messages = [msg async for msg in channel.history(limit=1)]
                     if messages:
                         last_msg = messages[0]
-                        if (now_aware - last_msg.created_at).total_seconds() > 86400:
+                        if (now_aware - last_msg.created_at).total_seconds() > 432000:
                             await self.db.close_ticket(channel.id, self.bot.user.id)
                             await channel.delete(reason="Stale ticket")
                     else:
                         try:
                             created = datetime.fromisoformat(ticket['created_at'])
-                            if (now_naive - created).total_seconds() > 86400:
+                            if (now_naive - created).total_seconds() > 432000:
                                 await self.db.close_ticket(channel.id, self.bot.user.id)
                                 await channel.delete(reason="Stale ticket")
                         except ValueError:
@@ -464,8 +469,14 @@ class Tickets(commands.Cog):
         
         if is_observer:
             if ticket_data['ticket_type'] == "Ranked 1v1":
-                view = WinnerSelectView(ticket_data['user_id'])
-                await interaction.response.send_message("Please select the winner:", view=view, ephemeral=True)
+                player1_id = ticket_data['user_id']
+                player2_id = ticket_data['opponent_id']
+                player1 = interaction.guild.get_member(player1_id)
+                player2 = interaction.guild.get_member(player2_id)
+                p1_name = player1.display_name if player1 else f"User {player1_id}"
+                p2_name = player2.display_name if player2 else f"User {player2_id}"
+                view = WinnerButtonView(player1_id, p1_name, player2_id, p2_name)
+                await interaction.response.send_message(f"**Who won this match?**\n`{p1_name}` vs `{p2_name}`", view=view, ephemeral=True)
             else:
                 current_rank = await self.db.get_player_rank(ticket_data['user_id'])
                 modal = CloseObservationModal(current_rank=current_rank)

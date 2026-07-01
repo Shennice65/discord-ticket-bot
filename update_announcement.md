@@ -1,4 +1,4 @@
-# __**Introducing the new bot ranking update.**__
+**Introducing the new bot ranking update.**
 
 We tweaked a bunch of things to make it fully automated so observers don't have to do as much manual work anymore.
 
@@ -17,13 +17,12 @@ People can only ask for a 1v1 if the person they're challenging is within **5 ra
 
 ## **4. Unranked mechanic**
 There is now a red **"Unrank"** button on the ticket panel. If you choose to unrank yourself, you will be removed from the leaderboard entirely. But here's the catch:
-> - You **cannot get re-ranked for 1 month.**
-> - You **cannot request R1s** until you are ranked back to your original rank or higher.
+>-You **cannot get re-ranked for 1 month.**
+>-You **cannot request R1s** until you are ranked back to your original rank or higher.
 
-This is to prevent players from unranking for fun or dodging ranked 1v1s. Observers can also see an unranked badge on a player's profile when they run `/history`.
+This is to prevent players from dodging ranked 1v1s. Observers can also see an unranked badge on a player's profile when they run `/history`.
 
 ───────────────────────
-
 ## **5. Bot Commands**
 Here's a quick list of all the commands:
 
