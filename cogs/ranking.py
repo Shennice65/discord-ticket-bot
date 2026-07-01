@@ -120,8 +120,8 @@ class Ranking(commands.Cog):
     async def _replace_panel(self, channel: discord.TextChannel):
         import asyncio
         try:
-            # Wait 2 seconds to debounce fast chat messages
-            await asyncio.sleep(2.0)
+            # Wait 10 seconds to debounce fast chat messages
+            await asyncio.sleep(10.0)
             
             # Fetch old panel ID and delete it
             old_id = await self.db.get_setting("ranking_panel_id")
