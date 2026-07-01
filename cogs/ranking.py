@@ -93,6 +93,7 @@ class Ranking(commands.Cog):
         self.bot = bot
         self.db = Database()
         self.bot.loop.create_task(self.db.init())
+        self._panel_task = None
         
     @commands.Cog.listener()
     async def on_ready(self):
@@ -100,6 +101,53 @@ class Ranking(commands.Cog):
         # Register both views so they persist after restart
         self.bot.add_view(RankingPaginationView())
         self.bot.add_view(LeaderboardLauncherView())
+        
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not Config.RANKING_PANEL_CHANNEL_ID or message.channel.id != Config.RANKING_PANEL_CHANNEL_ID:
+            return
+            
+        # Ignore if the message IS the panel itself
+        if message.author == self.bot.user and message.embeds and message.embeds[0].title == "🏆 Server Leaderboard":
+            return
+            
+        # Cancel pending task if any, to debounce
+        if self._panel_task and not self._panel_task.done():
+            self._panel_task.cancel()
+            
+        self._panel_task = self.bot.loop.create_task(self._replace_panel(message.channel))
+        
+    async def _replace_panel(self, channel: discord.TextChannel):
+        import asyncio
+        try:
+            # Wait 2 seconds to debounce fast chat messages
+            await asyncio.sleep(2.0)
+            
+            # Fetch old panel ID and delete it
+            old_id = await self.db.get_setting("ranking_panel_id")
+            if old_id:
+                try:
+                    old_msg = await channel.fetch_message(old_id)
+                    await old_msg.delete()
+                except discord.NotFound:
+                    pass
+                    
+            # Spawn new panel
+            embed = discord.Embed(
+                title="🏆 Server Leaderboard",
+                description="Click the button below to view the live ranking leaderboard!",
+                color=discord.Color.gold()
+            )
+            view = LeaderboardLauncherView()
+            new_msg = await channel.send(embed=embed, view=view)
+            
+            # Save new ID
+            await self.db.set_setting("ranking_panel_id", new_msg.id)
+        except asyncio.CancelledError:
+            # Task was cancelled by another message, which is fine (debounce)
+            pass
+        except Exception as e:
+            print(f"Error replacing sticky panel: {e}")
 
     async def generate_leaderboard_content(self, page_index: int) -> str:
         tier_name = TIERS[page_index]
@@ -138,8 +186,9 @@ class Ranking(commands.Cog):
         )
         
         view = LeaderboardLauncherView()
-        await interaction.channel.send(embed=embed, view=view)
+        new_msg = await interaction.channel.send(embed=embed, view=view)
         
+        await self.db.set_setting("ranking_panel_id", new_msg.id)
         await interaction.followup.send("Ranking button setup complete!", ephemeral=True)
 
     @app_commands.command(name="removeplayer", description="Remove a player from the leaderboard and shift everyone else up")

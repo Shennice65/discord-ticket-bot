@@ -16,6 +16,7 @@ class Database:
         self.observation_results = None
         self.player_ranks = None
         self.undo_logs = None
+        self.bot_settings = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -34,6 +35,7 @@ class Database:
             self.observation_results = self.db.observation_results
             self.player_ranks = self.db.player_ranks
             self.undo_logs = self.db.undo_logs
+            self.bot_settings = self.db.bot_settings
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -58,6 +60,19 @@ class Database:
         except Exception as e:
             print(f"MongoDB connection error: {e}")
             return False
+            
+    async def get_setting(self, key: str, default=None):
+        """Get a setting from the database."""
+        setting = await self.bot_settings.find_one({"key": key})
+        return setting.get("value") if setting else default
+        
+    async def set_setting(self, key: str, value):
+        """Set a setting in the database."""
+        await self.bot_settings.update_one(
+            {"key": key},
+            {"$set": {"value": value}},
+            upsert=True
+        )
             
     async def log_undo_action(self, target_id: int, action_type: str, old_rank: str, new_rank: str, observer_id: Optional[int] = None):
         """Log an action so it can be undone later."""
