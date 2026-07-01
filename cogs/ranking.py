@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import re
 from typing import List
+from datetime import datetime
 
 from database import Database
 from config import Config
@@ -151,6 +152,18 @@ class Ranking(commands.Cog):
         success = await self.db.remove_player_from_ladder(user.id)
         if success:
             await interaction.followup.send(f"Successfully removed {user.mention} from the leaderboard! The ladder has been compressed to fill their gap.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🔴 Player Removed from Ladder",
+                    color=discord.Color.red(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Removed By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                embed.set_footer(text=f"User ID: {user.id}")
+                await log_channel.send(embed=embed)
         else:
             await interaction.followup.send(f"{user.mention} is not currently ranked on the leaderboard.", ephemeral=True)
 
@@ -165,6 +178,19 @@ class Ranking(commands.Cog):
         success, actual_rank = await self.db.force_set_player_rank(user.id, rank, bypass_unrank=True)
         if success:
             await interaction.followup.send(f"Successfully slotted {user.mention} in at **{actual_rank}**! The rest of the ladder has been compressed and shifted automatically to make room.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🟡 Rank Manually Set",
+                    color=discord.Color.gold(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Set By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                embed.add_field(name="New Rank", value=f"**{actual_rank}**", inline=True)
+                embed.set_footer(text=f"User ID: {user.id}")
+                await log_channel.send(embed=embed)
         else:
             await interaction.followup.send(f"❌ Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
             
@@ -177,6 +203,18 @@ class Ranking(commands.Cog):
         success = await self.db.reset_ranked_cooldown(user.id)
         if success:
             await interaction.followup.send(f"✅ Reset ranked request cooldown for {user.mention}! They can now request another match immediately.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🔵 Request Cooldown Reset",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Reset By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                embed.set_footer(text=f"User ID: {user.id}")
+                await log_channel.send(embed=embed)
         else:
             await interaction.followup.send(f"{user.mention} does not currently have an active cooldown.", ephemeral=True)
             
@@ -189,6 +227,18 @@ class Ranking(commands.Cog):
         success = await self.db.clear_unrank_penalty(user.id)
         if success:
             await interaction.followup.send(f"Cleared unrank penalty for {user.mention}. They can now be re-ranked and request R1s freely.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🟢 Unrank Penalty Cleared",
+                    color=discord.Color.green(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Cleared By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                embed.set_footer(text=f"User ID: {user.id}")
+                await log_channel.send(embed=embed)
         else:
             await interaction.followup.send(f"{user.mention} does not have an active unrank penalty.", ephemeral=True)
 
