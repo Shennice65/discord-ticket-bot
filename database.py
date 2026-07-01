@@ -86,6 +86,11 @@ class Database:
     async def get_player_rank(self, user_id: int) -> str:
         player = await self.player_ranks.find_one({"user_id": user_id})
         return player.get("rank", "") if player else ""
+    
+    async def get_player_by_rank(self, rank_str: str) -> Optional[Dict]:
+        """Look up a player by their exact rank string (e.g., 'Legends 3')"""
+        player = await self.player_ranks.find_one({"rank": rank_str})
+        return player
         
     async def get_global_rank_index(self, user_id: int) -> int:
         from ladder_utils import get_sort_key

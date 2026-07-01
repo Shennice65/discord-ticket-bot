@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import re
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from database import Database
@@ -241,6 +241,72 @@ class Ranking(commands.Cog):
                 await log_channel.send(embed=embed)
         else:
             await interaction.followup.send(f"{user.mention} does not have an active unrank penalty.", ephemeral=True)
+
+    @app_commands.command(name="removebyrank", description="Remove a player from the leaderboard by specifying their rank (e.g., Legends 3)")
+    @app_commands.describe(rank="The exact rank to remove (e.g., Legends 3)")
+    async def remove_by_rank(self, interaction: discord.Interaction, rank: str):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+            
+        from ladder_utils import parse_rank
+        parsed = parse_rank(rank)
+        if not parsed:
+            await interaction.response.send_message(f"❌ Invalid rank format. Please use a format like `Legends 3`.", ephemeral=True)
+            return
+            
+        formatted_rank = f"{parsed[0]} {parsed[1]}"
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        player = await self.db.get_player_by_rank(formatted_rank)
+        
+        if not player:
+            await interaction.followup.send(f"❌ No player is currently ranked at **{formatted_rank}**.", ephemeral=True)
+            return
+            
+        user_id = player['user_id']
+        
+        # Try to get the user object for display purposes
+        user = interaction.guild.get_member(user_id)
+        
+        success = await self.db.remove_player_from_ladder(user_id)
+        
+        if success:
+            user_mention = user.mention if user else f"<@{user_id}>"
+            user_name = user.name if user else f"User {user_id}"
+            
+            await interaction.followup.send(f"Successfully removed {user_mention} from **{formatted_rank}**! The ladder has been compressed.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                from datetime import datetime
+                embed = discord.Embed(
+                    title="🔴 Player Removed from Ladder (By Rank)",
+                    color=discord.Color.red(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user_mention}\n`{user_name}`", inline=True)
+                embed.add_field(name="Removed From Rank", value=f"**{formatted_rank}**", inline=True)
+                embed.add_field(name="Removed By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                embed.set_footer(text=f"User ID: {user_id}")
+                await log_channel.send(embed=embed)
+        else:
+            await interaction.followup.send(f"Failed to remove player from {formatted_rank}.", ephemeral=True)
+
+    @app_commands.command(name="checkrank", description="Check a user's current rank on the leaderboard")
+    @app_commands.describe(user="The user to check (defaults to yourself)")
+    async def check_rank(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        target_user = user or interaction.user
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        rank = await self.db.get_player_rank(target_user.id)
+        
+        if rank:
+            await interaction.followup.send(f"{target_user.mention} is currently ranked at **{rank}**.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"{target_user.mention} is currently **Unranked**.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Ranking(bot))
