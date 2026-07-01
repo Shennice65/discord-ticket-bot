@@ -123,8 +123,20 @@ class Ranking(commands.Cog):
             # Wait 10 seconds to debounce fast chat messages
             await asyncio.sleep(10.0)
             
-            # Fetch old panel ID and delete it
+            # Fetch old panel ID
             old_id = await self.db.get_setting("ranking_panel_id")
+            
+            # Check if the panel is already near the bottom (within last 5 messages)
+            if old_id:
+                recent_messages = []
+                async for msg in channel.history(limit=5):
+                    recent_messages.append(msg.id)
+                
+                if old_id in recent_messages:
+                    # Panel is still very visible, no need to bump and spam notifications
+                    return
+            
+            # If it's pushed too far up, delete the old one
             if old_id:
                 try:
                     old_msg = await channel.fetch_message(old_id)
@@ -132,14 +144,14 @@ class Ranking(commands.Cog):
                 except discord.NotFound:
                     pass
                     
-            # Spawn new panel
+            # Spawn new panel silently to avoid pinging
             embed = discord.Embed(
                 title="🏆 Server Leaderboard",
                 description="Click the button below to view the live ranking leaderboard!",
                 color=discord.Color.gold()
             )
             view = LeaderboardLauncherView()
-            new_msg = await channel.send(embed=embed, view=view)
+            new_msg = await channel.send(embed=embed, view=view, silent=True)
             
             # Save new ID
             await self.db.set_setting("ranking_panel_id", new_msg.id)
