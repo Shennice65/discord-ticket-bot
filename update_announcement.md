@@ -41,4 +41,6 @@ Here's a quick list of all the commands:
 
 **For Everyone:**
 `/history @user` - Shows a player's stats, past matches, and unranked status if applicable.
+`/checkrank @user` - Quickly check a player's exact current rank.
+`/botversion` - Check the current version of the bot.
 `/close` - Closes the ticket channel you're currently in.

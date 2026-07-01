@@ -338,5 +338,9 @@ class Ranking(commands.Cog):
         else:
             await interaction.followup.send(f"❌ Undo failed: {message}", ephemeral=True)
 
+    @app_commands.command(name="botversion", description="Check the current version of the bot")
+    async def bot_version(self, interaction: discord.Interaction):
+        await interaction.response.send_message(f"🤖 **Ticket Bot Version:** `{Config.VERSION}`", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(Ranking(bot))
