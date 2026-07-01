@@ -153,7 +153,7 @@ class Ranking(commands.Cog):
         if success:
             await interaction.followup.send(f"Successfully removed {user.mention} from the leaderboard! The ladder has been compressed to fill their gap.", ephemeral=True)
             
-            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
                 embed = discord.Embed(
                     title="🔴 Player Removed from Ladder",
@@ -179,7 +179,7 @@ class Ranking(commands.Cog):
         if success:
             await interaction.followup.send(f"Successfully slotted {user.mention} in at **{actual_rank}**! The rest of the ladder has been compressed and shifted automatically to make room.", ephemeral=True)
             
-            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
                 embed = discord.Embed(
                     title="🟡 Rank Manually Set",
@@ -204,7 +204,7 @@ class Ranking(commands.Cog):
         if success:
             await interaction.followup.send(f"✅ Reset ranked request cooldown for {user.mention}! They can now request another match immediately.", ephemeral=True)
             
-            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
                 embed = discord.Embed(
                     title="🔵 Request Cooldown Reset",
@@ -228,7 +228,7 @@ class Ranking(commands.Cog):
         if success:
             await interaction.followup.send(f"Cleared unrank penalty for {user.mention}. They can now be re-ranked and request R1s freely.", ephemeral=True)
             
-            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
                 embed = discord.Embed(
                     title="🟢 Unrank Penalty Cleared",
@@ -278,7 +278,7 @@ class Ranking(commands.Cog):
             
             await interaction.followup.send(f"Successfully removed {user_mention} from **{formatted_rank}**! The ladder has been compressed.", ephemeral=True)
             
-            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
                 from datetime import datetime
                 embed = discord.Embed(
@@ -322,7 +322,7 @@ class Ranking(commands.Cog):
         if success:
             await interaction.followup.send(f"✅ Undo successful! {user.mention} has been {message}. The leaderboard shifted back.", ephemeral=True)
             
-            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
                 from datetime import datetime
                 embed = discord.Embed(
