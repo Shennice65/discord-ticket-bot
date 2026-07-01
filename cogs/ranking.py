@@ -28,20 +28,25 @@ def parse_rank(rank_str: str):
     return (tier_name, number)
 
 class RankingPaginationView(discord.ui.View):
-    def __init__(self, pages: list, current_page=0):
-        super().__init__(timeout=900) # 15 minutes timeout for ephemeral
-        self.pages = pages
+    def __init__(self, current_page=0):
+        super().__init__(timeout=None)
         self.current_page = current_page
         
-    @discord.ui.button(label="◀️ Back", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="◀️ Back", style=discord.ButtonStyle.secondary, custom_id="ranking_back")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = interaction.client.get_cog('Ranking')
+        if not cog: return
         self.current_page = max(0, self.current_page - 1)
-        await interaction.response.edit_message(content=self.pages[self.current_page], view=self)
+        content = await cog.generate_leaderboard_content(self.current_page)
+        await interaction.response.edit_message(content=content, view=self)
 
-    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current_page = min(len(self.pages) - 1, self.current_page + 1)
-        await interaction.response.edit_message(content=self.pages[self.current_page], view=self)
+        cog = interaction.client.get_cog('Ranking')
+        if not cog: return
+        self.current_page = min(4, self.current_page + 1)
+        content = await cog.generate_leaderboard_content(self.current_page)
+        await interaction.response.edit_message(content=content, view=self)
 
 class LeaderboardLauncherView(discord.ui.View):
     def __init__(self):
@@ -49,15 +54,14 @@ class LeaderboardLauncherView(discord.ui.View):
         
     @discord.ui.button(label="View Leaderboard", style=discord.ButtonStyle.primary, custom_id="view_leaderboard_btn", emoji="🏆")
     async def view_leaderboard(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
         cog = interaction.client.get_cog('Ranking')
         if not cog: 
-            await interaction.followup.send("Bot is starting up...", ephemeral=True)
+            await interaction.response.send_message("Bot is starting up...", ephemeral=True)
             return
             
-        pages = await cog.generate_all_leaderboard_pages()
-        view = RankingPaginationView(pages, 0)
-        await interaction.followup.send(content=pages[0], view=view, ephemeral=True)
+        content = await cog.generate_leaderboard_content(0)
+        view = RankingPaginationView(0)
+        await interaction.response.send_message(content=content, view=view, ephemeral=True)
 
     @discord.ui.button(label="View Observers", style=discord.ButtonStyle.secondary, custom_id="view_observers_btn", emoji="👀")
     async def view_observers(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -94,7 +98,8 @@ class Ranking(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         print("Ranking cog loaded")
-        # Register the launcher view so the static panel persists after restart
+        # Register both views so they persist after restart
+        self.bot.add_view(RankingPaginationView())
         self.bot.add_view(LeaderboardLauncherView())
         
     @commands.Cog.listener()
@@ -156,37 +161,30 @@ class Ranking(commands.Cog):
         except Exception as e:
             print(f"Error replacing sticky panel: {e}")
 
-    async def generate_all_leaderboard_pages(self) -> list:
-        """Fetch all ranks once and generate all 5 pages simultaneously."""
+    async def generate_leaderboard_content(self, page_index: int) -> str:
+        tier_name = TIERS[page_index]
         all_ranks = await self.db.get_all_player_ranks()
         
-        pages = []
-        for page_index in range(5):
-            tier_name = TIERS[page_index]
-            
-            # Filter and parse
-            tier_players = []
-            for r in all_ranks:
-                parsed = parse_rank(r.get('rank', ''))
-                if parsed and parsed[0] == tier_name:
-                    tier_players.append((r['user_id'], parsed[1]))
-                    
-            # Sort by number ascending (lower number is better)
-            tier_players.sort(key=lambda x: x[1])
-            
-            desc = f"# 🏆 {tier_name} Leaderboard\n\n"
-            
-            if not tier_players:
-                desc += "No players in this rank yet.\n"
-            else:
-                for i, (uid, num) in enumerate(tier_players, 1):
-                    desc += f"**{i}.** <@{uid}>\n"
-                    
-            desc += f"\n*Page {page_index + 1} of 5*"
-            pages.append(desc)
-            
-        return pages
-
+        # Filter and parse
+        tier_players = []
+        for r in all_ranks:
+            parsed = parse_rank(r.get('rank', ''))
+            if parsed and parsed[0] == tier_name:
+                tier_players.append((r['user_id'], parsed[1]))
+                
+        # Sort by number ascending (lower number is better)
+        tier_players.sort(key=lambda x: x[1])
+        
+        desc = f"# 🏆 {tier_name} Leaderboard\n\n"
+        
+        if not tier_players:
+            desc += "No players in this rank yet.\n"
+        else:
+            for i, (uid, num) in enumerate(tier_players, 1):
+                desc += f"**{i}.** <@{uid}>\n"
+                
+        desc += f"\n*Page {page_index + 1} of 5*"
+        return desc
 
     @app_commands.command(name="setupranking", description="Setup the live ranking leaderboard button in this channel")
     @app_commands.default_permissions(administrator=True)
