@@ -241,29 +241,25 @@ class Tickets(commands.Cog):
         if self.db.tickets is None:
             return
             
-        now_aware = discord.utils.utcnow()
         now_naive = datetime.utcnow()
-        cursor = self.db.tickets.find({"status": "open"})
+        cursor = self.db.tickets.find({"status": "open", "ticket_type": "Ranked 1v1", "ducking_ping_sent": {"$ne": True}})
         open_tickets = await cursor.to_list(length=None)
         
         for ticket in open_tickets:
             channel = self.bot.get_channel(ticket['channel_id'])
             if channel:
                 try:
-                    messages = [msg async for msg in channel.history(limit=1)]
-                    if messages:
-                        last_msg = messages[0]
-                        if (now_aware - last_msg.created_at).total_seconds() > 432000:
-                            await self.db.close_ticket(channel.id, self.bot.user.id)
-                            await channel.delete(reason="Stale ticket")
-                    else:
-                        try:
-                            created = datetime.fromisoformat(ticket['created_at'])
-                            if (now_naive - created).total_seconds() > 432000:
-                                await self.db.close_ticket(channel.id, self.bot.user.id)
-                                await channel.delete(reason="Stale ticket")
-                        except ValueError:
-                            pass
+                    try:
+                        created = datetime.fromisoformat(ticket['created_at'])
+                        if (now_naive - created).total_seconds() > 604800:
+                            observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
+                            observer_mention = observer_role.mention if observer_role else "@Observers"
+                            
+                            await channel.send(f"{observer_mention} This ticket has been inactive for 7 days. Please check if the requested player is avoiding the match.")
+                            
+                            await self.db.mark_ducking_ping_sent(ticket['channel_id'])
+                    except ValueError:
+                        pass
                 except Exception as e:
                     print(f"Cleanup error on {channel.id}: {e}")
             else:
