@@ -495,7 +495,8 @@ class Database:
             "closed_by": None,
             "opponent_name": opponent,
             "opponent_id": None,
-            "private_link": private_link
+            "private_link": private_link,
+            "ducking_ping_sent": False
         }
         await self.tickets.insert_one(ticket)
         print(f"Ticket {ticket_id} saved to MongoDB")
@@ -515,7 +516,8 @@ class Database:
             "closed_by": None,
             "opponent_name": opponent_name,
             "opponent_id": opponent_id,
-            "private_link": private_link
+            "private_link": private_link,
+            "ducking_ping_sent": False
         }
         await self.tickets.insert_one(ticket)
         return ticket_id
@@ -532,6 +534,12 @@ class Database:
     
     async def get_ticket_by_channel(self, channel_id: int) -> Optional[Dict]:
         return await self.tickets.find_one({"channel_id": channel_id})
+    
+    async def mark_ducking_ping_sent(self, channel_id: int):
+        await self.tickets.update_one(
+            {"channel_id": channel_id},
+            {"$set": {"ducking_ping_sent": True}}
+        )
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                 winner_old: str, winner_new: str, loser_old: str, loser_new: str, winner_id: int, winner: str, note: Optional[str] = None):
