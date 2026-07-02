@@ -141,6 +141,10 @@ class WinnerButtonView(discord.ui.View):
         btn2 = discord.ui.Button(label=f"{player2_name}", style=discord.ButtonStyle.primary, custom_id="winner_p2")
         btn2.callback = self.select_player2
         self.add_item(btn2)
+        
+        btn3 = discord.ui.Button(label="Cancel Match", style=discord.ButtonStyle.danger, custom_id="cancel_match")
+        btn3.callback = self.cancel_match
+        self.add_item(btn3)
     
     async def select_player1(self, interaction: discord.Interaction):
         modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id)
@@ -148,6 +152,10 @@ class WinnerButtonView(discord.ui.View):
     
     async def select_player2(self, interaction: discord.Interaction):
         modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id)
+        await interaction.response.send_modal(modal)
+
+    async def cancel_match(self, interaction: discord.Interaction):
+        modal = CloseRankedCancelModal()
         await interaction.response.send_modal(modal)
 
 
@@ -177,6 +185,32 @@ class CloseRankedModal(discord.ui.Modal):
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.process_ranked_close(interaction, self)
+
+
+class CloseRankedCancelModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Cancel Ranked 1v1 Ticket")
+        
+    observer = discord.ui.TextInput(
+        label="Observer Name",
+        placeholder="Your name",
+        required=True,
+        max_length=100
+    )
+    
+    reason = discord.ui.TextInput(
+        label="Reason for Cancellation",
+        placeholder="e.g., Opponent didn't show up, dodged, mutual cancel...",
+        required=True,
+        max_length=500,
+        style=discord.TextStyle.paragraph
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        cog = interaction.client.get_cog('Tickets')
+        if cog:
+            await cog.process_ranked_cancel(interaction, self)
 
 
 class CloseObservationModal(discord.ui.Modal):
@@ -547,6 +581,39 @@ class Tickets(commands.Cog):
             await log_channel.send(embed=embed)
         
         await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
+
+    async def process_ranked_cancel(self, interaction: discord.Interaction, modal: CloseRankedCancelModal):
+        ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
+        if not ticket_data:
+            await interaction.followup.send("Ticket not found!", ephemeral=True)
+            return
+            
+        await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+        
+        log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+        if log_channel:
+            user = await self.bot.fetch_user(ticket_data['user_id'])
+            
+            embed = discord.Embed(
+                title=f"Ticket Cancelled - {ticket_data['ticket_type']}",
+                description="The match was cancelled and closed without recording any rank changes.",
+                color=discord.Color.yellow(),
+                timestamp=datetime.utcnow()
+            )
+            
+            embed.add_field(name="User", value=f"{user.mention}\n`{user.name}`", inline=True)
+            
+            if ticket_data.get('opponent'):
+                embed.add_field(name="Opponent", value=f"`{ticket_data['opponent']}`", inline=True)
+                
+            embed.add_field(name="Observer", value=f"`{modal.observer.value}`", inline=False)
+            embed.add_field(name="Reason", value=f"{modal.reason.value}", inline=False)
+            
+            await log_channel.send(embed=embed)
+            
+        await interaction.followup.send("Match cancelled! Channel will be deleted in 5 seconds...", ephemeral=True)
         await asyncio.sleep(5)
         await interaction.channel.delete()
     
