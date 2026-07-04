@@ -339,8 +339,12 @@ class Tickets(commands.Cog):
             
         existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
         if existing_ticket:
-            await interaction.followup.send("You already have an open ticket! Please close it before opening a new one.", ephemeral=True)
-            return
+            existing_channel = guild.get_channel(existing_ticket["channel_id"])
+            if not existing_channel:
+                await self.db.close_ticket(existing_ticket["channel_id"], self.bot.user.id)
+            else:
+                await interaction.followup.send(f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", ephemeral=True)
+                return
         
         if opponent_member.id == user.id and not opponent_member.bot:
             await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
@@ -423,8 +427,12 @@ class Tickets(commands.Cog):
         
         existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
         if existing_ticket:
-            await interaction.followup.send("You already have an open ticket! Please close it before opening a new one.", ephemeral=True)
-            return
+            existing_channel = guild.get_channel(existing_ticket["channel_id"])
+            if not existing_channel:
+                await self.db.close_ticket(existing_ticket["channel_id"], self.bot.user.id)
+            else:
+                await interaction.followup.send(f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", ephemeral=True)
+                return
             
         cooldown = await self.db.get_obs_cooldown(user.id)
         if cooldown > 0:
@@ -474,6 +482,24 @@ class Tickets(commands.Cog):
         
         await interaction.followup.send(f"Ticket created! {channel.mention}", ephemeral=True)
     
+    @app_commands.command(name="clearticket", description="Forcefully close all open tickets for a user in the database")
+    @app_commands.default_permissions(administrator=True)
+    async def clearticket(self, interaction: discord.Interaction, target: discord.User):
+        await interaction.response.defer(ephemeral=True)
+        cursor = self.db.tickets.find({"user_id": target.id, "status": "open"})
+        open_tickets = await cursor.to_list(length=None)
+        
+        if not open_tickets:
+            await interaction.followup.send(f"{target.mention} has no open tickets in the database.", ephemeral=True)
+            return
+            
+        closed_count = 0
+        for ticket in open_tickets:
+            await self.db.close_ticket(ticket['channel_id'], interaction.user.id)
+            closed_count += 1
+            
+        await interaction.followup.send(f"Successfully closed {closed_count} open ticket(s) for {target.mention} in the database.", ephemeral=True)
+
     @app_commands.command(name="close", description="Close the current ticket")
     async def close(self, interaction: discord.Interaction):
         if not interaction.channel.name.startswith(("ranked-", "obs-")):
