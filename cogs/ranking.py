@@ -201,10 +201,11 @@ class Ranking(commands.Cog):
                         pass
                 
                 avatar_url = user.display_avatar.url if user else ""
-                top_3.append((uid, avatar_url))
+                name = user.display_name if user else f"Player {uid}"
+                top_3.append((uid, avatar_url, name))
                 
             while len(top_3) < 3:
-                top_3.append((0, ""))
+                top_3.append((0, "", ""))
                 
             podium_path = await get_podium_image(tier_name, top_3)
             file = discord.File(podium_path, filename="podium.png")
