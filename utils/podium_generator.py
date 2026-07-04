@@ -4,10 +4,19 @@ import asyncio
 import hashlib
 from typing import List, Tuple, Optional
 import aiohttp
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont, ImageChops
 
 CACHE_DIR = "assets/cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# Load custom font
+FONT_PATH = os.path.join("assets", "fonts", "Impact.ttf")
+try:
+    FONT_TITLE = ImageFont.truetype(FONT_PATH, 56)
+    FONT_PLACE = ImageFont.truetype(FONT_PATH, 72)
+except (OSError, IOError):
+    FONT_TITLE = ImageFont.load_default()
+    FONT_PLACE = ImageFont.load_default()
 
 def crop_to_circle(im: Image.Image, size: int = 150) -> Image.Image:
     """Crop an image to a circle."""
@@ -20,8 +29,8 @@ def crop_to_circle(im: Image.Image, size: int = 150) -> Image.Image:
     output.paste(im, (0, 0), mask=mask)
     return output
 
-def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]]) -> io.BytesIO:
-    """Draws the podium and pastes the avatars."""
+def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], names: List[str]) -> io.BytesIO:
+    """Draws the podium, applies texture, and pastes avatars/names."""
     width, height = 800, 600
     bg_color = (43, 45, 49) # Discord dark theme bg
     img = Image.new("RGBA", (width, height), bg_color)
@@ -40,12 +49,11 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]]) -> 
     silver = (170, 170, 170) # Silver/Grey
     bronze = (165, 113, 100) # Bronze
     
-    # Draw Silver (Left: 0 to col_width)
-    draw.rectangle([0, y_2, col_width, height], fill=silver)
-    # Draw Gold (Center: col_width to 2*col_width)
-    draw.rectangle([col_width, y_1, 2 * col_width, height], fill=gold)
-    # Draw Bronze (Right: 2*col_width to width)
-    draw.rectangle([2 * col_width, y_3, width, height], fill=bronze)
+    # Draw podium blocks as solid rectangles
+    col_w = int(col_width)
+    draw.rectangle([0, y_2, col_w, height], fill=silver)
+    draw.rectangle([col_w, y_1, 2 * col_w, height], fill=gold)
+    draw.rectangle([2 * col_w, y_3, width, height], fill=bronze)
     
     # Centers for avatars
     center_1 = int(1.5 * col_width) # Center of gold
@@ -56,11 +64,12 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]]) -> 
     avatar_y_offsets = [y_1, y_2, y_3]
     
     # Draw title
-    draw.text((width//2, 40), f"{tier_name} Top 3", fill="white", anchor="mm", font_size=56)
+    draw.text((width//2, 40), f"{tier_name} Top 3", fill="white", anchor="mm", font=FONT_TITLE)
     
     # 1st place is bigger
     avatar_sizes = [240, 160, 160]
     
+    places = ["1st", "2nd", "3rd"]
     # We expect avatars in order: 1st, 2nd, 3rd
     for i, avatar in enumerate(avatars):
         if avatar:
@@ -74,6 +83,33 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]]) -> 
             # Ensure it doesn't paste out of bounds negatively
             paste_y = max(0, paste_y)
             img.paste(avatar, (paste_x, paste_y), mask=avatar)
+            
+            # Draw a crown on top of the 1st place avatar's head
+            if i == 0:
+                crown_color = (255, 215, 0)  # Bright gold
+                cx = centers[i]
+                cy = paste_y + 30  # Sits on top of the avatar head
+                cw = 60  # Crown half-width
+                ch = 40  # Crown height
+                # Crown shape: 5-point zigzag polygon
+                crown_points = [
+                    (cx - cw, cy),
+                    (cx - cw, cy - ch * 0.5),
+                    (cx - cw * 0.5, cy - ch * 0.2),
+                    (cx, cy - ch),
+                    (cx + cw * 0.5, cy - ch * 0.2),
+                    (cx + cw, cy - ch * 0.5),
+                    (cx + cw, cy),
+                ]
+                draw.polygon(crown_points, fill=crown_color, outline=(180, 150, 0))
+            
+        # Draw placement on the podium block
+        text_y = avatar_y_offsets[i] + 40
+        place = places[i]
+        
+        # Draw shadow for readability
+        draw.text((centers[i]+2, text_y+2), place, fill="black", anchor="ma", font=FONT_PLACE)
+        draw.text((centers[i], text_y), place, fill="white", anchor="ma", font=FONT_PLACE)
             
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
@@ -92,16 +128,16 @@ async def download_avatar(session: aiohttp.ClientSession, url: str) -> Optional[
         print(f"Failed to download avatar: {e}")
     return None
 
-async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str]]) -> str:
+async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str, str]]) -> str:
     """
     Returns the path to the cached podium image.
-    top_3 is a list of tuples: (user_id, avatar_url) ordered 1st, 2nd, 3rd.
-    If a spot is empty, the tuple can be (0, "")
+    top_3 is a list of tuples: (user_id, avatar_url, name) ordered 1st, 2nd, 3rd.
+    If a spot is empty, the tuple can be (0, "", "")
     """
     # Create cache key
     hash_str = f"{tier_name}"
-    for uid, url in top_3:
-        hash_str += f"_{uid}_{url}"
+    for uid, url, name in top_3:
+        hash_str += f"_{uid}_{url}_{name}"
         
     cache_key = hashlib.md5(hash_str.encode()).hexdigest()
     file_path = os.path.join(CACHE_DIR, f"podium_{tier_name}_{cache_key}.png")
@@ -111,11 +147,14 @@ async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str]]) -> str:
         
     # Not in cache, generate it
     async with aiohttp.ClientSession() as session:
-        tasks = [download_avatar(session, url) for uid, url in top_3]
-        avatars = await asyncio.gather(*tasks)
-        
+        avatars = []
+        names = []
+        for uid, url, name in top_3:
+            avatars.append(await download_avatar(session, url) if url else None)
+            names.append(name)
+            
     loop = asyncio.get_running_loop()
-    buffer = await loop.run_in_executor(None, draw_simple_podium, tier_name, avatars)
+    buffer = await loop.run_in_executor(None, draw_simple_podium, tier_name, avatars, names)
     
     with open(file_path, "wb") as f:
         f.write(buffer.getbuffer())
