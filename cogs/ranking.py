@@ -170,6 +170,7 @@ class Ranking(commands.Cog):
     async def generate_leaderboard_content(self, page_index: int) -> tuple[list[discord.Embed], Optional[discord.File]]:
         from utils.podium_generator import get_podium_image
         import discord
+        import re
         
         tier_name = TIERS[page_index]
         all_ranks = await self.db.get_all_player_ranks()
@@ -202,7 +203,8 @@ class Ranking(commands.Cog):
                         pass
                 
                 avatar_url = user.display_avatar.url if user else ""
-                display_name = user.display_name if user else f"Player {uid}"
+                raw_display = user.display_name if user else f"Player {uid}"
+                display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                 username = user.name if user else f"Player {uid}"
                 top_3.append((uid, avatar_url, display_name, username))
                 
@@ -233,7 +235,8 @@ class Ranking(commands.Cog):
                         member = guild.get_member(uid)
                         if member:
                             break
-                    display_name = member.display_name if member else "Unknown User"
+                    raw_display = member.display_name if member else "Unknown User"
+                    display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                     username = member.name if member else "Unknown User"
                     if display_name.lower() == username.lower():
                         name_text = f"**{display_name}**"
