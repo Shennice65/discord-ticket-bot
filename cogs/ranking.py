@@ -179,7 +179,8 @@ class Ranking(commands.Cog):
         for r in all_ranks:
             parsed = parse_rank(r.get('rank', ''))
             if parsed and parsed[0] == tier_name:
-                tier_players.append((r['user_id'], parsed[1]))
+                streak = r.get('win_streak', 0)
+                tier_players.append((r['user_id'], parsed[1], streak))
                 
         # Sort by number ascending (lower number is better)
         tier_players.sort(key=lambda x: x[1])
@@ -213,13 +214,14 @@ class Ranking(commands.Cog):
             medals = ["🥇", "🥈", "🥉"]
             # Build a name cache from the top 3 we already fetched
             name_cache = {t[0]: t[2] for t in top_3 if t[0] != 0}
-            for i, (uid, num) in enumerate(tier_players[:3]):
+            for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display = name_cache.get(uid, "Unknown User")
-                desc += f"{medals[i]} **{display}**\n"
+                streak_text = f" 🔥{streak}" if streak >= 2 else ""
+                desc += f"{medals[i]} **{display}**{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
-                for i, (uid, num) in enumerate(tier_players[3:], 4):
+                for i, (uid, num, streak) in enumerate(tier_players[3:], 4):
                     # Use guild cache only — no API calls to avoid rate limits
                     member = None
                     for guild in self.bot.guilds:
@@ -227,7 +229,8 @@ class Ranking(commands.Cog):
                         if member:
                             break
                     display = member.display_name if member else "Unknown User"
-                    desc += f"`#{i}` **{display}**\n"
+                    streak_text = f" 🔥{streak}" if streak >= 2 else ""
+                    desc += f"`#{i}` **{display}**{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of 5*"
         
