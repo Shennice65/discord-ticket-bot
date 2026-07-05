@@ -128,16 +128,16 @@ async def download_avatar(session: aiohttp.ClientSession, url: str) -> Optional[
         print(f"Failed to download avatar: {e}")
     return None
 
-async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str, str]]) -> str:
+async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str, str, str]]) -> str:
     """
     Returns the path to the cached podium image.
-    top_3 is a list of tuples: (user_id, avatar_url, name) ordered 1st, 2nd, 3rd.
-    If a spot is empty, the tuple can be (0, "", "")
+    top_3 is a list of tuples: (user_id, avatar_url, display_name, username) ordered 1st, 2nd, 3rd.
+    If a spot is empty, the tuple can be (0, "", "", "")
     """
     # Create cache key
     hash_str = f"{tier_name}"
-    for uid, url, name in top_3:
-        hash_str += f"_{uid}_{url}_{name}"
+    for uid, url, display_name, *rest in top_3:
+        hash_str += f"_{uid}_{url}_{display_name}"
         
     cache_key = hashlib.md5(hash_str.encode()).hexdigest()
     file_path = os.path.join(CACHE_DIR, f"podium_{tier_name}_{cache_key}.png")
@@ -149,9 +149,9 @@ async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str, str]]) ->
     async with aiohttp.ClientSession() as session:
         avatars = []
         names = []
-        for uid, url, name in top_3:
+        for uid, url, display_name, *rest in top_3:
             avatars.append(await download_avatar(session, url) if url else None)
-            names.append(name)
+            names.append(display_name)
             
     loop = asyncio.get_running_loop()
     buffer = await loop.run_in_executor(None, draw_simple_podium, tier_name, avatars, names)
