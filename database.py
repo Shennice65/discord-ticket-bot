@@ -429,6 +429,16 @@ class Database:
             winner_key = get_sort_key(winner_rank)
             loser_key = get_sort_key(loser_rank)
             
+            # Update win streaks before any early returns
+            await self.player_ranks.update_one(
+                {"user_id": winner_id},
+                {"$inc": {"win_streak": 1}}
+            )
+            await self.player_ranks.update_one(
+                {"user_id": loser_id},
+                {"$set": {"win_streak": 0}}
+            )
+            
             if winner_key <= loser_key:
                 return winner_rank, winner_rank, loser_rank, loser_rank
                 
@@ -476,16 +486,6 @@ class Database:
             # Log undo action for both winner and loser
             await self.log_undo_action(winner_id, "match_winner", winner_rank, new_winner_rank)
             await self.log_undo_action(loser_id, "match_loser", loser_rank, new_loser_rank)
-            
-            # Update win streaks
-            await self.player_ranks.update_one(
-                {"user_id": winner_id},
-                {"$inc": {"win_streak": 1}}
-            )
-            await self.player_ranks.update_one(
-                {"user_id": loser_id},
-                {"$set": {"win_streak": 0}}
-            )
             
             return winner_rank, new_winner_rank, loser_rank, new_loser_rank
             
