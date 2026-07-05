@@ -202,22 +202,27 @@ class Ranking(commands.Cog):
                         pass
                 
                 avatar_url = user.display_avatar.url if user else ""
-                name = user.name if user else f"Player {uid}"
-                top_3.append((uid, avatar_url, name))
+                display_name = user.display_name if user else f"Player {uid}"
+                username = user.name if user else f"Player {uid}"
+                top_3.append((uid, avatar_url, display_name, username))
                 
             while len(top_3) < 3:
-                top_3.append((0, "", ""))
+                top_3.append((0, "", "", ""))
                 
             podium_path = await get_podium_image(tier_name, top_3)
             file = discord.File(podium_path, filename="podium.png")
             
             medals = ["🥇", "🥈", "🥉"]
             # Build a name cache from the top 3 we already fetched
-            name_cache = {t[0]: t[2] for t in top_3 if t[0] != 0}
+            name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
-                display = name_cache.get(uid, "Unknown User")
+                display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
+                if display_name.lower() == username.lower():
+                    name_text = f"**{display_name}**"
+                else:
+                    name_text = f"**{display_name}** (@{username})"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                desc += f"{medals[i]} **{display}**{streak_text}\n"
+                desc += f"{medals[i]} {name_text}{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
@@ -228,9 +233,14 @@ class Ranking(commands.Cog):
                         member = guild.get_member(uid)
                         if member:
                             break
-                    display = member.name if member else "Unknown User"
+                    display_name = member.display_name if member else "Unknown User"
+                    username = member.name if member else "Unknown User"
+                    if display_name.lower() == username.lower():
+                        name_text = f"**{display_name}**"
+                    else:
+                        name_text = f"**{display_name}** (@{username})"
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                    desc += f"`#{i}` **{display}**{streak_text}\n"
+                    desc += f"`#{i}` {name_text}{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of 5*"
         
