@@ -216,7 +216,7 @@ class Ranking(commands.Cog):
             name_cache = {t[0]: t[2] for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display = name_cache.get(uid, "Unknown User")
-                streak_text = f" 🔥{streak}" if streak >= 2 else ""
+                streak_text = f" `🔥 {streak}`" if streak >= 2 else ""
                 desc += f"{medals[i]} **{display}**{streak_text}\n"
                 
             if len(tier_players) > 3:
@@ -229,7 +229,7 @@ class Ranking(commands.Cog):
                         if member:
                             break
                     display = member.display_name if member else "Unknown User"
-                    streak_text = f" 🔥{streak}" if streak >= 2 else ""
+                    streak_text = f" `🔥 {streak}`" if streak >= 2 else ""
                     desc += f"`#{i}` **{display}**{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of 5*"
