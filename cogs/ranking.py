@@ -211,13 +211,23 @@ class Ranking(commands.Cog):
             file = discord.File(podium_path, filename="podium.png")
             
             medals = ["🥇", "🥈", "🥉"]
+            # Build a name cache from the top 3 we already fetched
+            name_cache = {t[0]: t[2] for t in top_3 if t[0] != 0}
             for i, (uid, num) in enumerate(tier_players[:3]):
-                desc += f"{medals[i]} <@{uid}>\n"
+                display = name_cache.get(uid, "Unknown User")
+                desc += f"{medals[i]} **{display}**\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
                 for i, (uid, num) in enumerate(tier_players[3:], 4):
-                    desc += f"`#{i}` <@{uid}>\n"
+                    # Use guild cache only — no API calls to avoid rate limits
+                    member = None
+                    for guild in self.bot.guilds:
+                        member = guild.get_member(uid)
+                        if member:
+                            break
+                    display = member.display_name if member else "Unknown User"
+                    desc += f"`#{i}` **{display}**\n"
                 
         desc += f"\n*Page {page_index + 1} of 5*"
         
