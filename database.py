@@ -74,16 +74,19 @@ class Database:
             upsert=True
         )
             
-    async def log_undo_action(self, target_id: int, action_type: str, old_rank: str, new_rank: str, observer_id: Optional[int] = None):
+    async def log_undo_action(self, target_id: int, action_type: str, old_rank: str, new_rank: str, observer_id: Optional[int] = None, old_streak: Optional[int] = None):
         """Log an action so it can be undone later."""
-        await self.undo_logs.insert_one({
+        doc = {
             "target_id": target_id,
             "action_type": action_type,
             "old_rank": old_rank,
             "new_rank": new_rank,
             "observer_id": observer_id,
             "timestamp": datetime.utcnow().isoformat()
-        })
+        }
+        if old_streak is not None:
+            doc["old_streak"] = old_streak
+        await self.undo_logs.insert_one(doc)
         
     async def undo_last_action(self, target_id: int) -> tuple:
         """Undo the most recent rank change for a user. Returns (success, message)."""
@@ -104,6 +107,14 @@ class Database:
         else:
             await self.force_set_player_rank(target_id, old_rank, bypass_unrank=True, is_undo=True)
             action_desc = f"restored to **{old_rank}**"
+        
+        # Restore win streak if it was saved
+        if "old_streak" in log:
+            await self.player_ranks.update_one(
+                {"user_id": target_id},
+                {"$set": {"win_streak": log["old_streak"]}}
+            )
+            action_desc += f" (streak restored to {log['old_streak']})"
             
         # Delete the log so it can't be undone again
         await self.undo_logs.delete_one({"_id": log["_id"]})
@@ -438,6 +449,12 @@ class Database:
             loser_key = get_sort_key(loser_rank)
             
             # Update win streaks before any early returns
+            # Capture old streaks first for undo
+            winner_doc = await self.player_ranks.find_one({"user_id": winner_id})
+            loser_doc = await self.player_ranks.find_one({"user_id": loser_id})
+            old_winner_streak = winner_doc.get("win_streak", 0) if winner_doc else 0
+            old_loser_streak = loser_doc.get("win_streak", 0) if loser_doc else 0
+            
             await self.player_ranks.update_one(
                 {"user_id": winner_id},
                 {"$inc": {"win_streak": 1}}
@@ -448,6 +465,9 @@ class Database:
             )
             
             if winner_key <= loser_key:
+                # Log undo even for early return so streaks can be restored
+                await self.log_undo_action(winner_id, "match_winner", winner_rank, winner_rank, old_streak=old_winner_streak)
+                await self.log_undo_action(loser_id, "match_loser", loser_rank, loser_rank, old_streak=old_loser_streak)
                 return winner_rank, winner_rank, loser_rank, loser_rank
                 
             all_players = await self.player_ranks.find({}).to_list(length=None)
@@ -491,9 +511,9 @@ class Database:
                     
             await self._bulk_reassign_ranks(tier_lists, TIERS)
             
-            # Log undo action for both winner and loser
-            await self.log_undo_action(winner_id, "match_winner", winner_rank, new_winner_rank)
-            await self.log_undo_action(loser_id, "match_loser", loser_rank, new_loser_rank)
+            # Log undo action for both winner and loser (with streak data)
+            await self.log_undo_action(winner_id, "match_winner", winner_rank, new_winner_rank, old_streak=old_winner_streak)
+            await self.log_undo_action(loser_id, "match_loser", loser_rank, new_loser_rank, old_streak=old_loser_streak)
             
             return winner_rank, new_winner_rank, loser_rank, new_loser_rank
             
