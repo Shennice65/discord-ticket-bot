@@ -200,6 +200,14 @@ class Database:
             {"$unset": {"last_ranked_request": "", "last_obs_request": ""}}
         )
         return result.modified_count > 0
+    
+    async def reset_ranked_cooldown_only(self, user_id: int) -> bool:
+        """Reset only the ranked cooldown (not observation). Used when a match is cancelled."""
+        result = await self.player_ranks.update_one(
+            {"user_id": user_id},
+            {"$unset": {"last_ranked_request": ""}}
+        )
+        return result.modified_count > 0
         
     async def get_obs_cooldown(self, user_id: int) -> float:
         """Returns days left on cooldown, or 0 if they can request."""
