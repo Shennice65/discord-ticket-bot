@@ -337,32 +337,13 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
             return
             
-        existing_ticket = await self.db.tickets.find_one({
-            "$or": [
-                {"user_id": user.id, "status": "open"},
-                {"opponent_id": user.id, "status": "open"}
-            ]
-        })
+        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
         if existing_ticket:
             existing_channel = guild.get_channel(existing_ticket["channel_id"])
             if not existing_channel:
                 await self.db.close_ticket(existing_ticket["channel_id"], self.bot.user.id)
             else:
                 await interaction.followup.send(f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", ephemeral=True)
-                return
-                
-        opponent_ticket = await self.db.tickets.find_one({
-            "$or": [
-                {"user_id": opponent.id, "status": "open"},
-                {"opponent_id": opponent.id, "status": "open"}
-            ]
-        })
-        if opponent_ticket:
-            opponent_channel = guild.get_channel(opponent_ticket["channel_id"])
-            if not opponent_channel:
-                await self.db.close_ticket(opponent_ticket["channel_id"], self.bot.user.id)
-            else:
-                await interaction.followup.send(f"That player is already in an active ticket ({opponent_channel.mention})! Please wait for them to finish.", ephemeral=True)
                 return
         
         if opponent_member.id == user.id and not opponent_member.bot:
@@ -444,12 +425,7 @@ class Tickets(commands.Cog):
         guild = interaction.guild
         user = interaction.user
         
-        existing_ticket = await self.db.tickets.find_one({
-            "$or": [
-                {"user_id": user.id, "status": "open"},
-                {"opponent_id": user.id, "status": "open"}
-            ]
-        })
+        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
         if existing_ticket:
             existing_channel = guild.get_channel(existing_ticket["channel_id"])
             if not existing_channel:
