@@ -559,10 +559,15 @@ class Tickets(commands.Cog):
             await interaction.channel.delete()
     
     async def process_ranked_close(self, interaction: discord.Interaction, modal: CloseRankedModal):
-        ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
-        if not ticket_data:
-            await interaction.followup.send("Ticket not found!", ephemeral=True)
+        # Guard against double-close: atomically check and mark as processing
+        result = await self.db.tickets.find_one_and_update(
+            {"channel_id": interaction.channel.id, "status": "open"},
+            {"$set": {"status": "processing"}}
+        )
+        if not result:
+            await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
+        ticket_data = result
             
         idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
         idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
@@ -611,12 +616,20 @@ class Tickets(commands.Cog):
         await interaction.channel.delete()
 
     async def process_ranked_cancel(self, interaction: discord.Interaction, modal: CloseRankedCancelModal):
-        ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
-        if not ticket_data:
-            await interaction.followup.send("Ticket not found!", ephemeral=True)
+        # Guard against double-close: atomically check and mark as processing
+        result = await self.db.tickets.find_one_and_update(
+            {"channel_id": interaction.channel.id, "status": "open"},
+            {"$set": {"status": "processing"}}
+        )
+        if not result:
+            await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
+        ticket_data = result
             
         await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+        
+        # Reset the requester's cooldown since the match was cancelled
+        await self.db.reset_ranked_cooldown_only(ticket_data['user_id'])
         
         log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
         if log_channel:
@@ -644,10 +657,15 @@ class Tickets(commands.Cog):
         await interaction.channel.delete()
     
     async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal, end_rank: str):
-        ticket_data = await self.db.get_ticket_by_channel(interaction.channel.id)
-        if not ticket_data:
-            await interaction.followup.send("Ticket not found!", ephemeral=True)
+        # Guard against double-close: atomically check and mark as processing
+        result = await self.db.tickets.find_one_and_update(
+            {"channel_id": interaction.channel.id, "status": "open"},
+            {"$set": {"status": "processing"}}
+        )
+        if not result:
+            await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
+        ticket_data = result
             
         user_id = ticket_data['user_id']
         old_rank = await self.db.get_player_rank(user_id)
