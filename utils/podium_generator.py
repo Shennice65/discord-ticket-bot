@@ -86,22 +86,20 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], nam
             
             # Draw a crown on top of the 1st place avatar's head
             if i == 0:
-                crown_color = (255, 215, 0)  # Bright gold
-                cx = centers[i]
-                cy = paste_y + 30  # Sits on top of the avatar head
-                cw = 60  # Crown half-width
-                ch = 40  # Crown height
-                # Crown shape: 5-point zigzag polygon
-                crown_points = [
-                    (cx - cw, cy),
-                    (cx - cw, cy - ch * 0.5),
-                    (cx - cw * 0.5, cy - ch * 0.2),
-                    (cx, cy - ch),
-                    (cx + cw * 0.5, cy - ch * 0.2),
-                    (cx + cw, cy - ch * 0.5),
-                    (cx + cw, cy),
-                ]
-                draw.polygon(crown_points, fill=crown_color, outline=(180, 150, 0))
+                try:
+                    crown_img = Image.open(os.path.join("assets", "crown.png")).convert("RGBA")
+                    # Resize crown to fit nicely
+                    new_w = 140
+                    crown_w, crown_h = crown_img.size
+                    new_h = int((new_w / crown_w) * crown_h)
+                    crown_img = crown_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    
+                    cx = centers[i]
+                    # Paste so bottom of crown sits slightly lower to avoid covering the title text
+                    crown_y = paste_y + 60 - new_h
+                    img.paste(crown_img, (cx - (new_w // 2), crown_y), mask=crown_img)
+                except Exception as e:
+                    print(f"Failed to draw crown image: {e}")
             
         # Draw placement on the podium block
         text_y = avatar_y_offsets[i] + 40
