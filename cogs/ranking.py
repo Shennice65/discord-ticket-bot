@@ -37,16 +37,18 @@ class RankingPaginationView(discord.ui.View):
         cog = interaction.client.get_cog('Ranking')
         if not cog: return
         self.current_page = max(0, self.current_page - 1)
-        content = await cog.generate_leaderboard_content(self.current_page)
-        await interaction.response.edit_message(content=content, view=self)
+        embeds, file = await cog.generate_leaderboard_content(self.current_page)
+        attachments = [file] if file else []
+        await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
 
     @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog('Ranking')
         if not cog: return
         self.current_page = min(4, self.current_page + 1)
-        content = await cog.generate_leaderboard_content(self.current_page)
-        await interaction.response.edit_message(content=content, view=self)
+        embeds, file = await cog.generate_leaderboard_content(self.current_page)
+        attachments = [file] if file else []
+        await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
 
 class LeaderboardLauncherView(discord.ui.View):
     def __init__(self):
@@ -59,9 +61,13 @@ class LeaderboardLauncherView(discord.ui.View):
             await interaction.response.send_message("Bot is starting up...", ephemeral=True)
             return
             
-        content = await cog.generate_leaderboard_content(0)
+        await interaction.response.defer(ephemeral=True)
+        embeds, file = await cog.generate_leaderboard_content(0)
         view = RankingPaginationView(0)
-        await interaction.response.send_message(content=content, view=view, ephemeral=True)
+        kwargs = {"embeds": embeds, "view": view, "ephemeral": True}
+        if file:
+            kwargs["file"] = file
+        await interaction.followup.send(**kwargs)
 
     @discord.ui.button(label="View Observers", style=discord.ButtonStyle.secondary, custom_id="view_observers_btn", emoji="👀")
     async def view_observers(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -161,7 +167,11 @@ class Ranking(commands.Cog):
         except Exception as e:
             print(f"Error replacing sticky panel: {e}")
 
-    async def generate_leaderboard_content(self, page_index: int) -> str:
+    async def generate_leaderboard_content(self, page_index: int) -> tuple[list[discord.Embed], Optional[discord.File]]:
+        from utils.podium_generator import get_podium_image
+        import discord
+        import re
+        
         tier_name = TIERS[page_index]
         all_ranks = await self.db.get_all_player_ranks()
         
@@ -170,21 +180,83 @@ class Ranking(commands.Cog):
         for r in all_ranks:
             parsed = parse_rank(r.get('rank', ''))
             if parsed and parsed[0] == tier_name:
-                tier_players.append((r['user_id'], parsed[1]))
+                streak = r.get('win_streak', 0)
+                tier_players.append((r['user_id'], parsed[1], streak))
                 
         # Sort by number ascending (lower number is better)
         tier_players.sort(key=lambda x: x[1])
         
         desc = f"# 🏆 {tier_name} Leaderboard\n\n"
+        file = None
         
         if not tier_players:
             desc += "No players in this rank yet.\n"
         else:
-            for i, (uid, num) in enumerate(tier_players, 1):
-                desc += f"**{i}.** <@{uid}>\n"
+            top_3 = []
+            for i in range(min(3, len(tier_players))):
+                uid = tier_players[i][0]
+                user = self.bot.get_user(uid)
+                if not user:
+                    try:
+                        user = await self.bot.fetch_user(uid)
+                    except:
+                        pass
+                
+                avatar_url = user.display_avatar.url if user else ""
+                raw_display = user.display_name if user else f"Player {uid}"
+                display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
+                username = user.name if user else f"Player {uid}"
+                top_3.append((uid, avatar_url, display_name, username))
+                
+            while len(top_3) < 3:
+                top_3.append((0, "", "", ""))
+                
+            podium_path = await get_podium_image(tier_name, top_3)
+            file = discord.File(podium_path, filename="podium.png")
+            
+            medals = ["🥇", "🥈", "🥉"]
+            # Build a name cache from the top 3 we already fetched
+            name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
+            for i, (uid, num, streak) in enumerate(tier_players[:3]):
+                display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
+                if display_name.lower() == username.lower():
+                    name_text = f"**{display_name}**"
+                else:
+                    name_text = f"**{display_name}** (@{username})"
+                streak_text = f" `🔥{streak}`" if streak >= 2 else ""
+                desc += f"{medals[i]} {name_text}{streak_text}\n"
+                
+            if len(tier_players) > 3:
+                desc += "\n**Runners Up**\n"
+                for i, (uid, num, streak) in enumerate(tier_players[3:], 4):
+                    # Use guild cache only — no API calls to avoid rate limits
+                    member = None
+                    for guild in self.bot.guilds:
+                        member = guild.get_member(uid)
+                        if member:
+                            break
+                    raw_display = member.display_name if member else "Unknown User"
+                    display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
+                    username = member.name if member else "Unknown User"
+                    if display_name.lower() == username.lower():
+                        name_text = f"**{display_name}**"
+                    else:
+                        name_text = f"**{display_name}** (@{username})"
+                    streak_text = f" `🔥{streak}`" if streak >= 2 else ""
+                    desc += f"`#{i}` {name_text}{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of 5*"
-        return desc
+        
+        embeds = []
+        if file:
+            image_embed = discord.Embed(color=discord.Color(0x2b2d31))
+            image_embed.set_image(url="attachment://podium.png")
+            embeds.append(image_embed)
+            
+        text_embed = discord.Embed(description=desc, color=discord.Color(0x2b2d31))
+        embeds.append(text_embed)
+            
+        return embeds, file
 
     @app_commands.command(name="setupranking", description="Setup the live ranking leaderboard button in this channel")
     @app_commands.default_permissions(administrator=True)
