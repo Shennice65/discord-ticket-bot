@@ -511,6 +511,11 @@ class Tickets(commands.Cog):
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
             return
         
+        # If a previous close attempt failed and left the ticket stuck in "processing", reset it
+        if ticket_data.get("status") == "processing":
+            await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+            ticket_data["status"] = "open"
+        
         observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
         is_observer = observer_role in interaction.user.roles if observer_role else False
         is_owner = interaction.user.id == ticket_data['user_id']
@@ -568,52 +573,60 @@ class Tickets(commands.Cog):
             await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
         ticket_data = result
+        
+        try:
+            idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
+            idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
             
-        idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
-        idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
-        
-        if idx_user != -1 and idx_opp != -1:
-            if abs(idx_user - idx_opp) > 5:
-                await interaction.followup.send("❌ **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
-                return
-                
-        winner_id = modal.winner_id
-        loser_id = ticket_data['user_id'] if winner_id == ticket_data['opponent_id'] else ticket_data['opponent_id']
-        
-        old_win, new_win, old_lose, new_lose = await self.db.process_match_result(winner_id, loser_id)
-        
-        await self.db.add_ranked_result(
-            ticket_data['id'],
-            interaction.user.id,
-            modal.observer.value,
-            old_win,
-            new_win,
-            old_lose,
-            new_lose,
-            modal.winner_id,
-            modal.winner_name,
-            modal.note.value if modal.note.value else None
-        )
-        await self.db.close_ticket(interaction.channel.id, interaction.user.id)
-        
-        log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
-        if log_channel:
-            user = await self.bot.fetch_user(ticket_data['user_id'])
-            result_data = {
-                'observer_name': modal.observer.value,
-                'winner_old': old_win,
-                'winner_new': new_win,
-                'loser_old': old_lose,
-                'loser_new': new_lose,
-                'winner': modal.winner_name,
-                'note': modal.note.value if modal.note.value else None
-            }
-            embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
-            await log_channel.send(embed=embed)
-        
-        await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+            if idx_user != -1 and idx_opp != -1:
+                if abs(idx_user - idx_opp) > 5:
+                    # Revert status so someone else can try
+                    await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                    await interaction.followup.send("❌ **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
+                    return
+                    
+            winner_id = modal.winner_id
+            loser_id = ticket_data['user_id'] if winner_id == ticket_data['opponent_id'] else ticket_data['opponent_id']
+            
+            old_win, new_win, old_lose, new_lose = await self.db.process_match_result(winner_id, loser_id)
+            
+            await self.db.add_ranked_result(
+                ticket_data['id'],
+                interaction.user.id,
+                modal.observer.value,
+                old_win,
+                new_win,
+                old_lose,
+                new_lose,
+                modal.winner_id,
+                modal.winner_name,
+                modal.note.value if modal.note.value else None
+            )
+            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                user = await self.bot.fetch_user(ticket_data['user_id'])
+                result_data = {
+                    'observer_name': modal.observer.value,
+                    'winner_old': old_win,
+                    'winner_new': new_win,
+                    'loser_old': old_lose,
+                    'loser_new': new_lose,
+                    'winner': modal.winner_name,
+                    'note': modal.note.value if modal.note.value else None
+                }
+                embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
+                await log_channel.send(embed=embed)
+            
+            await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
+        except Exception as e:
+            # Revert status so the ticket can be closed again
+            await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+            await interaction.followup.send(f"❌ An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            print(f"Error in process_ranked_close: {e}")
 
     async def process_ranked_cancel(self, interaction: discord.Interaction, modal: CloseRankedCancelModal):
         # Guard against double-close: atomically check and mark as processing
@@ -625,36 +638,41 @@ class Tickets(commands.Cog):
             await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
         ticket_data = result
-            
-        await self.db.close_ticket(interaction.channel.id, interaction.user.id)
         
-        # Reset the requester's cooldown since the match was cancelled
-        await self.db.reset_ranked_cooldown_only(ticket_data['user_id'])
-        
-        log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
-        if log_channel:
-            user = await self.bot.fetch_user(ticket_data['user_id'])
+        try:
+            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
             
-            embed = discord.Embed(
-                title=f"Ticket Cancelled - {ticket_data['ticket_type']}",
-                description="The match was cancelled and closed without recording any rank changes.",
-                color=discord.Color.yellow(),
-                timestamp=datetime.utcnow()
-            )
+            # Reset the requester's cooldown since the match was cancelled
+            await self.db.reset_ranked_cooldown_only(ticket_data['user_id'])
             
-            embed.add_field(name="User", value=f"{user.mention}\n`{user.name}`", inline=True)
-            
-            if ticket_data.get('opponent'):
-                embed.add_field(name="Opponent", value=f"`{ticket_data['opponent']}`", inline=True)
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                user = await self.bot.fetch_user(ticket_data['user_id'])
                 
-            embed.add_field(name="Observer", value=f"`{modal.observer.value}`", inline=False)
-            embed.add_field(name="Reason", value=f"{modal.reason.value}", inline=False)
-            
-            await log_channel.send(embed=embed)
-            
-        await interaction.followup.send("Match cancelled! Channel will be deleted in 5 seconds...", ephemeral=True)
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+                embed = discord.Embed(
+                    title=f"Ticket Cancelled - {ticket_data['ticket_type']}",
+                    description="The match was cancelled and closed without recording any rank changes.",
+                    color=discord.Color.yellow(),
+                    timestamp=datetime.utcnow()
+                )
+                
+                embed.add_field(name="User", value=f"{user.mention}\n`{user.name}`", inline=True)
+                
+                if ticket_data.get('opponent'):
+                    embed.add_field(name="Opponent", value=f"`{ticket_data['opponent']}`", inline=True)
+                    
+                embed.add_field(name="Observer", value=f"`{modal.observer.value}`", inline=False)
+                embed.add_field(name="Reason", value=f"{modal.reason.value}", inline=False)
+                
+                await log_channel.send(embed=embed)
+                
+            await interaction.followup.send("Match cancelled! Channel will be deleted in 5 seconds...", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
+        except Exception as e:
+            await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+            await interaction.followup.send(f"❌ An error occurred while cancelling: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            print(f"Error in process_ranked_cancel: {e}")
     
     async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal, end_rank: str):
         # Guard against double-close: atomically check and mark as processing
@@ -666,53 +684,58 @@ class Tickets(commands.Cog):
             await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
         ticket_data = result
-            
-        user_id = ticket_data['user_id']
-        old_rank = await self.db.get_player_rank(user_id)
         
-        from ladder_utils import parse_rank
-        parsed = parse_rank(end_rank)
-        if parsed:
-            tier, target_num = parsed
-            current_count = await self.db.get_tier_count(tier)
+        try:
+            user_id = ticket_data['user_id']
+            old_rank = await self.db.get_player_rank(user_id)
             
-            # If the user is ALREADY in the target tier, the max they can be is current_count (not +1)
-            # But just a simple target_num > current_count + 1 is safe enough for bounds checking
-            if target_num > current_count + 1:
-                await interaction.followup.send(f"❌ **Invalid Rank Gap!** You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
+            from ladder_utils import parse_rank
+            parsed = parse_rank(end_rank)
+            if parsed:
+                tier, target_num = parsed
+                current_count = await self.db.get_tier_count(tier)
+                
+                if target_num > current_count + 1:
+                    await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                    await interaction.followup.send(f"❌ **Invalid Rank Gap!** You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
+                    return
+            
+            success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
+            
+            if not success:
+                await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
                 return
-        
-        success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
-        
-        if not success:
-            await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
-            return
-        
-        await self.db.add_observation_result(
-            ticket_data['id'],
-            interaction.user.id,
-            modal.observer.value,
-            old_rank if old_rank else "Unranked",
-            actual_new_rank,
-            modal.note.value if modal.note.value else None
-        )
-        await self.db.close_ticket(interaction.channel.id, interaction.user.id)
-        
-        log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
-        if log_channel:
-            user = await self.bot.fetch_user(ticket_data['user_id'])
-            result_data = {
-                'observer_name': modal.observer.value,
-                'starting_rank': old_rank if old_rank else "Unranked",
-                'ending_rank': actual_new_rank,
-                'note': modal.note.value if modal.note.value else None
-            }
-            embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
-            await log_channel.send(embed=embed)
-        
-        await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+            
+            await self.db.add_observation_result(
+                ticket_data['id'],
+                interaction.user.id,
+                modal.observer.value,
+                old_rank if old_rank else "Unranked",
+                actual_new_rank,
+                modal.note.value if modal.note.value else None
+            )
+            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+            
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                user = await self.bot.fetch_user(ticket_data['user_id'])
+                result_data = {
+                    'observer_name': modal.observer.value,
+                    'starting_rank': old_rank if old_rank else "Unranked",
+                    'ending_rank': actual_new_rank,
+                    'note': modal.note.value if modal.note.value else None
+                }
+                embed = TicketEmbeds.ticket_log(ticket_data, result_data, user)
+                await log_channel.send(embed=embed)
+            
+            await interaction.followup.send("Ticket closed! Channel will be deleted in 5 seconds...", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
+        except Exception as e:
+            await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+            await interaction.followup.send(f"❌ An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            print(f"Error in process_observation_close: {e}")
 
 
 async def setup(bot):
