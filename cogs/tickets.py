@@ -515,6 +515,16 @@ class Tickets(commands.Cog):
         if ticket_data.get("status") == "processing":
             await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
             ticket_data["status"] = "open"
+            
+        # If the ticket is already completely closed in the database but the channel survived a restart, just delete the channel
+        if ticket_data.get("status") == "closed":
+            await interaction.response.send_message("This ticket was already closed in the database. Deleting channel now...", ephemeral=True)
+            await asyncio.sleep(3)
+            try:
+                await interaction.channel.delete()
+            except discord.errors.NotFound:
+                pass
+            return
         
         observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
         is_observer = observer_role in interaction.user.roles if observer_role else False

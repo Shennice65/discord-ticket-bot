@@ -12,4 +12,4 @@ class Config:
     RANKING_PANEL_CHANNEL_ID = int(os.environ.get('RANKING_PANEL_CHANNEL_ID', 0))
     TICKET_CATEGORY_ID = int(os.environ.get('TICKET_CATEGORY_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
-    VERSION = "1.4.3"
+    VERSION = "1.6.0"
