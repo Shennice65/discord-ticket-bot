@@ -1,6 +1,6 @@
 import re
 
-TIERS = ["Phantoms", "Champions", "Legends", "Masters", "Novices"]
+TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
 
 def parse_rank(rank_str: str):
     match = re.match(r'^([a-zA-Z]+)\s*(\d+)$', rank_str)

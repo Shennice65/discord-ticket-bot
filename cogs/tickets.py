@@ -16,6 +16,7 @@ def validate_and_format_rank(rank_str: str) -> Optional[str]:
         "novice": "Novices", "novices": "Novices",
         "master": "Masters", "masters": "Masters",
         "legend": "Legends", "legends": "Legends",
+        "elite": "Elites", "elites": "Elites",
         "champion": "Champions", "champions": "Champions",
         "phantom": "Phantoms", "phantoms": "Phantoms"
     }
@@ -246,7 +247,7 @@ class CloseObservationModal(discord.ui.Modal):
             await interaction.response.send_message(
                 "❌ **Invalid Rank Format!**\n"
                 "Ranks must be exactly one of the official tiers followed by a number.\n"
-                "Valid tiers: *Novices, Masters, Legends, Champions, Phantoms*\n"
+                "Valid tiers: *Novices, Masters, Legends, Elites, Champions, Phantoms*\n"
                 "Example: `Legends 12`",
                 ephemeral=True
             )

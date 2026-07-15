@@ -8,7 +8,7 @@ from datetime import datetime
 from database import Database
 from config import Config
 
-TIERS = ["Phantoms", "Champions", "Legends", "Masters", "Novices"]
+TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
 
 def is_admin_or_observer(interaction: discord.Interaction) -> bool:
     if interaction.user.guild_permissions.administrator:
