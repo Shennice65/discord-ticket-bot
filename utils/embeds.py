@@ -152,7 +152,10 @@ class TicketEmbeds:
                     actual_opponent = f"<@{entry['user_id']}>"
                 else:
                     # User was the requester, so their opponent is the ticket opponent
-                    actual_opponent = f"`{entry.get('opponent_name')}`" if entry.get('opponent_name') else "Unknown"
+                    if entry.get('opponent_id'):
+                        actual_opponent = f"<@{entry['opponent_id']}>"
+                    else:
+                        actual_opponent = f"`{entry.get('opponent_name')}`" if entry.get('opponent_name') else "Unknown"
                     
                 desc += f"> **Opponent:** {actual_opponent}\n"
                 desc += f"> **Observer:** `{entry['observer_name']}`\n"
