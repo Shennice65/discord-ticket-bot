@@ -269,7 +269,7 @@ class Tickets(commands.Cog):
     def cog_unload(self):
         self.cleanup_stale_tickets.cancel()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=1)
     async def cleanup_stale_tickets(self):
         await self.bot.wait_until_ready()
         if self.db.tickets is None:
@@ -281,23 +281,26 @@ class Tickets(commands.Cog):
         
         for ticket in open_tickets:
             channel = self.bot.get_channel(ticket['channel_id'])
+            
+            # Note: We do NOT use fetch_channel here because we don't want to hit API limits,
+            # and we NO LONGER automatically close tickets in the DB if the channel is missing.
+            # We simply skip them.
+            
             if channel:
                 try:
                     try:
                         created = datetime.fromisoformat(ticket['created_at'])
-                        if (now_naive - created).total_seconds() > 604800:
+                        if (now_naive - created).total_seconds() > 180:
                             observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
                             observer_mention = observer_role.mention if observer_role else "@Observers"
                             
-                            await channel.send(f"{observer_mention} This ticket has been inactive for 7 days. Please check if the requested player is avoiding the match.")
+                            await channel.send(f"{observer_mention} This ticket has been inactive for 3 minutes (TESTING). Please check if the requested player is avoiding the match.")
                             
                             await self.db.mark_ducking_ping_sent(ticket['channel_id'])
                     except ValueError:
                         pass
                 except Exception as e:
                     print(f"Cleanup error on {channel.id}: {e}")
-            else:
-                await self.db.close_ticket(ticket['channel_id'], self.bot.user.id)
     
     @commands.Cog.listener()
     async def on_ready(self):
