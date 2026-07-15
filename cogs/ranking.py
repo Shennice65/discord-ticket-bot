@@ -341,12 +341,14 @@ class Ranking(commands.Cog):
             return
             
         player = await self.db.player_ranks.find_one({"user_id": user.id})
-        if not player or "rank" not in player:
+        if not player or not player.get("rank"):
             await interaction.followup.send(f"{user.mention} is not currently ranked on the leaderboard.", ephemeral=True)
             return
             
         old_streak = player.get("win_streak", 0)
         await self.db.player_ranks.update_one({"user_id": user.id}, {"$set": {"win_streak": streak}})
+        
+        await interaction.followup.send(f"Successfully set {user.mention}'s win streak to **{streak}**!", ephemeral=True)
         
         log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
         if log_channel:
@@ -358,10 +360,10 @@ class Ranking(commands.Cog):
             embed.add_field(name="Player", value=user.mention, inline=True)
             embed.add_field(name="Change", value=f"{old_streak} ➔ {streak}", inline=True)
             embed.add_field(name="Observer", value=interaction.user.mention, inline=False)
-            await log_channel.send(embed=embed)
-            
-        
-        await interaction.followup.send(f"Successfully set {user.mention}'s win streak to **{streak}**!", ephemeral=True)
+            try:
+                await log_channel.send(embed=embed)
+            except Exception as e:
+                print(f"Failed to send streak log: {e}")
 
     @app_commands.command(name="resetrequest", description="Reset a player's 24h ranked match request cooldown")
     async def reset_request(self, interaction: discord.Interaction, user: discord.User):
