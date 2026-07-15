@@ -45,7 +45,7 @@ class RankingPaginationView(discord.ui.View):
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog = interaction.client.get_cog('Ranking')
         if not cog: return
-        self.current_page = min(4, self.current_page + 1)
+        self.current_page = min(len(TIERS) - 1, self.current_page + 1)
         embeds, file = await cog.generate_leaderboard_content(self.current_page)
         attachments = [file] if file else []
         await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
@@ -245,7 +245,7 @@ class Ranking(commands.Cog):
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                     desc += f"`#{i}` {name_text}{streak_text}\n"
                 
-        desc += f"\n*Page {page_index + 1} of 5*"
+        desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
         embeds = []
         if file:
