@@ -327,6 +327,42 @@ class Ranking(commands.Cog):
         else:
             await interaction.followup.send(f"❌ Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
             
+    @app_commands.command(name="setstreak", description="Manually set a player's win streak")
+    @app_commands.describe(user="The player to modify", streak="The new win streak (number)")
+    async def set_streak(self, interaction: discord.Interaction, user: discord.User, streak: int):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        if streak < 0:
+            await interaction.followup.send("Streak cannot be negative.", ephemeral=True)
+            return
+            
+        player = await self.db.players.find_one({"user_id": user.id})
+        if not player or "rank" not in player:
+            await interaction.followup.send(f"{user.mention} is not currently ranked on the leaderboard.", ephemeral=True)
+            return
+            
+        old_streak = player.get("win_streak", 0)
+        await self.db.players.update_one({"user_id": user.id}, {"$set": {"win_streak": streak}})
+        
+        log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(
+                title="🔥 Streak Manually Set",
+                color=discord.Color.orange(),
+                timestamp=datetime.utcnow()
+            )
+            embed.add_field(name="Player", value=user.mention, inline=True)
+            embed.add_field(name="Change", value=f"{old_streak} ➔ {streak}", inline=True)
+            embed.add_field(name="Observer", value=interaction.user.mention, inline=False)
+            await log_channel.send(embed=embed)
+            
+        await self.update_ranking_panel(interaction.guild)
+        await interaction.followup.send(f"Successfully set {user.mention}'s win streak to **{streak}**!", ephemeral=True)
+
     @app_commands.command(name="resetrequest", description="Reset a player's 24h ranked match request cooldown")
     async def reset_request(self, interaction: discord.Interaction, user: discord.User):
         if not is_admin_or_observer(interaction):
