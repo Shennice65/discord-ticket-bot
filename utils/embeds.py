@@ -34,8 +34,8 @@ class TicketEmbeds:
         embed.add_field(name="User", value=f"{user.mention}\n`{user.name}`", inline=True)
         embed.add_field(name="User ID", value=f"`{user.id}`", inline=True)
         
-        if ticket_data.get('opponent'):
-            embed.add_field(name="Opponent", value=f"`{ticket_data['opponent']}`", inline=True)
+        if ticket_data.get('opponent_name'):
+            embed.add_field(name="Opponent", value=f"`{ticket_data['opponent_name']}`", inline=True)
         
         if ticket_data.get('private_link'):
             embed.add_field(name="Private Server", value=ticket_data['private_link'], inline=False)
@@ -147,8 +147,8 @@ class TicketEmbeds:
                     
                 desc += f"> **Rank Change:** `{start_rank}` ➔ `{end_rank}`\n"
                 
-                if entry.get('opponent'):
-                    desc += f"> **Opponent:** `{entry['opponent']}`\n"
+                if entry.get('opponent_name'):
+                    desc += f"> **Opponent:** `{entry['opponent_name']}`\n"
                 desc += f"> **Observer:** `{entry['observer_name']}`\n"
                 if entry.get('note'):
                     desc += f"> **Note:** {entry['note']}\n"

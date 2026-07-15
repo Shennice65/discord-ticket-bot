@@ -623,7 +623,7 @@ class Database:
             {"$match": {
                 "status": "closed",
                 "ticket_type": "Ranked 1v1",
-                "$or": [{"user_id": user_id}, {"opponent": user_name}]
+                "$or": [{"user_id": user_id}, {"opponent_id": user_id}]
             }},
             {"$sort": {"closed_at": -1}},
             {"$limit": limit},
@@ -640,7 +640,7 @@ class Database:
             {"$match": {
                 "status": "closed",
                 "ticket_type": "Personal Observation",
-                "$or": [{"user_id": user_id}, {"opponent": user_name}]
+                "user_id": user_id
             }},
             {"$sort": {"closed_at": -1}},
             {"$limit": limit},
