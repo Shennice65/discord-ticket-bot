@@ -149,13 +149,14 @@ class TicketEmbeds:
                 
                 if entry.get('opponent_id') == user.id:
                     # User was the opponent, so their opponent is the requester
-                    actual_opponent = f"<@{entry['user_id']}>"
+                    requester = user.guild.get_member(entry['user_id']) if hasattr(user, 'guild') and user.guild else None
+                    if requester:
+                        actual_opponent = f"`{requester.display_name}`"
+                    else:
+                        actual_opponent = f"`User ID: {entry['user_id']}`"
                 else:
                     # User was the requester, so their opponent is the ticket opponent
-                    if entry.get('opponent_id'):
-                        actual_opponent = f"<@{entry['opponent_id']}>"
-                    else:
-                        actual_opponent = f"`{entry.get('opponent_name')}`" if entry.get('opponent_name') else "Unknown"
+                    actual_opponent = f"`{entry.get('opponent_name')}`" if entry.get('opponent_name') else "`Unknown`"
                     
                 desc += f"> **Opponent:** {actual_opponent}\n"
                 desc += f"> **Observer:** `{entry['observer_name']}`\n"
