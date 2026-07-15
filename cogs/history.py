@@ -138,9 +138,7 @@ class History(commands.Cog):
         observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
         is_observer = observer_role in interaction.user.roles if observer_role else False
         
-        if not is_observer and target_user.id != interaction.user.id:
-            await interaction.response.send_message("You can only view your own history!", ephemeral=True)
-            return
+        # Removed: anyone can view anyone's history
         
         await interaction.response.defer(ephemeral=True)
         
