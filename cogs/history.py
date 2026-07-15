@@ -101,17 +101,17 @@ class HistoryView(discord.ui.View):
         # we can just put a "Clear History" button that sends the modal, similar to what we did before.
         self.is_observer = is_observer
 
-    @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, emoji="📊", custom_id="hist_overview")
+    @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, custom_id="hist_overview")
     async def btn_overview(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = TicketEmbeds.history_overview_embed(self.target_user, self.history, self.unrank_info)
         await interaction.response.edit_message(embed=embed)
 
-    @discord.ui.button(label="Ranked Matches", style=discord.ButtonStyle.secondary, emoji="⚔️", custom_id="hist_ranked")
+    @discord.ui.button(label="Ranked Matches", style=discord.ButtonStyle.secondary, custom_id="hist_ranked")
     async def btn_ranked(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = TicketEmbeds.history_ranked_embed(self.target_user, self.history)
         await interaction.response.edit_message(embed=embed)
 
-    @discord.ui.button(label="Observations", style=discord.ButtonStyle.secondary, emoji="👁️", custom_id="hist_obs")
+    @discord.ui.button(label="Observations", style=discord.ButtonStyle.secondary, custom_id="hist_obs")
     async def btn_obs(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = TicketEmbeds.history_observation_embed(self.target_user, self.history)
         await interaction.response.edit_message(embed=embed)
