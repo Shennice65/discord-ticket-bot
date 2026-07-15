@@ -360,7 +360,7 @@ class Ranking(commands.Cog):
             embed.add_field(name="Observer", value=interaction.user.mention, inline=False)
             await log_channel.send(embed=embed)
             
-        await self.update_ranking_panel(interaction.guild)
+        
         await interaction.followup.send(f"Successfully set {user.mention}'s win streak to **{streak}**!", ephemeral=True)
 
     @app_commands.command(name="resetrequest", description="Reset a player's 24h ranked match request cooldown")
