@@ -513,5 +513,42 @@ class Ranking(commands.Cog):
     async def check_version(self, interaction: discord.Interaction):
         await interaction.response.send_message(f"🤖 **Ticket Bot Version:** `{Config.VERSION}`", ephemeral=True)
 
+    @app_commands.command(name="allowrematch", description="Reset the 24h rematch cooldown between two players (Observer only)")
+    @app_commands.describe(player1="First player", player2="Second player")
+    async def allow_rematch(self, interaction: discord.Interaction, player1: discord.User, player2: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+        
+        if player1.id == player2.id:
+            await interaction.response.send_message("You must select two different players!", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        # Check if there's even an active cooldown
+        cooldown = await self.db.get_rematch_cooldown(player1.id, player2.id)
+        if cooldown <= 0:
+            await interaction.followup.send(f"There is no active rematch cooldown between {player1.mention} and {player2.mention}.", ephemeral=True)
+            return
+        
+        success = await self.db.reset_rematch_cooldown(player1.id, player2.id)
+        if success:
+            await interaction.followup.send(f"✅ Rematch cooldown cleared! {player1.mention} and {player2.mention} can now face each other again.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🔄 Rematch Cooldown Cleared",
+                    color=discord.Color.teal(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Player 1", value=f"{player1.mention}\n`{player1.name}`", inline=True)
+                embed.add_field(name="Player 2", value=f"{player2.mention}\n`{player2.name}`", inline=True)
+                embed.add_field(name="Cleared By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                await log_channel.send(embed=embed)
+        else:
+            await interaction.followup.send("Failed to clear rematch cooldown. No recent match found between these players.", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(Ranking(bot))

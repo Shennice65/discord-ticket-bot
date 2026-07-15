@@ -375,6 +375,14 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**.", ephemeral=True)
             return
         
+        # Rematch cooldown: prevent same two players from facing each other within 24h
+        rematch_cd = await self.db.get_rematch_cooldown(user.id, opponent.id)
+        if rematch_cd > 0:
+            hours = int(rematch_cd)
+            minutes = int((rematch_cd - hours) * 60)
+            await interaction.followup.send(f"You must wait **{hours}h {minutes}m** before facing {opponent_member.mention} again!", ephemeral=True)
+            return
+        
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
         if not category:
             await interaction.followup.send("Ticket category not configured!", ephemeral=True)

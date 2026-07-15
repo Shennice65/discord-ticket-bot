@@ -179,3 +179,70 @@ class TicketEmbeds:
             embed.add_field(name="Observations", value="*No observations found*", inline=False)
             
         return embed
+
+    @staticmethod
+    def h2h_embed(player1: discord.Member, player2: discord.Member, h2h_data: dict) -> discord.Embed:
+        """Head-to-head stats embed between two players."""
+        embed = discord.Embed(
+            title=f"⚔️ Head-to-Head: {player1.display_name} vs {player2.display_name}",
+            color=discord.Color.gold(),
+            timestamp=datetime.utcnow()
+        )
+        
+        total = h2h_data["total"]
+        p1_wins = h2h_data["p1_wins"]
+        p2_wins = h2h_data["p2_wins"]
+        
+        if total == 0:
+            embed.description = "*No matches found between these players.*"
+            return embed
+        
+        # Win rate visual bar
+        bar_length = 20
+        p1_blocks = round((p1_wins / total) * bar_length) if total > 0 else 0
+        p2_blocks = bar_length - p1_blocks
+        bar = "🟦" * p1_blocks + "🟥" * p2_blocks
+        
+        p1_rate = (p1_wins / total) * 100
+        p2_rate = (p2_wins / total) * 100
+        
+        embed.add_field(
+            name="Overall Record",
+            value=(
+                f"**{player1.display_name}**: {p1_wins}W ({p1_rate:.0f}%)\n"
+                f"**{player2.display_name}**: {p2_wins}W ({p2_rate:.0f}%)\n"
+                f"**Total Matches**: {total}\n\n"
+                f"{bar}"
+            ),
+            inline=False
+        )
+        
+        # Recent matches
+        recent = h2h_data.get("recent_matches", [])
+        if recent:
+            for i, entry in enumerate(recent[:5], 1):
+                date = entry['closed_at'][:10] if entry.get('closed_at') else "Unknown"
+                winner_id = entry.get('winner_id')
+                
+                if winner_id == player1.id:
+                    result_text = f"**{player1.display_name}** won"
+                elif winner_id == player2.id:
+                    result_text = f"**{player2.display_name}** won"
+                else:
+                    result_text = "Unknown"
+                
+                desc = f"> {result_text}\n"
+                
+                w_old = entry.get('winner_old') or 'Unranked'
+                w_new = entry.get('winner_new') or 'Unranked'
+                l_old = entry.get('loser_old') or 'Unranked'
+                l_new = entry.get('loser_new') or 'Unranked'
+                desc += f"> **Winner:** `{w_old}` ➔ `{w_new}` | **Loser:** `{l_old}` ➔ `{l_new}`\n"
+                
+                if entry.get('observer_name'):
+                    desc += f"> **Observer:** `{entry['observer_name']}`\n"
+                
+                embed.add_field(name=f"Match #{i} — {date}", value=desc, inline=False)
+        
+        embed.set_footer(text=f"{player1.name} vs {player2.name}")
+        return embed

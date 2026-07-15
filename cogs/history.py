@@ -189,5 +189,20 @@ class History(commands.Cog):
         modal = ConfirmClearModal(user.id, user.name, type.value)
         await interaction.response.send_modal(modal)
 
+    @app_commands.command(name="h2h", description="View head-to-head stats between two players")
+    @app_commands.describe(player1="First player", player2="Second player")
+    async def h2h(self, interaction: discord.Interaction, player1: discord.Member, player2: discord.Member):
+        if player1.id == player2.id:
+            await interaction.response.send_message("You must select two different players!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        await self.db.init()
+        h2h_data = await self.db.get_h2h(player1.id, player2.id)
+        
+        embed = TicketEmbeds.h2h_embed(player1, player2, h2h_data)
+        await interaction.followup.send(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(History(bot))

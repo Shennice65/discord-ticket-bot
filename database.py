@@ -60,6 +60,17 @@ class Database:
         except Exception as e:
             print(f"MongoDB connection error: {e}")
             return False
+    
+    async def _next_id(self, collection_name: str) -> int:
+        """Atomically generate a unique auto-incrementing ID for a collection.
+        Uses a counter stored in bot_settings so IDs never collide even after deletions."""
+        result = await self.bot_settings.find_one_and_update(
+            {"key": f"counter_{collection_name}"},
+            {"$inc": {"value": 1}},
+            upsert=True,
+            return_document=True
+        )
+        return result["value"]
             
     async def get_setting(self, key: str, default=None):
         """Get a setting from the database."""
@@ -519,8 +530,7 @@ class Database:
             
     async def create_ticket(self, channel_id: int, user_id: int, ticket_type: str, 
                            opponent: Optional[str] = None, private_link: Optional[str] = None) -> int:
-        # Generate an auto-incrementing-like ID using document count
-        ticket_id = await self.tickets.count_documents({}) + 1
+        ticket_id = await self._next_id("tickets")
         
         ticket = {
             "id": ticket_id,
@@ -542,7 +552,7 @@ class Database:
         
     async def create_ranked_ticket_db(self, channel_id: int, user_id: int, 
                            opponent_name: str, opponent_id: int, private_link: Optional[str] = None) -> int:
-        ticket_id = await self.tickets.count_documents({}) + 1
+        ticket_id = await self._next_id("tickets")
         ticket = {
             "id": ticket_id,
             "channel_id": channel_id,
@@ -581,7 +591,7 @@ class Database:
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                 winner_old: str, winner_new: str, loser_old: str, loser_new: str, winner_id: int, winner: str, note: Optional[str] = None):
-        result_id = await self.ranked_results.count_documents({}) + 1
+        result_id = await self._next_id("ranked_results")
         result = {
             "id": result_id,
             "ticket_id": ticket_id,
@@ -602,7 +612,7 @@ class Database:
     
     async def add_observation_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                      starting_rank: str, ending_rank: str, note: Optional[str] = None):
-        result_id = await self.observation_results.count_documents({}) + 1
+        result_id = await self._next_id("observation_results")
         result = {
             "id": result_id,
             "ticket_id": ticket_id,
@@ -665,6 +675,92 @@ class Database:
         return {
             "ranked": ranked,
             "observations": obs
+        }
+    
+    async def get_rematch_cooldown(self, user1_id: int, user2_id: int) -> float:
+        """Returns hours left before these two players can face each other again, or 0 if allowed.
+        Checks for the most recent closed Ranked 1v1 between them (in either direction)."""
+        ticket = await self.tickets.find_one(
+            {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [
+                    {"user_id": user1_id, "opponent_id": user2_id},
+                    {"user_id": user2_id, "opponent_id": user1_id}
+                ]
+            },
+            sort=[("closed_at", -1)]
+        )
+        
+        if not ticket or not ticket.get("closed_at"):
+            return 0.0
+            
+        try:
+            closed_at = datetime.fromisoformat(ticket["closed_at"])
+            time_passed = (datetime.utcnow() - closed_at).total_seconds()
+            cooldown_seconds = 24 * 3600  # 24 hours
+            if time_passed < cooldown_seconds:
+                return (cooldown_seconds - time_passed) / 3600.0
+            return 0.0
+        except ValueError:
+            return 0.0
+    
+    async def reset_rematch_cooldown(self, user1_id: int, user2_id: int) -> bool:
+        """Reset the rematch cooldown between two players by backdating the closed_at
+        of their most recent match so the cooldown appears expired."""
+        result = await self.tickets.update_one(
+            {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [
+                    {"user_id": user1_id, "opponent_id": user2_id},
+                    {"user_id": user2_id, "opponent_id": user1_id}
+                ]
+            },
+            {"$set": {"rematch_cooldown_cleared": True, "closed_at": str(datetime(2000, 1, 1))}},
+        )
+        return result.modified_count > 0
+    
+    async def get_h2h(self, player1_id: int, player2_id: int, limit: int = 10) -> Dict:
+        """Get head-to-head stats between two players from ranked results."""
+        # Find all closed ranked tickets between these two players (in either direction)
+        pipeline = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [
+                    {"user_id": player1_id, "opponent_id": player2_id},
+                    {"user_id": player2_id, "opponent_id": player1_id}
+                ]
+            }},
+            {"$sort": {"closed_at": -1}},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result"
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
+        ]
+        
+        cursor = self.tickets.aggregate(pipeline)
+        matches = await cursor.to_list(length=None)
+        
+        p1_wins = 0
+        p2_wins = 0
+        
+        for match in matches:
+            winner_id = match["result"].get("winner_id")
+            if winner_id == player1_id:
+                p1_wins += 1
+            elif winner_id == player2_id:
+                p2_wins += 1
+        
+        return {
+            "total": len(matches),
+            "p1_wins": p1_wins,
+            "p2_wins": p2_wins,
+            "recent_matches": [{**doc, **doc.pop("result")} for doc in matches[:limit]]
         }
     
     async def clear_ranked_history(self, user_id: int) -> int:
