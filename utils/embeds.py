@@ -147,8 +147,14 @@ class TicketEmbeds:
                     
                 desc += f"> **Rank Change:** `{start_rank}` ➔ `{end_rank}`\n"
                 
-                if entry.get('opponent_name'):
-                    desc += f"> **Opponent:** `{entry['opponent_name']}`\n"
+                if entry.get('opponent_id') == user.id:
+                    # User was the opponent, so their opponent is the requester
+                    actual_opponent = f"<@{entry['user_id']}>"
+                else:
+                    # User was the requester, so their opponent is the ticket opponent
+                    actual_opponent = f"`{entry.get('opponent_name')}`" if entry.get('opponent_name') else "Unknown"
+                    
+                desc += f"> **Opponent:** {actual_opponent}\n"
                 desc += f"> **Observer:** `{entry['observer_name']}`\n"
                 if entry.get('note'):
                     desc += f"> **Note:** {entry['note']}\n"
