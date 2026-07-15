@@ -87,7 +87,7 @@ class TicketEmbeds:
             else:
                 status += f"\nRe-rank cooldown expired"
             embed.add_field(
-                name="⛔ UNRANKED PLAYER",
+                name="UNRANKED PLAYER",
                 value=status,
                 inline=False
             )
@@ -109,15 +109,15 @@ class TicketEmbeds:
             win_rate = (wins / total_matches) * 100
             
             embed.add_field(
-                name="📊 Ranked Stats Overview",
-                value=f"**Total Matches**: {total_matches}\n**Wins**: 🟢 {wins} | **Losses**: 🔴 {losses}\n**Win Rate**: {win_rate:.1f}%",
+                name="Ranked Stats Overview",
+                value=f"**Total Matches**: {total_matches}\n**Wins**: {wins} | **Losses**: {losses}\n**Win Rate**: {win_rate:.1f}%",
                 inline=False
             )
         else:
-            embed.add_field(name="📊 Ranked Stats Overview", value="*No matches recorded yet.*", inline=False)
+            embed.add_field(name="Ranked Stats Overview", value="*No matches recorded yet.*", inline=False)
             
         total_obs = len(history['observations'])
-        embed.add_field(name="👁️ Personal Observations", value=f"**Total Observations**: {total_obs}", inline=False)
+        embed.add_field(name="Personal Observations", value=f"**Total Observations**: {total_obs}", inline=False)
         
         return embed
 
@@ -135,10 +135,9 @@ class TicketEmbeds:
                     winner_str = entry.get('winner', '').lower()
                     is_win = (winner_str == user.name.lower() or winner_str in user.name.lower())
                     
-                emoji = "🟢" if is_win else "🔴"
                 result_text = "WON" if is_win else "LOST"
                 
-                desc = f"> **Result:** {emoji} **{result_text}**\n"
+                desc = f"> **Result:** **{result_text}**\n"
                 if is_win:
                     start_rank = entry.get('winner_old') or entry.get('starting_rank') or "Unranked"
                     end_rank = entry.get('winner_new') or entry.get('ending_rank') or "Unranked"
