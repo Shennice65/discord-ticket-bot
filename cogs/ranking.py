@@ -340,13 +340,13 @@ class Ranking(commands.Cog):
             await interaction.followup.send("Streak cannot be negative.", ephemeral=True)
             return
             
-        player = await self.db.players.find_one({"user_id": user.id})
+        player = await self.db.player_ranks.find_one({"user_id": user.id})
         if not player or "rank" not in player:
             await interaction.followup.send(f"{user.mention} is not currently ranked on the leaderboard.", ephemeral=True)
             return
             
         old_streak = player.get("win_streak", 0)
-        await self.db.players.update_one({"user_id": user.id}, {"$set": {"win_streak": streak}})
+        await self.db.player_ranks.update_one({"user_id": user.id}, {"$set": {"win_streak": streak}})
         
         log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
         if log_channel:
