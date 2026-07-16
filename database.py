@@ -696,6 +696,9 @@ class Database:
         if not ticket or not ticket.get("closed_at"):
             return 0.0
             
+        if ticket.get("rematch_cooldown_cleared"):
+            return 0.0
+            
         try:
             closed_at = datetime.fromisoformat(ticket["closed_at"])
             time_passed = (datetime.utcnow() - closed_at).total_seconds()
@@ -718,7 +721,7 @@ class Database:
                     {"user_id": user2_id, "opponent_id": user1_id}
                 ]
             },
-            {"$set": {"rematch_cooldown_cleared": True, "closed_at": str(datetime(2000, 1, 1))}},
+            {"$set": {"rematch_cooldown_cleared": True}},
         )
         return result.modified_count > 0
     
