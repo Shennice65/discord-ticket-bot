@@ -551,7 +551,7 @@ class Database:
         return ticket_id
         
     async def create_ranked_ticket_db(self, channel_id: int, user_id: int, 
-                           opponent_name: str, opponent_id: int, private_link: Optional[str] = None) -> int:
+                           opponent_name: str, opponent_id: int, private_link: Optional[str] = None, out_of_range: bool = False) -> int:
         ticket_id = await self._next_id("tickets")
         ticket = {
             "id": ticket_id,
@@ -565,7 +565,8 @@ class Database:
             "opponent_name": opponent_name,
             "opponent_id": opponent_id,
             "private_link": private_link,
-            "ducking_ping_sent": False
+            "ducking_ping_sent": False,
+            "out_of_range": out_of_range
         }
         await self.tickets.insert_one(ticket)
         return ticket_id

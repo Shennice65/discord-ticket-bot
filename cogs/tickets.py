@@ -127,6 +127,86 @@ class OpponentSelectView(discord.ui.View):
         self.add_item(OpponentSelect(private_link))
 
 
+class OutOfRangeAcceptView(discord.ui.View):
+    """Shown to the opponent when a challenge is outside the 5-rank window.
+    The opponent can Accept or Decline. Times out after 5 minutes."""
+    def __init__(self, requester: discord.Member, opponent: discord.Member, 
+                 private_link: Optional[str], channel: discord.TextChannel, cog):
+        super().__init__(timeout=300)  # 5 minutes
+        self.requester = requester
+        self.opponent = opponent
+        self.private_link = private_link
+        self.channel = channel  # the temp channel
+        self.cog = cog
+        self.responded = False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.opponent.id:
+            await interaction.response.send_message("Only the challenged player can respond!", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success, emoji="\u2694\ufe0f")
+    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.responded:
+            return
+        self.responded = True
+        self.stop()
+
+        await interaction.response.edit_message(
+            content=f"\u2705 {self.opponent.mention} **accepted** the out-of-range challenge!",
+            view=None
+        )
+
+        # Now finalize the ticket
+        await self.cog._finalize_out_of_range_ticket(
+            self.channel, self.requester, self.opponent, self.private_link
+        )
+
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger, emoji="\u274c")
+    async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.responded:
+            return
+        self.responded = True
+        self.stop()
+
+        await interaction.response.edit_message(
+            content=f"\u274c {self.opponent.mention} **declined** the challenge. This channel will be deleted in 10 seconds.",
+            view=None
+        )
+
+        # Reset requester cooldown since the match never happened
+        await self.cog.db.reset_ranked_cooldown_only(self.requester.id)
+
+        await asyncio.sleep(10)
+        try:
+            await self.channel.delete()
+        except discord.errors.NotFound:
+            pass
+
+    async def on_timeout(self):
+        if self.responded:
+            return
+        self.responded = True
+
+        try:
+            await self.channel.send(
+                f"\u23f0 The out-of-range challenge from {self.requester.mention} to {self.opponent.mention} has **expired** (5 min timeout). "
+                f"This channel will be deleted in 10 seconds."
+            )
+        except Exception:
+            pass
+
+        # Reset requester cooldown
+        await self.cog.db.reset_ranked_cooldown_only(self.requester.id)
+
+        await asyncio.sleep(10)
+        try:
+            await self.channel.delete()
+        except discord.errors.NotFound:
+            pass
+
+
 class WinnerButtonView(discord.ui.View):
     def __init__(self, player1_id: int, player1_name: str, player2_id: int, player2_name: str):
         super().__init__(timeout=120)
@@ -363,10 +443,10 @@ class Tickets(commands.Cog):
         idx_user = await self.db.get_global_rank_index(user.id)
         idx_opp = await self.db.get_global_rank_index(opponent.id)
         
+        is_out_of_range = False
         if idx_user != -1 and idx_opp != -1:
             if abs(idx_user - idx_opp) > 5:
-                await interaction.followup.send("You can only request a 1v1 with someone within 5 ranks of you!", ephemeral=True)
-                return
+                is_out_of_range = True
                 
         cooldown = await self.db.get_ranked_cooldown(user.id)
         if cooldown > 0:
@@ -411,6 +491,39 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
+        # If out of range, send acceptance prompt instead of finalizing immediately
+        if is_out_of_range:
+            await self.db.update_ranked_cooldown(user.id)
+            
+            user_rank = await self.db.get_player_rank(user.id)
+            opp_rank = await self.db.get_player_rank(opponent.id)
+            
+            embed = discord.Embed(
+                title="\u2694\ufe0f Out-of-Range Challenge",
+                description=(
+                    f"{user.mention} wants to challenge {opponent_member.mention} to a **Ranked 1v1**!\n\n"
+                    f"**{user.display_name}** is ranked **{user_rank or 'Unranked'}**\n"
+                    f"**{opponent_member.display_name}** is ranked **{opp_rank or 'Unranked'}**\n\n"
+                    f"\u26a0\ufe0f This match is **outside the 5-rank window**.\n"
+                    f"{opponent_member.mention}, do you accept this challenge?"
+                ),
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="This request expires in 5 minutes.")
+            
+            view = OutOfRangeAcceptView(user, opponent_member, private_link, channel, self)
+            await channel.send(
+                content=f"{user.mention} {opponent_member.mention}",
+                embed=embed,
+                view=view
+            )
+            
+            await interaction.edit_original_response(
+                content=f"\u26a0\ufe0f Out-of-range challenge sent! Waiting for {opponent_member.mention} to accept in {channel.mention}.",
+                view=None
+            )
+            return
+        
         ticket_id = await self.db.create_ranked_ticket_db(
             channel.id, user.id, 
             opponent_name=opponent.name, opponent_id=opponent.id, private_link=private_link
@@ -431,6 +544,35 @@ class Tickets(commands.Cog):
         await interaction.edit_original_response(
             content=f"Ticket created! {channel.mention}",
             view=None
+        )
+    
+    async def _finalize_out_of_range_ticket(self, channel: discord.TextChannel, 
+                                             requester: discord.Member, opponent: discord.Member,
+                                             private_link: Optional[str]):
+        """Called when the opponent accepts an out-of-range challenge. 
+        Registers the ticket in the DB and sends the official ticket embed."""
+        ticket_id = await self.db.create_ranked_ticket_db(
+            channel.id, requester.id,
+            opponent_name=opponent.name, opponent_id=opponent.id,
+            private_link=private_link, out_of_range=True
+        )
+        print(f"Out-of-range ticket {ticket_id} saved")
+        
+        observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
+        observer_mention = observer_role.mention if observer_role else "@Observers"
+        
+        embed = TicketEmbeds.ticket_created("Ranked 1v1", requester, opponent.name)
+        embed.add_field(
+            name="\u26a0\ufe0f Out-of-Range Match",
+            value="This match was accepted outside the 5-rank window.",
+            inline=False
+        )
+        if private_link:
+            embed.add_field(name="Private Server Link", value=private_link, inline=False)
+        
+        await channel.send(
+            content=f"{requester.mention} {opponent.mention} {observer_mention}",
+            embed=embed
         )
     
     async def create_observation_ticket(self, interaction: discord.Interaction):
@@ -597,15 +739,17 @@ class Tickets(commands.Cog):
         ticket_data = result
         
         try:
-            idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
-            idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
-            
-            if idx_user != -1 and idx_opp != -1:
-                if abs(idx_user - idx_opp) > 5:
-                    # Revert status so someone else can try
-                    await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                    await interaction.followup.send("❌ **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
-                    return
+            # Skip 5-rank re-validation for out-of-range matches (opponent already accepted)
+            if not ticket_data.get("out_of_range", False):
+                idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
+                idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
+                
+                if idx_user != -1 and idx_opp != -1:
+                    if abs(idx_user - idx_opp) > 5:
+                        # Revert status so someone else can try
+                        await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                        await interaction.followup.send("\u274c **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
+                        return
                     
             winner_id = modal.winner_id
             loser_id = ticket_data['user_id'] if winner_id == ticket_data['opponent_id'] else ticket_data['opponent_id']
