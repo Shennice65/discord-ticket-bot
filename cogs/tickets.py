@@ -538,8 +538,8 @@ class Tickets(commands.Cog):
         
         await self.db.update_ranked_cooldown(user.id)
         
-        user_history = await self.db.get_player_history(user.id)
-        opp_history = await self.db.get_player_history(opponent.id)
+        user_history = await self.db.get_user_history(user.id, user.name)
+        opp_history = await self.db.get_user_history(opponent.id, opponent.name)
         
         from utils.embeds import TicketEmbeds
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
@@ -581,8 +581,8 @@ class Tickets(commands.Cog):
         observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
         observer_mention = observer_role.mention if observer_role else "@Observers"
         
-        user_history = await self.db.get_player_history(requester.id)
-        opp_history = await self.db.get_player_history(opponent.id)
+        user_history = await self.db.get_user_history(requester.id, requester.name)
+        opp_history = await self.db.get_user_history(opponent.id, opponent.name)
         
         from utils.embeds import TicketEmbeds
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(requester.id, requester.name, user_history)
@@ -660,7 +660,7 @@ class Tickets(commands.Cog):
         
         await self.db.update_obs_cooldown(user.id)
         
-        user_history = await self.db.get_player_history(user.id)
+        user_history = await self.db.get_user_history(user.id, user.name)
         total_obs = len(user_history.get('observations', []))
         user_stats = f"**Total Observations**: {total_obs}"
         
