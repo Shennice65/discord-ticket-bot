@@ -16,9 +16,9 @@ class TicketEmbeds:
             embed.add_field(name="Opponent", value=opponent, inline=True)
             
         if user_stats:
-            embed.add_field(name=f"{user.display_name}'s Stats", value=f"```\n{user_stats}\n```", inline=False)
+            embed.add_field(name=f"{user.display_name}'s Stats", value=user_stats, inline=False)
         if opp_stats and opponent:
-            embed.add_field(name=f"{opponent}'s Stats", value=f"```\n{opp_stats}\n```", inline=False)
+            embed.add_field(name=f"{opponent}'s Stats", value=opp_stats, inline=False)
             
         embed.add_field(
             name="Instructions",

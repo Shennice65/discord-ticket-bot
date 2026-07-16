@@ -545,8 +545,8 @@ class Tickets(commands.Cog):
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
         o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
         
-        user_stats = f"**Total Matches**: {u_matches}\n**Win Rate**: {u_rate:.1f}%"
-        opp_stats = f"**Total Matches**: {o_matches}\n**Win Rate**: {o_rate:.1f}%"
+        user_stats = f"**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
+        opp_stats = f"**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
         
         embed = TicketEmbeds.ticket_created(
             "Ranked 1v1", user, opponent.name,
@@ -588,8 +588,8 @@ class Tickets(commands.Cog):
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(requester.id, requester.name, user_history)
         o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
         
-        user_stats = f"**Total Matches**: {u_matches}\n**Win Rate**: {u_rate:.1f}%"
-        opp_stats = f"**Total Matches**: {o_matches}\n**Win Rate**: {o_rate:.1f}%"
+        user_stats = f"**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
+        opp_stats = f"**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
         
         embed = TicketEmbeds.ticket_created(
             "Ranked 1v1", requester, opponent.name,
