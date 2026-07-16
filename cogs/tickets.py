@@ -228,30 +228,32 @@ class WinnerButtonView(discord.ui.View):
         self.add_item(btn3)
     
     async def select_player1(self, interaction: discord.Interaction):
-        modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id)
+        modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id, observer_name=interaction.user.display_name)
         await interaction.response.send_modal(modal)
     
     async def select_player2(self, interaction: discord.Interaction):
-        modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id)
+        modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id, observer_name=interaction.user.display_name)
         await interaction.response.send_modal(modal)
 
     async def cancel_match(self, interaction: discord.Interaction):
-        modal = CloseRankedCancelModal()
+        modal = CloseRankedCancelModal(observer_name=interaction.user.display_name)
         await interaction.response.send_modal(modal)
 
 
 class CloseRankedModal(discord.ui.Modal):
-    def __init__(self, winner_name: str, winner_id: int):
+    def __init__(self, winner_name: str, winner_id: int, observer_name: str = ""):
         super().__init__(title="Close Ranked 1v1 Ticket")
         self.winner_name = winner_name
         self.winner_id = winner_id
         
-    observer = discord.ui.TextInput(
-        label="Observer Name",
-        placeholder="Your name",
-        required=True,
-        max_length=100
-    )
+        self.observer = discord.ui.TextInput(
+            label="Observer Name",
+            placeholder="Your name",
+            default=observer_name,
+            required=True,
+            max_length=100
+        )
+        self.add_item(self.observer)
     
     note = discord.ui.TextInput(
         label="Closing Note (Optional)",
@@ -269,15 +271,17 @@ class CloseRankedModal(discord.ui.Modal):
 
 
 class CloseRankedCancelModal(discord.ui.Modal):
-    def __init__(self):
+    def __init__(self, observer_name: str = ""):
         super().__init__(title="Cancel Ranked 1v1 Ticket")
         
-    observer = discord.ui.TextInput(
-        label="Observer Name",
-        placeholder="Your name",
-        required=True,
-        max_length=100
-    )
+        self.observer = discord.ui.TextInput(
+            label="Observer Name",
+            placeholder="Your name",
+            default=observer_name,
+            required=True,
+            max_length=100
+        )
+        self.add_item(self.observer)
     
     reason = discord.ui.TextInput(
         label="Reason for Cancellation",
@@ -295,15 +299,17 @@ class CloseRankedCancelModal(discord.ui.Modal):
 
 
 class CloseObservationModal(discord.ui.Modal):
-    def __init__(self, current_rank: str = ""):
+    def __init__(self, current_rank: str = "", observer_name: str = ""):
         super().__init__(title="Close Observation Ticket")
         
-    observer = discord.ui.TextInput(
-        label="Observer Name",
-        placeholder="Your name",
-        required=True,
-        max_length=100
-    )
+        self.observer = discord.ui.TextInput(
+            label="Observer Name",
+            placeholder="Your name",
+            default=observer_name,
+            required=True,
+            max_length=100
+        )
+        self.add_item(self.observer)
     
     ending_rank = discord.ui.TextInput(
         label="Ending Rank",
@@ -704,7 +710,7 @@ class Tickets(commands.Cog):
                 await interaction.response.send_message(f"**Who won this match?**\n`{p1_name}` vs `{p2_name}`", view=view, ephemeral=True)
             else:
                 current_rank = await self.db.get_player_rank(ticket_data['user_id'])
-                modal = CloseObservationModal(current_rank=current_rank)
+                modal = CloseObservationModal(current_rank=current_rank, observer_name=interaction.user.display_name)
                 await interaction.response.send_modal(modal)
         else:
             # User is the owner, not an observer. Close immediately.
