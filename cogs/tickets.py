@@ -662,7 +662,7 @@ class Tickets(commands.Cog):
         
         user_history = await self.db.get_user_history(user.id, user.name)
         total_obs = len(user_history.get('observations', []))
-        user_stats = f"**Total Observations**: {total_obs}"
+        user_stats = f"**Total Observations**: `{total_obs}`"
         
         embed = TicketEmbeds.ticket_created(
             "Personal Observation", user, user_stats=user_stats
