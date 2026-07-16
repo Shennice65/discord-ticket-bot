@@ -4,7 +4,8 @@ from typing import Optional
 
 class TicketEmbeds:
     @staticmethod
-    def ticket_created(ticket_type: str, user: discord.Member, opponent: Optional[str] = None) -> discord.Embed:
+    def ticket_created(ticket_type: str, user: discord.Member, opponent: Optional[str] = None,
+                       user_stats: Optional[str] = None, opp_stats: Optional[str] = None) -> discord.Embed:
         embed = discord.Embed(
             title=f"Ticket Created - {ticket_type}",
             color=discord.Color.green(),
@@ -14,6 +15,12 @@ class TicketEmbeds:
         embed.add_field(name="User ID", value=str(user.id), inline=True)
         if opponent:
             embed.add_field(name="Opponent", value=opponent, inline=True)
+            
+        if user_stats:
+            embed.add_field(name=f"{user.display_name}'s Stats", value=user_stats, inline=False)
+        if opp_stats and opponent:
+            embed.add_field(name=f"{opponent}'s Stats", value=opp_stats, inline=False)
+            
         embed.add_field(
             name="Instructions",
             value="An observer will assist you shortly.\n"
@@ -22,6 +29,27 @@ class TicketEmbeds:
         )
         embed.set_footer(text=f"User: {user.name}")
         return embed
+    
+    @staticmethod
+    def calculate_ranked_stats(user_id: int, user_name: str, history: dict) -> tuple[int, int, int, float]:
+        """Returns (total_matches, wins, losses, win_rate)"""
+        total_matches = len(history.get('ranked', []))
+        if total_matches == 0:
+            return 0, 0, 0, 0.0
+            
+        wins = 0
+        for entry in history['ranked']:
+            if 'winner_id' in entry and entry['winner_id'] is not None:
+                if entry['winner_id'] == user_id:
+                    wins += 1
+            else:
+                w_str = entry.get('winner', '').lower()
+                if w_str == user_name.lower() or w_str in user_name.lower():
+                    wins += 1
+        
+        losses = total_matches - wins
+        win_rate = (wins / total_matches) * 100
+        return total_matches, wins, losses, win_rate
     
     @staticmethod
     def ticket_log(ticket_data: dict, result_data: dict, user: discord.User) -> discord.Embed:
@@ -93,21 +121,8 @@ class TicketEmbeds:
             )
         
         # Calculate Stats
-        total_matches = len(history['ranked'])
+        total_matches, wins, losses, win_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, history)
         if total_matches > 0:
-            wins = 0
-            for entry in history['ranked']:
-                if 'winner_id' in entry and entry['winner_id'] is not None:
-                    if entry['winner_id'] == user.id:
-                        wins += 1
-                else:
-                    w_str = entry.get('winner', '').lower()
-                    if w_str == user.name.lower() or w_str in user.name.lower():
-                        wins += 1
-            
-            losses = total_matches - wins
-            win_rate = (wins / total_matches) * 100
-            
             embed.add_field(
                 name="Ranked Stats Overview",
                 value=f"**Total Matches**: {total_matches}\n**Wins**: {wins} | **Losses**: {losses}\n**Win Rate**: {win_rate:.1f}%",

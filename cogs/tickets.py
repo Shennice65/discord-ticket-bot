@@ -538,7 +538,21 @@ class Tickets(commands.Cog):
         
         await self.db.update_ranked_cooldown(user.id)
         
-        embed = TicketEmbeds.ticket_created("Ranked 1v1", user, opponent.name)
+        user_history = await self.db.get_player_history(user.id)
+        opp_history = await self.db.get_player_history(opponent.id)
+        
+        from utils.embeds import TicketEmbeds
+        u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
+        o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
+        
+        user_stats = f"**Total Matches**: {u_matches}\n**Win Rate**: {u_rate:.1f}%"
+        opp_stats = f"**Total Matches**: {o_matches}\n**Win Rate**: {o_rate:.1f}%"
+        
+        embed = TicketEmbeds.ticket_created(
+            "Ranked 1v1", user, opponent.name,
+            user_stats=user_stats, opp_stats=opp_stats
+        )
+        
         if private_link:
             embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
@@ -567,7 +581,20 @@ class Tickets(commands.Cog):
         observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
         observer_mention = observer_role.mention if observer_role else "@Observers"
         
-        embed = TicketEmbeds.ticket_created("Ranked 1v1", requester, opponent.name)
+        user_history = await self.db.get_player_history(requester.id)
+        opp_history = await self.db.get_player_history(opponent.id)
+        
+        from utils.embeds import TicketEmbeds
+        u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(requester.id, requester.name, user_history)
+        o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
+        
+        user_stats = f"**Total Matches**: {u_matches}\n**Win Rate**: {u_rate:.1f}%"
+        opp_stats = f"**Total Matches**: {o_matches}\n**Win Rate**: {o_rate:.1f}%"
+        
+        embed = TicketEmbeds.ticket_created(
+            "Ranked 1v1", requester, opponent.name,
+            user_stats=user_stats, opp_stats=opp_stats
+        )
         embed.add_field(
             name="\u26a0\ufe0f Out-of-Range Match",
             value="This match was accepted outside the 5-rank window.",
@@ -633,7 +660,13 @@ class Tickets(commands.Cog):
         
         await self.db.update_obs_cooldown(user.id)
         
-        embed = TicketEmbeds.ticket_created("Personal Observation", user)
+        user_history = await self.db.get_player_history(user.id)
+        total_obs = len(user_history.get('observations', []))
+        user_stats = f"**Total Observations**: {total_obs}"
+        
+        embed = TicketEmbeds.ticket_created(
+            "Personal Observation", user, user_stats=user_stats
+        )
         
         await channel.send(
             content=f"{user.mention} {observer_mention}",
