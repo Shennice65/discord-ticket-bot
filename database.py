@@ -709,7 +709,7 @@ class Database:
     async def reset_rematch_cooldown(self, user1_id: int, user2_id: int) -> bool:
         """Reset the rematch cooldown between two players by backdating the closed_at
         of their most recent match so the cooldown appears expired."""
-        result = await self.tickets.update_one(
+        result = await self.tickets.update_many(
             {
                 "status": "closed",
                 "ticket_type": "Ranked 1v1",
