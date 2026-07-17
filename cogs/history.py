@@ -129,6 +129,7 @@ class History(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = Database()
+        self.bot.loop.create_task(self.db.init())
     
     @app_commands.command(name="history", description="View a user's ranked and observation history")
     @app_commands.describe(user="The user to check history for (defaults to yourself)")
@@ -142,7 +143,6 @@ class History(commands.Cog):
         
         await interaction.response.defer(ephemeral=True)
         
-        await self.db.init()
         history = await self.db.get_user_history(target_user.id, target_user.name)
         
         # Fetch unrank status for the profile
@@ -196,7 +196,6 @@ class History(commands.Cog):
         
         await interaction.response.defer(ephemeral=True)
         
-        await self.db.init()
         h2h_data = await self.db.get_h2h(player1.id, player2.id)
         
         embed = TicketEmbeds.h2h_embed(player1, player2, h2h_data)
