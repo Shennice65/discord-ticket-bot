@@ -864,7 +864,8 @@ class Tickets(commands.Cog):
                 embed.add_field(name="User", value=f"{user.mention}\n`{user.name}`", inline=True)
                 
                 if ticket_data.get('opponent_name'):
-                    embed.add_field(name="Opponent", value=f"`{ticket_data['opponent_name']}`", inline=True)
+                    opponent_value = f"<@{ticket_data['opponent_id']}>\n`{ticket_data['opponent_name']}`" if ticket_data.get('opponent_id') else f"`{ticket_data['opponent_name']}`"
+                    embed.add_field(name="Opponent", value=opponent_value, inline=True)
                     
                 embed.add_field(name="Observer", value=f"`{modal.observer.value}`", inline=False)
                 embed.add_field(name="Reason", value=f"{modal.reason.value}", inline=False)
