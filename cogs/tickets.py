@@ -219,28 +219,19 @@ class WinnerButtonView(discord.ui.View):
         await interaction.response.send_modal(modal)
     
     async def select_player2(self, interaction: discord.Interaction):
-        modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id, observer_name=interaction.user.display_name)
+        modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id)
         await interaction.response.send_modal(modal)
 
     async def cancel_match(self, interaction: discord.Interaction):
-        modal = CloseRankedCancelModal(observer_name=interaction.user.display_name)
+        modal = CloseRankedCancelModal()
         await interaction.response.send_modal(modal)
 
 
 class CloseRankedModal(discord.ui.Modal):
-    def __init__(self, winner_name: str, winner_id: int, observer_name: str = ""):
+    def __init__(self, winner_name: str, winner_id: int):
         super().__init__(title="Close Ranked 1v1 Ticket")
         self.winner_name = winner_name
         self.winner_id = winner_id
-        
-        self.observer = discord.ui.TextInput(
-            label="Observer Name",
-            placeholder="Your name",
-            default=observer_name,
-            required=True,
-            max_length=100
-        )
-        self.add_item(self.observer)
         
         self.note = discord.ui.TextInput(
             label="Closing Note (Optional)",
@@ -259,17 +250,8 @@ class CloseRankedModal(discord.ui.Modal):
 
 
 class CloseRankedCancelModal(discord.ui.Modal):
-    def __init__(self, observer_name: str = ""):
+    def __init__(self):
         super().__init__(title="Cancel Ranked 1v1 Ticket")
-        
-        self.observer = discord.ui.TextInput(
-            label="Observer Name",
-            placeholder="Your name",
-            default=observer_name,
-            required=True,
-            max_length=100
-        )
-        self.add_item(self.observer)
         
         self.reason = discord.ui.TextInput(
             label="Reason for Cancellation",
@@ -288,17 +270,8 @@ class CloseRankedCancelModal(discord.ui.Modal):
 
 
 class CloseObservationModal(discord.ui.Modal):
-    def __init__(self, current_rank: str = "", observer_name: str = ""):
+    def __init__(self, current_rank: str = ""):
         super().__init__(title="Close Observation Ticket")
-        
-        self.observer = discord.ui.TextInput(
-            label="Observer Name",
-            placeholder="Your name",
-            default=observer_name,
-            required=True,
-            max_length=100
-        )
-        self.add_item(self.observer)
         
         self.ending_rank = discord.ui.TextInput(
             label="Ending Rank",
@@ -729,7 +702,7 @@ class Tickets(commands.Cog):
                 await interaction.response.send_message(f"**Who won this match?**\n`{p1_name}` vs `{p2_name}`", view=view, ephemeral=True)
             else:
                 current_rank = await self.db.get_player_rank(ticket_data['user_id'])
-                modal = CloseObservationModal(current_rank=current_rank, observer_name=interaction.user.display_name)
+                modal = CloseObservationModal(current_rank=current_rank)
                 await interaction.response.send_modal(modal)
         else:
             # User is the owner, not an observer. Close immediately.
@@ -784,7 +757,7 @@ class Tickets(commands.Cog):
             await self.db.add_ranked_result(
                 ticket_data['id'],
                 interaction.user.id,
-                modal.observer.value,
+                interaction.user.name,
                 old_win,
                 new_win,
                 old_lose,
@@ -799,7 +772,7 @@ class Tickets(commands.Cog):
             if log_channel:
                 user = await self.bot.fetch_user(ticket_data['user_id'])
                 result_data = {
-                    'observer_name': modal.observer.value,
+                    'observer_name': interaction.user.name,
                     'winner_old': old_win,
                     'winner_new': new_win,
                     'loser_old': old_lose,
@@ -853,7 +826,7 @@ class Tickets(commands.Cog):
                     opponent_value = f"<@{ticket_data['opponent_id']}>\n`{ticket_data['opponent_name']}`" if ticket_data.get('opponent_id') else f"`{ticket_data['opponent_name']}`"
                     embed.add_field(name="Opponent", value=opponent_value, inline=True)
                     
-                embed.add_field(name="Observer", value=f"`{modal.observer.value}`", inline=False)
+                embed.add_field(name="Observer", value=f"`{interaction.user.name}`", inline=True)
                 embed.add_field(name="Reason", value=f"{modal.reason.value}", inline=False)
                 
                 await log_channel.send(embed=embed)
@@ -902,7 +875,7 @@ class Tickets(commands.Cog):
             await self.db.add_observation_result(
                 ticket_data['id'],
                 interaction.user.id,
-                modal.observer.value,
+                interaction.user.name,
                 old_rank if old_rank else "Unranked",
                 actual_new_rank,
                 modal.note.value if modal.note.value else None
