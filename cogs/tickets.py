@@ -61,8 +61,13 @@ class TicketView(discord.ui.View):
     
     @discord.ui.button(label="Ranked 1v1", style=discord.ButtonStyle.primary, custom_id="ranked_1v1")
     async def ranked_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = RankedModal()
-        await interaction.response.send_modal(modal)
+        view = OpponentSelectView()
+        await interaction.response.send_message(
+            "**Select your opponent from the dropdown below:**\n"
+            "*Start typing to search for a user in this server.*",
+            view=view,
+            ephemeral=True
+        )
     
     @discord.ui.button(label="Personal Observation", style=discord.ButtonStyle.secondary, custom_id="personal_obs")
     async def obs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -84,32 +89,13 @@ class TicketView(discord.ui.View):
         )
 
 
-class RankedModal(discord.ui.Modal, title="Ranked 1v1 - Private Server Link"):
-    private_link = discord.ui.TextInput(
-        label="Private Server Link (Optional)",
-        placeholder="Enter private server link if applicable",
-        required=False,
-        max_length=200
-    )
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        view = OpponentSelectView(self.private_link.value if self.private_link.value else None)
-        await interaction.response.send_message(
-            "**Select your opponent from the dropdown below:**\n"
-            "*Start typing to search for a user in this server.*",
-            view=view,
-            ephemeral=True
-        )
-
-
 class OpponentSelect(discord.ui.UserSelect):
-    def __init__(self, private_link: Optional[str] = None):
+    def __init__(self):
         super().__init__(
             placeholder="Search and select an opponent...",
             min_values=1,
             max_values=1
         )
-        self.private_link = private_link
     
     async def callback(self, interaction: discord.Interaction):
         selected_user = self.values[0]
@@ -118,26 +104,27 @@ class OpponentSelect(discord.ui.UserSelect):
         
         cog = interaction.client.get_cog('Tickets')
         if cog:
-            await cog.create_ranked_ticket(interaction, selected_user, self.private_link)
+            await cog.create_ranked_ticket(interaction, selected_user)
 
 
 class OpponentSelectView(discord.ui.View):
-    def __init__(self, private_link: Optional[str] = None):
+    def __init__(self):
         super().__init__(timeout=120)
-        self.add_item(OpponentSelect(private_link))
+        self.add_item(OpponentSelect())
 
 
 class OutOfRangeAcceptView(discord.ui.View):
     """Shown to the opponent when a challenge is outside the 5-rank window.
     The opponent can Accept or Decline. Times out after 5 minutes."""
     def __init__(self, requester: discord.Member, opponent: discord.Member, 
-                 private_link: Optional[str], channel: discord.TextChannel, cog):
+                 channel: discord.TextChannel, cog):
         super().__init__(timeout=300)  # 5 minutes
         self.requester = requester
         self.opponent = opponent
-        self.private_link = private_link
         self.channel = channel  # the temp channel
         self.cog = cog
+        
+        self.msg = None
         self.responded = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -160,7 +147,7 @@ class OutOfRangeAcceptView(discord.ui.View):
 
         # Now finalize the ticket
         await self.cog._finalize_out_of_range_ticket(
-            self.channel, self.requester, self.opponent, self.private_link
+            self.channel, self.requester, self.opponent
         )
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger, emoji="\u274c")
@@ -254,14 +241,15 @@ class CloseRankedModal(discord.ui.Modal):
             max_length=100
         )
         self.add_item(self.observer)
-    
-    note = discord.ui.TextInput(
-        label="Closing Note (Optional)",
-        placeholder="Any additional notes about this match...",
-        required=False,
-        max_length=500,
-        style=discord.TextStyle.paragraph
-    )
+        
+        self.note = discord.ui.TextInput(
+            label="Closing Note (Optional)",
+            placeholder="Any additional notes about this match...",
+            required=False,
+            max_length=500,
+            style=discord.TextStyle.paragraph
+        )
+        self.add_item(self.note)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -282,14 +270,15 @@ class CloseRankedCancelModal(discord.ui.Modal):
             max_length=100
         )
         self.add_item(self.observer)
-    
-    reason = discord.ui.TextInput(
-        label="Reason for Cancellation",
-        placeholder="e.g., Opponent didn't show up, dodged, mutual cancel...",
-        required=True,
-        max_length=500,
-        style=discord.TextStyle.paragraph
-    )
+        
+        self.reason = discord.ui.TextInput(
+            label="Reason for Cancellation",
+            placeholder="e.g., Opponent didn't show up, dodged, mutual cancel...",
+            required=True,
+            max_length=500,
+            style=discord.TextStyle.paragraph
+        )
+        self.add_item(self.reason)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -310,21 +299,23 @@ class CloseObservationModal(discord.ui.Modal):
             max_length=100
         )
         self.add_item(self.observer)
-    
-    ending_rank = discord.ui.TextInput(
-        label="Ending Rank",
-        placeholder="e.g., Legends 14 (NO 'Remain' or 'Same')",
-        required=True,
-        max_length=50
-    )
-    
-    note = discord.ui.TextInput(
-        label="Closing Note (Optional)",
-        placeholder="Any additional notes about this observation...",
-        required=False,
-        max_length=500,
-        style=discord.TextStyle.paragraph
-    )
+        
+        self.ending_rank = discord.ui.TextInput(
+            label="Ending Rank",
+            placeholder="e.g., Legends 14 (NO 'Remain' or 'Same')",
+            required=True,
+            max_length=50
+        )
+        self.add_item(self.ending_rank)
+        
+        self.note = discord.ui.TextInput(
+            label="Closing Note (Optional)",
+            placeholder="Any additional notes about this observation...",
+            required=False,
+            max_length=500,
+            style=discord.TextStyle.paragraph
+        )
+        self.add_item(self.note)
     
     async def on_submit(self, interaction: discord.Interaction):
         end_val = validate_and_format_rank(self.ending_rank.value)
@@ -418,7 +409,7 @@ class Tickets(commands.Cog):
         await interaction.channel.send(embed=embed, view=TicketView())
         await interaction.response.send_message("Ticket panel setup complete!", ephemeral=True)
     
-    async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User, private_link: Optional[str]):
+    async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User):
         guild = interaction.guild
         user = interaction.user
         
@@ -517,7 +508,7 @@ class Tickets(commands.Cog):
             )
             embed.set_footer(text="This request expires in 5 minutes.")
             
-            view = OutOfRangeAcceptView(user, opponent_member, private_link, channel, self)
+            view = OutOfRangeAcceptView(user, opponent_member, channel, self)
             await channel.send(
                 content=f"{user.mention} {opponent_member.mention}",
                 embed=embed,
@@ -532,7 +523,7 @@ class Tickets(commands.Cog):
         
         ticket_id = await self.db.create_ranked_ticket_db(
             channel.id, user.id, 
-            opponent_name=opponent.name, opponent_id=opponent.id, private_link=private_link
+            opponent_name=opponent.name, opponent_id=opponent.id
         )
         print(f"Ticket {ticket_id} saved")
         
@@ -553,8 +544,6 @@ class Tickets(commands.Cog):
             user_stats=user_stats, opp_stats=opp_stats
         )
         
-        if private_link:
-            embed.add_field(name="Private Server Link", value=private_link, inline=False)
         
         await channel.send(
             content=f"{user.mention} {opponent_member.mention} {observer_mention}",
@@ -567,14 +556,13 @@ class Tickets(commands.Cog):
         )
     
     async def _finalize_out_of_range_ticket(self, channel: discord.TextChannel, 
-                                             requester: discord.Member, opponent: discord.Member,
-                                             private_link: Optional[str]):
+                                             requester: discord.Member, opponent: discord.Member):
         """Called when the opponent accepts an out-of-range challenge. 
         Registers the ticket in the DB and sends the official ticket embed."""
         ticket_id = await self.db.create_ranked_ticket_db(
             channel.id, requester.id,
             opponent_name=opponent.name, opponent_id=opponent.id,
-            private_link=private_link, out_of_range=True
+            out_of_range=True
         )
         print(f"Out-of-range ticket {ticket_id} saved")
         
@@ -600,9 +588,7 @@ class Tickets(commands.Cog):
             value="This match was accepted outside the 5-rank window.",
             inline=False
         )
-        if private_link:
-            embed.add_field(name="Private Server Link", value=private_link, inline=False)
-        
+
         await channel.send(
             content=f"{requester.mention} {opponent.mention} {observer_mention}",
             embed=embed

@@ -95,9 +95,7 @@ class TicketEmbeds:
             opponent_value = f"<@{ticket_data['opponent_id']}>\n`{ticket_data['opponent_name']}`" if ticket_data.get('opponent_id') else f"`{ticket_data['opponent_name']}`"
             embed.add_field(name="Opponent", value=opponent_value, inline=True)
         
-        if ticket_data.get('private_link'):
-            embed.add_field(name="Private Server", value=ticket_data['private_link'], inline=False)
-        
+
         embed.add_field(name="Observer", value=f"`{result_data['observer_name']}`", inline=True)
         if ticket_data['ticket_type'] == "Ranked 1v1":
             w_old = result_data.get('winner_old') or 'Unranked'

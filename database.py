@@ -51,6 +51,10 @@ class Database:
                 await self.tickets.create_index("channel_id")
                 await self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])
                 await self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])
+                # New indexes for rapid history command execution
+                await self.tickets.create_index([("user_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])
+                await self.tickets.create_index([("opponent_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])
+                
                 await self.ranked_results.create_index("ticket_id")
                 await self.observation_results.create_index("ticket_id")
             except Exception as e:
@@ -577,7 +581,7 @@ class Database:
         return ticket_id
         
     async def create_ranked_ticket_db(self, channel_id: int, user_id: int, 
-                           opponent_name: str, opponent_id: int, private_link: Optional[str] = None, out_of_range: bool = False) -> int:
+                           opponent_name: str, opponent_id: int, out_of_range: bool = False) -> int:
         ticket_id = await self._next_id("tickets")
         ticket = {
             "id": ticket_id,
@@ -590,7 +594,6 @@ class Database:
             "closed_by": None,
             "opponent_name": opponent_name,
             "opponent_id": opponent_id,
-            "private_link": private_link,
             "ducking_ping_sent": False,
             "out_of_range": out_of_range
         }
@@ -656,11 +659,31 @@ class Database:
         # Use aggregation pipeline to join tickets with results in a single query
         # instead of fetching each result individually (N+1 problem)
         
-        ranked_pipeline = [
+        # Use two separate pipelines for user_id and opponent_id to avoid 
+        # MongoDB's notoriously poor performance with $or combined with $sort.
+        # This guarantees it will use the compound indexes we created.
+        ranked_pipeline_user = [
             {"$match": {
                 "status": "closed",
                 "ticket_type": "Ranked 1v1",
-                "$or": [{"user_id": user_id}, {"opponent_id": user_id}]
+                "user_id": user_id
+            }},
+            {"$sort": {"closed_at": -1}},
+            {"$limit": limit},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result"
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
+        ]
+        
+        ranked_pipeline_opp = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "opponent_id": user_id
             }},
             {"$sort": {"closed_at": -1}},
             {"$limit": limit},
@@ -690,11 +713,19 @@ class Database:
             {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
         ]
         
-        ranked_cursor = self.tickets.aggregate(ranked_pipeline)
-        ranked_raw = await ranked_cursor.to_list(length=limit)
-        
+        ranked_cursor_user = self.tickets.aggregate(ranked_pipeline_user)
+        ranked_cursor_opp = self.tickets.aggregate(ranked_pipeline_opp)
         obs_cursor = self.tickets.aggregate(obs_pipeline)
-        obs_raw = await obs_cursor.to_list(length=limit)
+        
+        ranked_raw_user, ranked_raw_opp, obs_raw = await asyncio.gather(
+            ranked_cursor_user.to_list(length=limit),
+            ranked_cursor_opp.to_list(length=limit),
+            obs_cursor.to_list(length=limit)
+        )
+        
+        ranked_raw = ranked_raw_user + ranked_raw_opp
+        ranked_raw.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
+        ranked_raw = ranked_raw[:limit]
         
         ranked = [{**doc, **doc.pop("result")} for doc in ranked_raw]
         obs = [{**doc, **doc.pop("result")} for doc in obs_raw]
