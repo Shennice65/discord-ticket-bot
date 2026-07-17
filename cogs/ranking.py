@@ -413,6 +413,33 @@ class Ranking(commands.Cog):
         else:
             await interaction.followup.send(f"{user.mention} does not have an active unrank penalty.", ephemeral=True)
 
+    @app_commands.command(name="resetalltimers", description="Reset ALL timers (ranked, observation, rematch, unrank penalty) for a player")
+    async def reset_all_timers_cmd(self, interaction: discord.Interaction, user: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        await self.db.reset_all_timers(user.id)
+        
+        await interaction.followup.send(f"✅ Reset ALL timers (Ranked, Observation, Rematch, Unrank) for {user.mention}!", ephemeral=True)
+        
+        log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(
+                title="🔵 All Timers Reset",
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+            embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+            embed.add_field(name="Reset By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+            embed.set_footer(text=f"User ID: {user.id}")
+            
+            try:
+                await log_channel.send(embed=embed)
+            except Exception:
+                pass
+
     @app_commands.command(name="removebyrank", description="Remove a player from the leaderboard by specifying their rank (e.g., Legends 3)")
     @app_commands.describe(rank="The exact rank to remove (e.g., Legends 3)")
     async def remove_by_rank(self, interaction: discord.Interaction, rank: str):

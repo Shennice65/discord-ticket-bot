@@ -12,16 +12,44 @@ class TicketEmbeds:
             timestamp=datetime.utcnow()
         )
         
-        user_val = user.display_name
-        if user_stats:
-            user_val += f"\n\n{user_stats}"
-        embed.add_field(name="Created By", value=user_val, inline=True)
-        
-        if opponent:
-            opp_val = opponent
-            if opp_stats:
-                opp_val += f"\n\n{opp_stats}"
-            embed.add_field(name="Opponent", value=opp_val, inline=True)
+        if ticket_type == "Ranked 1v1" and opponent and user_stats and opp_stats:
+            u_lines = user_stats.split('\n')
+            o_lines = opp_stats.split('\n')
+            
+            val = f"**{user.display_name}** `VS` **{opponent}**\n"
+            
+            try:
+                u_m = u_lines[0].split('`')[1].strip()
+                u_w = u_lines[1].split('`')[1].strip()
+                o_m = o_lines[0].split('`')[1].strip()
+                o_w = o_lines[1].split('`')[1].strip()
+                
+                left_m = f"Matches: {u_m}"
+                left_w = f"WR: {u_w}"
+                
+                val += "```text\n"
+                val += f"{left_m:<12} | Matches: {o_m}\n"
+                val += f"{left_w:<12} | WR: {o_w}\n"
+                val += "```"
+            except Exception:
+                val += "\n"
+                for u, o in zip(u_lines, o_lines):
+                    u_clean = u.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:")
+                    o_clean = o.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:")
+                    val += f"{u_clean} \u2003|\u2003 {o_clean}\n"
+                
+            embed.add_field(name="Matchup", value=val.strip(), inline=False)
+        else:
+            user_val = user.display_name
+            if user_stats:
+                user_val += f"\n\n{user_stats}"
+            embed.add_field(name="Created By", value=user_val, inline=True)
+            
+            if opponent:
+                opp_val = opponent
+                if opp_stats:
+                    opp_val += f"\n\n{opp_stats}"
+                embed.add_field(name="Opponent", value=opp_val, inline=True)
             
         embed.add_field(
             name="Instructions",

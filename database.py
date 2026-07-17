@@ -359,6 +359,32 @@ class Database:
             {"$unset": {"original_rank": "", "unranked_at": ""}}
         )
         return result.modified_count > 0
+
+    async def reset_all_timers(self, user_id: int) -> bool:
+        """Resets ranked cooldown, obs cooldown, unrank penalty, and all rematch cooldowns for a user."""
+        await self.player_ranks.update_one(
+            {"user_id": user_id},
+            {"$unset": {
+                "last_ranked_request": "", 
+                "last_obs_request": "",
+                "original_rank": "",
+                "unranked_at": ""
+            }}
+        )
+        
+        await self.tickets.update_many(
+            {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [
+                    {"user_id": user_id},
+                    {"opponent_id": user_id}
+                ]
+            },
+            {"$set": {"rematch_cooldown_cleared": True}}
+        )
+        
+        return True
         
     async def remove_player_from_ladder(self, user_id: int, is_undo: bool = False) -> bool:
         from ladder_utils import TIERS, parse_rank
