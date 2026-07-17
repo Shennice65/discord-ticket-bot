@@ -11,14 +11,17 @@ class TicketEmbeds:
             color=discord.Color.green(),
             timestamp=datetime.utcnow()
         )
-        embed.add_field(name="Created By", value=user.display_name, inline=True)
-        if opponent:
-            embed.add_field(name="Opponent", value=opponent, inline=True)
-            
+        
+        user_val = user.display_name
         if user_stats:
-            embed.add_field(name=f"{user.display_name}'s Stats", value=user_stats, inline=False)
-        if opp_stats and opponent:
-            embed.add_field(name=f"{opponent}'s Stats", value=opp_stats, inline=False)
+            user_val += f"\n\n{user_stats}"
+        embed.add_field(name="Created By", value=user_val, inline=True)
+        
+        if opponent:
+            opp_val = opponent
+            if opp_stats:
+                opp_val += f"\n\n{opp_stats}"
+            embed.add_field(name="Opponent", value=opp_val, inline=True)
             
         embed.add_field(
             name="Instructions",
