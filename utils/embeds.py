@@ -14,8 +14,12 @@ class TicketEmbeds:
         
         if ticket_type == "Ranked 1v1" and opponent and user_stats and opp_stats:
             embed.description = f"**{user.display_name}** `VS` **{opponent}**"
-            embed.add_field(name=user.display_name, value=user_stats, inline=True)
-            embed.add_field(name=opponent, value=opp_stats, inline=True)
+            
+            u_clean = user_stats.replace("**Total Matches**:", "**Matches**:").replace("**Win Rate**:", "**WR**:")
+            o_clean = opp_stats.replace("**Total Matches**:", "**Matches**:").replace("**Win Rate**:", "**WR**:")
+            
+            val = f"**{user.display_name}**\n{u_clean}\n\n**{opponent}**\n{o_clean}"
+            embed.add_field(name="Matchup", value=val, inline=False)
         else:
             user_val = user.display_name
             if user_stats:
@@ -30,8 +34,7 @@ class TicketEmbeds:
             
         embed.add_field(
             name="Instructions",
-            value="An observer will assist you shortly.\n"
-                  "Use `/close` when the session is complete.",
+            value="An observer will assist you shortly.",
             inline=False
         )
         embed.set_footer(text=f"User: {user.name}")

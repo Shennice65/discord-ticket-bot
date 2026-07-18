@@ -655,7 +655,7 @@ class Database:
         }
         await self.observation_results.insert_one(result)
     
-    async def get_user_history(self, user_id: int, user_name: str, limit: int = 10) -> Dict[str, List]:
+    async def get_user_history(self, user_id: int, user_name: str, limit: int = 0) -> Dict[str, List]:
         # Use aggregation pipeline to join tickets with results in a single query
         # instead of fetching each result individually (N+1 problem)
         
@@ -669,7 +669,6 @@ class Database:
                 "user_id": user_id
             }},
             {"$sort": {"closed_at": -1}},
-            {"$limit": limit},
             {"$lookup": {
                 "from": "ranked_results",
                 "localField": "id",
@@ -686,7 +685,6 @@ class Database:
                 "opponent_id": user_id
             }},
             {"$sort": {"closed_at": -1}},
-            {"$limit": limit},
             {"$lookup": {
                 "from": "ranked_results",
                 "localField": "id",
@@ -703,7 +701,6 @@ class Database:
                 "user_id": user_id
             }},
             {"$sort": {"closed_at": -1}},
-            {"$limit": limit},
             {"$lookup": {
                 "from": "observation_results",
                 "localField": "id",
@@ -713,20 +710,28 @@ class Database:
             {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
         ]
         
+        if limit > 0:
+            ranked_pipeline_user.append({"$limit": limit})
+            ranked_pipeline_opp.append({"$limit": limit})
+            obs_pipeline.append({"$limit": limit})
+        
         ranked_cursor_user = self.tickets.aggregate(ranked_pipeline_user)
         ranked_cursor_opp = self.tickets.aggregate(ranked_pipeline_opp)
         obs_cursor = self.tickets.aggregate(obs_pipeline)
         
+        fetch_len = None if limit <= 0 else limit
         ranked_raw_user, ranked_raw_opp, obs_raw = await asyncio.gather(
-            ranked_cursor_user.to_list(length=limit),
-            ranked_cursor_opp.to_list(length=limit),
-            obs_cursor.to_list(length=limit)
+            ranked_cursor_user.to_list(length=fetch_len),
+            ranked_cursor_opp.to_list(length=fetch_len),
+            obs_cursor.to_list(length=fetch_len)
         )
         
         ranked_raw = ranked_raw_user + ranked_raw_opp
         ranked_raw.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
-        ranked_raw = ranked_raw[:limit]
         
+        if limit > 0:
+            ranked_raw = ranked_raw[:limit]
+            
         ranked = [{**doc, **doc.pop("result")} for doc in ranked_raw]
         obs = [{**doc, **doc.pop("result")} for doc in obs_raw]
         
