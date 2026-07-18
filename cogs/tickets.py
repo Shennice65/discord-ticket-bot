@@ -119,7 +119,6 @@ class OpponentSelect(discord.ui.UserSelect):
     
     async def callback(self, interaction: discord.Interaction):
         selected_user = self.values[0]
-        # Remove the dropdown view
         await interaction.response.edit_message(content=f"Opponent {selected_user.mention} selected. Creating ticket...", view=None)
         
         cog = interaction.client.get_cog('Tickets')
@@ -134,14 +133,12 @@ class OpponentSelectView(discord.ui.View):
 
 
 class OutOfRangeAcceptView(discord.ui.View):
-    """Shown to the opponent when a challenge is outside the 5-rank window.
-    The opponent can Accept or Decline. Times out after 5 minutes."""
     def __init__(self, requester: discord.Member, opponent: discord.Member, 
                  channel: discord.TextChannel, cog):
-        super().__init__(timeout=300)  # 5 minutes
+        super().__init__(timeout=300)
         self.requester = requester
         self.opponent = opponent
-        self.channel = channel  # the temp channel
+        self.channel = channel
         self.cog = cog
         
         self.msg = None
@@ -153,7 +150,7 @@ class OutOfRangeAcceptView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success, emoji="\u2694\ufe0f")
+    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.responded:
             return
@@ -161,16 +158,15 @@ class OutOfRangeAcceptView(discord.ui.View):
         self.stop()
 
         await interaction.response.edit_message(
-            content=f"\u2705 {self.opponent.mention} **accepted** the out-of-range challenge!",
+            content=f"{self.opponent.mention} **accepted** the out-of-range challenge!",
             view=None
         )
 
-        # Now finalize the ticket
         await self.cog._finalize_out_of_range_ticket(
             self.channel, self.requester, self.opponent
         )
 
-    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger, emoji="\u274c")
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.responded:
             return
@@ -178,11 +174,10 @@ class OutOfRangeAcceptView(discord.ui.View):
         self.stop()
 
         await interaction.response.edit_message(
-            content=f"\u274c {self.opponent.mention} **declined** the challenge. This channel will be deleted in 10 seconds.",
+            content=f"{self.opponent.mention} **declined** the challenge. This channel will be deleted in 10 seconds.",
             view=None
         )
 
-        # Reset requester cooldown since the match never happened
         await self.cog.db.reset_ranked_cooldown_only(self.requester.id)
 
         await asyncio.sleep(10)
@@ -198,13 +193,12 @@ class OutOfRangeAcceptView(discord.ui.View):
 
         try:
             await self.channel.send(
-                f"\u23f0 The out-of-range challenge from {self.requester.mention} to {self.opponent.mention} has **expired** (5 min timeout). "
+                f"The out-of-range challenge from {self.requester.mention} to {self.opponent.mention} has **expired** (5 min timeout). "
                 f"This channel will be deleted in 10 seconds."
             )
         except Exception:
             pass
 
-        # Reset requester cooldown
         await self.cog.db.reset_ranked_cooldown_only(self.requester.id)
 
         await asyncio.sleep(10)
@@ -222,15 +216,15 @@ class WinnerButtonView(discord.ui.View):
         self.player2_id = player2_id
         self.player2_name = player2_name
         
-        btn1 = discord.ui.Button(label=f"{player1_name}", style=discord.ButtonStyle.primary, custom_id="winner_p1")
+        btn1 = discord.ui.Button(label=f"{player1_name}", style=discord.ButtonStyle.primary)
         btn1.callback = self.select_player1
         self.add_item(btn1)
         
-        btn2 = discord.ui.Button(label=f"{player2_name}", style=discord.ButtonStyle.primary, custom_id="winner_p2")
+        btn2 = discord.ui.Button(label=f"{player2_name}", style=discord.ButtonStyle.primary)
         btn2.callback = self.select_player2
         self.add_item(btn2)
         
-        btn3 = discord.ui.Button(label="Cancel Match", style=discord.ButtonStyle.danger, custom_id="cancel_match")
+        btn3 = discord.ui.Button(label="Cancel Match", style=discord.ButtonStyle.danger)
         btn3.callback = self.cancel_match
         self.add_item(btn3)
     
@@ -315,7 +309,7 @@ class CloseObservationModal(discord.ui.Modal):
         
         if not end_val:
             await interaction.response.send_message(
-                "❌ **Invalid Rank Format!**\n"
+                "Invalid Rank Format!\n"
                 "Ranks must be exactly one of the official tiers followed by a number.\n"
                 "Valid tiers: *Novices, Masters, Legends, Elites, Champions, Phantoms*\n"
                 "Example: `Legends 12`",
@@ -327,6 +321,46 @@ class CloseObservationModal(discord.ui.Modal):
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.process_observation_close(interaction, self, end_val)
+
+
+def get_observer_mention(guild: discord.Guild) -> str:
+    """Get combined mention string for both Observer and Trial Observer roles."""
+    mentions = []
+    observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
+    if observer_role:
+        mentions.append(observer_role.mention)
+    if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID') and Config.TRIAL_OBSERVER_ROLE_ID:
+        trial_role = guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
+        if trial_role:
+            mentions.append(trial_role.mention)
+    if not mentions:
+        mentions.append("@Observers")
+    return " ".join(mentions)
+
+
+def is_observer_or_trial(member: discord.Member) -> bool:
+    """Check if a member has Observer or Trial Observer role."""
+    observer_role = member.guild.get_role(Config.OBSERVER_ROLE_ID)
+    if observer_role and observer_role in member.roles:
+        return True
+    if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID') and Config.TRIAL_OBSERVER_ROLE_ID:
+        trial_role = member.guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
+        if trial_role and trial_role in member.roles:
+            return True
+    return False
+
+
+def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict) -> dict:
+    """Add Observer and Trial Observer role overwrites to a permission dict."""
+    overwrites = base_overwrites.copy()
+    observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
+    if observer_role:
+        overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID') and Config.TRIAL_OBSERVER_ROLE_ID:
+        trial_role = guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
+        if trial_role:
+            overwrites[trial_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    return overwrites
 
 
 class Tickets(commands.Cog):
@@ -353,20 +387,13 @@ class Tickets(commands.Cog):
         for ticket in open_tickets:
             channel = self.bot.get_channel(ticket['channel_id'])
             
-            # Note: We do NOT use fetch_channel here because we don't want to hit API limits,
-            # and we NO LONGER automatically close tickets in the DB if the channel is missing.
-            # We simply skip them.
-            
             if channel:
                 try:
                     try:
                         created = datetime.fromisoformat(ticket['created_at'])
                         if (now_naive - created).total_seconds() > 604800:
-                            observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
-                            observer_mention = observer_role.mention if observer_role else "@Observers"
-                            
+                            observer_mention = get_observer_mention(channel.guild)
                             await channel.send(f"{observer_mention} This ticket has been inactive for 7 days. Please check if the requested player is avoiding the match.")
-                            
                             await self.db.mark_ducking_ping_sent(ticket['channel_id'])
                     except ValueError:
                         pass
@@ -424,7 +451,6 @@ class Tickets(commands.Cog):
             await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
             return
         
-        # Smurf prevention: check if formerly-ranked player can R1
         can_r1, r1_reason = await self.db.can_player_r1(user.id)
         if not can_r1:
             await interaction.followup.send(r1_reason, ephemeral=True)
@@ -445,7 +471,6 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**.", ephemeral=True)
             return
         
-        # Rematch cooldown: prevent same two players from facing each other within 24h
         rematch_cd = await self.db.get_rematch_cooldown(user.id, opponent.id)
         if rematch_cd > 0:
             hours = int(rematch_cd)
@@ -458,16 +483,13 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Ticket category not configured!", ephemeral=True)
             return
         
-        observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
-        observer_mention = observer_role.mention if observer_role else "@Observers"
+        observer_mention = get_observer_mention(guild)
         
-        overwrites = {
+        overwrites = get_observer_overwrites(guild, {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             opponent_member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-        if observer_role:
-            overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        })
         
         channel_name = f"ranked-{user.name}-vs-{opponent.name}".lower().replace(" ", "-")[:100]
         try:
@@ -481,7 +503,6 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        # If out of range, send acceptance prompt instead of finalizing immediately
         if is_out_of_range:
             await self.db.update_ranked_cooldown(user.id)
             
@@ -489,12 +510,12 @@ class Tickets(commands.Cog):
             opp_rank = await self.db.get_player_rank(opponent.id)
             
             embed = discord.Embed(
-                title="\u2694\ufe0f Out-of-Range Challenge",
+                title="Out-of-Range Challenge",
                 description=(
                     f"{user.mention} wants to challenge {opponent_member.mention} to a **Ranked 1v1**!\n\n"
                     f"**{user.display_name}** is ranked **{user_rank or 'Unranked'}**\n"
                     f"**{opponent_member.display_name}** is ranked **{opp_rank or 'Unranked'}**\n\n"
-                    f"\u26a0\ufe0f This match is **outside the 5-rank window**.\n"
+                    f"This match is **outside the 5-rank window**.\n"
                     f"{opponent_member.mention}, do you accept this challenge?"
                 ),
                 color=discord.Color.orange()
@@ -509,7 +530,7 @@ class Tickets(commands.Cog):
             )
             
             await interaction.edit_original_response(
-                content=f"\u26a0\ufe0f Out-of-range challenge sent! Waiting for {opponent_member.mention} to accept in {channel.mention}.",
+                content=f"Out-of-range challenge sent! Waiting for {opponent_member.mention} to accept in {channel.mention}.",
                 view=None
             )
             return
@@ -525,7 +546,6 @@ class Tickets(commands.Cog):
         user_history = await self.db.get_user_history(user.id, user.name)
         opp_history = await self.db.get_user_history(opponent.id, opponent.name)
         
-        from utils.embeds import TicketEmbeds
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
         o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
         
@@ -540,7 +560,6 @@ class Tickets(commands.Cog):
             user_stats=user_stats, opp_stats=opp_stats
         )
         
-        
         await channel.send(
             content=f"{user.mention} {opponent_member.mention} {observer_mention}",
             embed=embed
@@ -553,8 +572,6 @@ class Tickets(commands.Cog):
     
     async def _finalize_out_of_range_ticket(self, channel: discord.TextChannel, 
                                              requester: discord.Member, opponent: discord.Member):
-        """Called when the opponent accepts an out-of-range challenge. 
-        Registers the ticket in the DB and sends the official ticket embed."""
         ticket_id = await self.db.create_ranked_ticket_db(
             channel.id, requester.id,
             opponent_name=opponent.name, opponent_id=opponent.id,
@@ -562,13 +579,11 @@ class Tickets(commands.Cog):
         )
         print(f"Out-of-range ticket {ticket_id} saved")
         
-        observer_role = channel.guild.get_role(Config.OBSERVER_ROLE_ID)
-        observer_mention = observer_role.mention if observer_role else "@Observers"
+        observer_mention = get_observer_mention(channel.guild)
         
         user_history = await self.db.get_user_history(requester.id, requester.name)
         opp_history = await self.db.get_user_history(opponent.id, opponent.name)
         
-        from utils.embeds import TicketEmbeds
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(requester.id, requester.name, user_history)
         o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
         
@@ -583,7 +598,7 @@ class Tickets(commands.Cog):
             user_stats=user_stats, opp_stats=opp_stats
         )
         embed.add_field(
-            name="\u26a0\ufe0f Out-of-Range Match",
+            name="Out-of-Range Match",
             value="This match was accepted outside the 5-rank window.",
             inline=False
         )
@@ -618,15 +633,12 @@ class Tickets(commands.Cog):
             await interaction.followup.send("Ticket category not configured!", ephemeral=True)
             return
         
-        observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
-        observer_mention = observer_role.mention if observer_role else "@Observers"
+        observer_mention = get_observer_mention(guild)
         
-        overwrites = {
+        overwrites = get_observer_overwrites(guild, {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-        if observer_role:
-            overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        })
         
         channel_name = f"obs-{user.name}".lower().replace(" ", "-")
         try:
@@ -690,12 +702,10 @@ class Tickets(commands.Cog):
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
             return
         
-        # If a previous close attempt failed and left the ticket stuck in "processing", reset it
         if ticket_data.get("status") == "processing":
             await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
             ticket_data["status"] = "open"
             
-        # If the ticket is already completely closed in the database but the channel survived a restart, just delete the channel
         if ticket_data.get("status") == "closed":
             await interaction.response.send_message("This ticket was already closed in the database. Deleting channel now...", ephemeral=True)
             await asyncio.sleep(3)
@@ -705,11 +715,10 @@ class Tickets(commands.Cog):
                 pass
             return
         
-        observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
-        is_observer = observer_role in interaction.user.roles if observer_role else False
+        is_obs = is_observer_or_trial(interaction.user)
         is_owner = interaction.user.id == ticket_data['user_id']
         
-        if not is_observer:
+        if not is_obs:
             if ticket_data['ticket_type'] == "Ranked 1v1":
                 await interaction.response.send_message("Only observers can close Ranked 1v1 tickets!", ephemeral=True)
                 return
@@ -717,7 +726,7 @@ class Tickets(commands.Cog):
                 await interaction.response.send_message("You don't have permission to close this ticket!", ephemeral=True)
                 return
         
-        if is_observer:
+        if is_obs:
             if ticket_data['ticket_type'] == "Ranked 1v1":
                 player1_id = ticket_data['user_id']
                 player2_id = ticket_data['opponent_id']
@@ -732,7 +741,6 @@ class Tickets(commands.Cog):
                 modal = CloseObservationModal(current_rank=current_rank)
                 await interaction.response.send_modal(modal)
         else:
-            # User is the owner, not an observer. Close immediately.
             await interaction.response.defer(ephemeral=True)
             await self.db.close_ticket(interaction.channel.id, interaction.user.id)
             
@@ -753,7 +761,6 @@ class Tickets(commands.Cog):
             await interaction.channel.delete()
     
     async def process_ranked_close(self, interaction: discord.Interaction, modal: CloseRankedModal):
-        # Guard against double-close: atomically check and mark as processing
         result = await self.db.tickets.find_one_and_update(
             {"channel_id": interaction.channel.id, "status": "open"},
             {"$set": {"status": "processing"}}
@@ -764,16 +771,14 @@ class Tickets(commands.Cog):
         ticket_data = result
         
         try:
-            # Skip 5-rank re-validation for out-of-range matches (opponent already accepted)
             if not ticket_data.get("out_of_range", False):
                 idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
                 idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
                 
                 if idx_user != -1 and idx_opp != -1:
                     if abs(idx_user - idx_opp) > 5:
-                        # Revert status so someone else can try
                         await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                        await interaction.followup.send("\u274c **Match Invalidated!** The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
+                        await interaction.followup.send("Match Invalidated! The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
                         return
                     
             winner_id = modal.winner_id
@@ -814,13 +819,11 @@ class Tickets(commands.Cog):
             await asyncio.sleep(5)
             await interaction.channel.delete()
         except Exception as e:
-            # Revert status so the ticket can be closed again
             await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-            await interaction.followup.send(f"❌ An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            await interaction.followup.send(f"An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
             print(f"Error in process_ranked_close: {e}")
 
     async def process_ranked_cancel(self, interaction: discord.Interaction, modal: CloseRankedCancelModal):
-        # Guard against double-close: atomically check and mark as processing
         result = await self.db.tickets.find_one_and_update(
             {"channel_id": interaction.channel.id, "status": "open"},
             {"$set": {"status": "processing"}}
@@ -832,8 +835,6 @@ class Tickets(commands.Cog):
         
         try:
             await self.db.close_ticket(interaction.channel.id, interaction.user.id)
-            
-            # Reset the requester's cooldown since the match was cancelled
             await self.db.reset_ranked_cooldown_only(ticket_data['user_id'])
             
             log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
@@ -863,11 +864,10 @@ class Tickets(commands.Cog):
             await interaction.channel.delete()
         except Exception as e:
             await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-            await interaction.followup.send(f"❌ An error occurred while cancelling: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            await interaction.followup.send(f"An error occurred while cancelling: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
             print(f"Error in process_ranked_cancel: {e}")
     
     async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal, end_rank: str):
-        # Guard against double-close: atomically check and mark as processing
         result = await self.db.tickets.find_one_and_update(
             {"channel_id": interaction.channel.id, "status": "open"},
             {"$set": {"status": "processing"}}
@@ -889,7 +889,7 @@ class Tickets(commands.Cog):
                 
                 if target_num > current_count + 1:
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                    await interaction.followup.send(f"❌ **Invalid Rank Gap!** You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
+                    await interaction.followup.send(f"Invalid Rank Gap! You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
                     return
             
             success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
@@ -913,7 +913,7 @@ class Tickets(commands.Cog):
             if log_channel:
                 user = await self.bot.fetch_user(ticket_data['user_id'])
                 result_data = {
-                    'observer_name': modal.observer.value,
+                    'observer_name': interaction.user.name,
                     'starting_rank': old_rank if old_rank else "Unranked",
                     'ending_rank': actual_new_rank,
                     'note': modal.note.value if modal.note.value else None
@@ -926,7 +926,7 @@ class Tickets(commands.Cog):
             await interaction.channel.delete()
         except Exception as e:
             await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-            await interaction.followup.send(f"❌ An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            await interaction.followup.send(f"An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
             print(f"Error in process_observation_close: {e}")
 
 

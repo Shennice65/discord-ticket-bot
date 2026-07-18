@@ -8,6 +8,16 @@ from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
 
+def is_observer_check(user: discord.Member, guild: discord.Guild) -> bool:
+    observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
+    if observer_role and observer_role in user.roles:
+        return True
+    if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID'):
+        trial_observer_role = guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
+        if trial_observer_role and trial_observer_role in user.roles:
+            return True
+    return False
+
 class ClearHistoryView(discord.ui.View):
     def __init__(self, user_id: int, user_name: str):
         super().__init__(timeout=60)
@@ -96,9 +106,6 @@ class HistoryView(discord.ui.View):
         self.target_user = target_user
         self.history = history
         self.unrank_info = unrank_info
-        
-        # We append the clear history view items if they are an observer, but for a cleaner UI,
-        # we can just put a "Clear History" button that sends the modal, similar to what we did before.
         self.is_observer = is_observer
 
     @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, custom_id="hist_overview")
@@ -136,16 +143,12 @@ class History(commands.Cog):
     async def history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
         target_user = user or interaction.user
         
-        observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
-        is_observer = observer_role in interaction.user.roles if observer_role else False
-        
-        # Removed: anyone can view anyone's history
+        is_observer = is_observer_check(interaction.user, interaction.guild)
         
         await interaction.response.defer(ephemeral=True)
         
         history = await self.db.get_user_history(target_user.id, target_user.name)
         
-        # Fetch unrank status for the profile
         player = await self.db.player_ranks.find_one({"user_id": target_user.id})
         unrank_info = None
         if player and player.get("unranked_at"):
@@ -158,7 +161,6 @@ class History(commands.Cog):
         embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info)
         view = HistoryView(target_user, history, unrank_info, is_observer)
         
-        # If not an observer, remove the clear button
         if not is_observer:
             view.remove_item(view.btn_clear)
             
@@ -177,10 +179,7 @@ class History(commands.Cog):
         user: discord.Member, 
         type: app_commands.Choice[str]
     ):
-        observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
-        is_observer = observer_role in interaction.user.roles if observer_role else False
-        
-        if not is_observer:
+        if not is_observer_check(interaction.user, interaction.guild):
             await interaction.response.send_message("Only observers can clear history!", ephemeral=True)
             return
         

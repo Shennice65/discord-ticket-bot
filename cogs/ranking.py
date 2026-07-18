@@ -16,6 +16,9 @@ def is_admin_or_observer(interaction: discord.Interaction) -> bool:
     observer_role = interaction.guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role and observer_role in interaction.user.roles:
         return True
+    trial_observer_role = interaction.guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
+    if trial_observer_role and trial_observer_role in interaction.user.roles:
+        return True
     return False
 
 def parse_rank(rank_str: str):
