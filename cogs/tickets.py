@@ -71,6 +71,14 @@ class ObservationConfirmView(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="Personal Observation request cancelled.", view=None)
 
+def is_blocked_from_obs(member: discord.Member) -> bool:
+    """Check if a member is blocked from Personal Observation."""
+    if hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
+        blocked_role = member.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
+        if blocked_role and blocked_role in member.roles:
+            return True
+    return False
+
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -87,6 +95,13 @@ class TicketView(discord.ui.View):
     
     @discord.ui.button(label="Personal Observation", style=discord.ButtonStyle.secondary, custom_id="personal_obs")
     async def obs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if is_blocked_from_obs(interaction.user):
+            await interaction.response.send_message(
+                "You are not allowed to request Personal Observations.",
+                ephemeral=True
+            )
+            return
+        
         view = ObservationConfirmView()
         await interaction.response.send_message(
             "**Are you sure you want to request a Personal Observation?**\n\n"
@@ -324,7 +339,6 @@ class CloseObservationModal(discord.ui.Modal):
 
 
 def get_observer_mention(guild: discord.Guild) -> str:
-    """Get combined mention string for both Observer and Trial Observer roles."""
     mentions = []
     observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role:
@@ -339,7 +353,6 @@ def get_observer_mention(guild: discord.Guild) -> str:
 
 
 def is_observer_or_trial(member: discord.Member) -> bool:
-    """Check if a member has Observer or Trial Observer role."""
     observer_role = member.guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role and observer_role in member.roles:
         return True
@@ -351,7 +364,6 @@ def is_observer_or_trial(member: discord.Member) -> bool:
 
 
 def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict) -> dict:
-    """Add Observer and Trial Observer role overwrites to a permission dict."""
     overwrites = base_overwrites.copy()
     observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role:
@@ -645,6 +657,13 @@ class Tickets(commands.Cog):
     async def create_observation_ticket(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
+        
+        if is_blocked_from_obs(user):
+            await interaction.followup.send(
+                "You are not allowed to request Personal Observations.",
+                ephemeral=True
+            )
+            return
         
         existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
         if existing_ticket:
