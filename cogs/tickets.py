@@ -215,7 +215,7 @@ class WinnerButtonView(discord.ui.View):
         self.add_item(btn3)
     
     async def select_player1(self, interaction: discord.Interaction):
-        modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id, observer_name=interaction.user.display_name)
+        modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id)
         await interaction.response.send_modal(modal)
     
     async def select_player2(self, interaction: discord.Interaction):
@@ -509,8 +509,11 @@ class Tickets(commands.Cog):
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
         o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
         
-        user_stats = f"**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
-        opp_stats = f"**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
+        u_rank = await self.db.get_player_rank(user.id) or "Unranked"
+        o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"
+        
+        user_stats = f"**Rank**: `{u_rank}`\n**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
+        opp_stats = f"**Rank**: `{o_rank}`\n**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
         
         embed = TicketEmbeds.ticket_created(
             "Ranked 1v1", user, opponent.name,
@@ -549,8 +552,11 @@ class Tickets(commands.Cog):
         u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(requester.id, requester.name, user_history)
         o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
         
-        user_stats = f"**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
-        opp_stats = f"**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
+        u_rank = await self.db.get_player_rank(requester.id) or "Unranked"
+        o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"
+        
+        user_stats = f"**Rank**: `{u_rank}`\n**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
+        opp_stats = f"**Rank**: `{o_rank}`\n**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
         
         embed = TicketEmbeds.ticket_created(
             "Ranked 1v1", requester, opponent.name,
@@ -621,7 +627,8 @@ class Tickets(commands.Cog):
         
         user_history = await self.db.get_user_history(user.id, user.name)
         total_obs = len(user_history.get('observations', []))
-        user_stats = f"**Total Observations**: `{total_obs}`"
+        u_rank = await self.db.get_player_rank(user.id) or "Unranked"
+        user_stats = f"**Rank**: `{u_rank}`\n**Total Observations**: `{total_obs}`"
         
         embed = TicketEmbeds.ticket_created(
             "Personal Observation", user, user_stats=user_stats
