@@ -19,23 +19,28 @@ class TicketEmbeds:
             val = f"**{user.display_name}** `VS` **{opponent}**\n"
             
             try:
-                u_m = u_lines[0].split('`')[1].strip()
-                u_w = u_lines[1].split('`')[1].strip()
-                o_m = o_lines[0].split('`')[1].strip()
-                o_w = o_lines[1].split('`')[1].strip()
+                u_r = u_lines[0].split('`')[1].strip()
+                u_m = u_lines[1].split('`')[1].strip()
+                u_w = u_lines[2].split('`')[1].strip()
                 
+                o_r = o_lines[0].split('`')[1].strip()
+                o_m = o_lines[1].split('`')[1].strip()
+                o_w = o_lines[2].split('`')[1].strip()
+                
+                left_r = f"Rank: {u_r}"
                 left_m = f"Matches: {u_m}"
                 left_w = f"WR: {u_w}"
                 
                 val += "```text\n"
-                val += f"{left_m:<12} | Matches: {o_m}\n"
-                val += f"{left_w:<12} | WR: {o_w}\n"
+                val += f"{left_r:<18} | Rank: {o_r}\n"
+                val += f"{left_m:<18} | Matches: {o_m}\n"
+                val += f"{left_w:<18} | WR: {o_w}\n"
                 val += "```"
             except Exception:
                 val += "\n"
                 for u, o in zip(u_lines, o_lines):
-                    u_clean = u.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:")
-                    o_clean = o.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:")
+                    u_clean = u.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:").replace("**Rank**:", "Rank:")
+                    o_clean = o.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:").replace("**Rank**:", "Rank:")
                     val += f"{u_clean} \u2003|\u2003 {o_clean}\n"
                 
             embed.add_field(name="Matchup", value=val.strip(), inline=False)
