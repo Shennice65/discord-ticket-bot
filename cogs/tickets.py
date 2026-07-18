@@ -55,6 +55,22 @@ class UnrankConfirmView(discord.ui.View):
         await interaction.response.edit_message(content="Unrank cancelled.", view=None)
 
 
+class ObservationConfirmView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+    
+    @discord.ui.button(label="Yes, Request Observation", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await interaction.edit_original_response(content="Processing...", view=None)
+        cog = interaction.client.get_cog('Tickets')
+        if cog:
+            await cog.create_observation_ticket(interaction)
+    
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Personal Observation request cancelled.", view=None)
+
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -71,10 +87,14 @@ class TicketView(discord.ui.View):
     
     @discord.ui.button(label="Personal Observation", style=discord.ButtonStyle.secondary, custom_id="personal_obs")
     async def obs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        cog = interaction.client.get_cog('Tickets')
-        if cog:
-            await cog.create_observation_ticket(interaction)
+        view = ObservationConfirmView()
+        await interaction.response.send_message(
+            "**Are you sure you want to request a Personal Observation?**\n\n"
+            "This will notify observers to review your gameplay.\n"
+            "You can only request this **once every two weeks**.",
+            view=view,
+            ephemeral=True
+        )
     
     @discord.ui.button(label="Unrank", style=discord.ButtonStyle.danger, custom_id="unrank_self")
     async def unrank_button(self, interaction: discord.Interaction, button: discord.ui.Button):
