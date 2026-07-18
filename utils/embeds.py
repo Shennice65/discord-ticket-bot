@@ -13,39 +13,9 @@ class TicketEmbeds:
         )
         
         if ticket_type == "Ranked 1v1" and opponent and user_stats and opp_stats:
-            u_lines = user_stats.split('\n')
-            o_lines = opp_stats.split('\n')
-            
-            val = f"**{user.display_name}** `VS` **{opponent}**\n"
-            
-            try:
-                u_r = u_lines[0].split('`')[1].strip()
-                u_m = u_lines[1].split('`')[1].strip()
-                u_w = u_lines[2].split('`')[1].strip()
-                
-                o_r = o_lines[0].split('`')[1].strip()
-                o_m = o_lines[1].split('`')[1].strip()
-                o_w = o_lines[2].split('`')[1].strip()
-                
-                left_r = u_r
-                left_m = f"Matches: {u_m}"
-                left_w = f"WR: {u_w}"
-                
-                max_left = max(len(left_r), len(left_m), len(left_w))
-                
-                val += "```text\n"
-                val += f"{left_r:<{max_left}} | {o_r}\n"
-                val += f"{left_m:<{max_left}} | Matches: {o_m}\n"
-                val += f"{left_w:<{max_left}} | WR: {o_w}\n"
-                val += "```"
-            except Exception:
-                val += "\n"
-                for u, o in zip(u_lines, o_lines):
-                    u_clean = u.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:").replace("**Rank**:", "Rank:")
-                    o_clean = o.replace("**Total Matches**:", "Matches:").replace("**Win Rate**:", "WR:").replace("**Rank**:", "Rank:")
-                    val += f"{u_clean} \u2003|\u2003 {o_clean}\n"
-                
-            embed.add_field(name="Matchup", value=val.strip(), inline=False)
+            embed.description = f"**{user.display_name}** `VS` **{opponent}**"
+            embed.add_field(name=user.display_name, value=user_stats, inline=True)
+            embed.add_field(name=opponent, value=opp_stats, inline=True)
         else:
             user_val = user.display_name
             if user_stats:
