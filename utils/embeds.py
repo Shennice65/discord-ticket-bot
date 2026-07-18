@@ -27,14 +27,14 @@ class TicketEmbeds:
                 o_m = o_lines[1].split('`')[1].strip()
                 o_w = o_lines[2].split('`')[1].strip()
                 
-                left_r = f"Rank: {u_r}"
+                left_r = u_r
                 left_m = f"Matches: {u_m}"
                 left_w = f"WR: {u_w}"
                 
                 val += "```text\n"
-                val += f"{left_r:<18} | Rank: {o_r}\n"
-                val += f"{left_m:<18} | Matches: {o_m}\n"
-                val += f"{left_w:<18} | WR: {o_w}\n"
+                val += f"{left_r:<14} | {o_r}\n"
+                val += f"{left_m:<14} | Matches: {o_m}\n"
+                val += f"{left_w:<14} | WR: {o_w}\n"
                 val += "```"
             except Exception:
                 val += "\n"
