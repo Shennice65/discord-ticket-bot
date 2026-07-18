@@ -508,6 +508,10 @@ class Tickets(commands.Cog):
         idx_user = await self.db.get_global_rank_index(user.id)
         idx_opp = await self.db.get_global_rank_index(opponent.id)
         
+        if idx_opp == -1:
+            await interaction.followup.send("You cannot request a ranked 1v1 against an unranked player!", ephemeral=True)
+            return
+        
         is_out_of_range = False
         if idx_user != -1 and idx_opp != -1:
             if abs(idx_user - idx_opp) > 5:
