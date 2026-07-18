@@ -20,6 +20,8 @@ def validate_and_format_rank(rank_str: str) -> Optional[str]:
         "champion": "Champions", "champions": "Champions",
         "phantom": "Phantoms", "phantoms": "Phantoms"
     }
+    if rank_str.strip().lower() == "unranked":
+        return "Unranked"
     match = re.match(r'^\s*([a-zA-Z]+)\s*(\d+)\s*$', rank_str)
     if not match:
         return None
@@ -289,7 +291,7 @@ class CloseObservationModal(discord.ui.Modal):
         
         self.ending_rank = discord.ui.TextInput(
             label="Ending Rank",
-            placeholder="e.g., Legends 14 (NO 'Remain' or 'Same')",
+            placeholder="e.g., Legends 14 or Unranked (NO 'Remain')",
             required=True,
             max_length=50
         )
@@ -771,6 +773,16 @@ class Tickets(commands.Cog):
         is_obs = is_observer_or_trial(interaction.user, ticket_data['ticket_type'])
         is_owner = interaction.user.id == ticket_data['user_id']
         
+        if ticket_data['ticket_type'] == "Personal Observation":
+            has_no_obs = False
+            if hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
+                no_obs_role = interaction.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
+                if no_obs_role and no_obs_role in interaction.user.roles:
+                    has_no_obs = True
+            if has_no_obs:
+                await interaction.response.send_message("You don't have permission to close Personal Observation tickets!", ephemeral=True)
+                return
+        
         if not is_obs:
             if ticket_data['ticket_type'] == "Ranked 1v1":
                 await interaction.response.send_message("Only observers can close Ranked 1v1 tickets!", ephemeral=True)
@@ -945,12 +957,20 @@ class Tickets(commands.Cog):
                     await interaction.followup.send(f"Invalid Rank Gap! You cannot place a player at {end_rank} because there are only {current_count} players in {tier}. The maximum rank you can assign is {tier} {current_count + 1}.", ephemeral=True)
                     return
             
-            success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
-            
-            if not success:
-                await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
-                return
+            if end_rank.lower() == "unranked":
+                success, old_r = await self.db.unrank_player(user_id)
+                actual_new_rank = "Unranked"
+                if not success:
+                    await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                    await interaction.followup.send(f"Failed to unrank: {old_r}", ephemeral=True)
+                    return
+            else:
+                success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
+                
+                if not success:
+                    await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                    await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
+                    return
             
             await self.db.add_observation_result(
                 ticket_data['id'],
