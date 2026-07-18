@@ -960,7 +960,7 @@ class Tickets(commands.Cog):
             if end_rank.lower() == "unranked":
                 success, old_r = await self.db.unrank_player(user_id)
                 actual_new_rank = "Unranked"
-                if not success:
+                if not success and old_r not in ["You are not currently ranked.", "You are already unranked."]:
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
                     await interaction.followup.send(f"Failed to unrank: {old_r}", ephemeral=True)
                     return
