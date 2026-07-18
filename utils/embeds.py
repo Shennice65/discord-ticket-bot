@@ -31,10 +31,12 @@ class TicketEmbeds:
                 left_m = f"Matches: {u_m}"
                 left_w = f"WR: {u_w}"
                 
+                max_left = max(len(left_r), len(left_m), len(left_w))
+                
                 val += "```text\n"
-                val += f"{left_r:<14} | {o_r}\n"
-                val += f"{left_m:<14} | Matches: {o_m}\n"
-                val += f"{left_w:<14} | WR: {o_w}\n"
+                val += f"{left_r:<{max_left}} | {o_r}\n"
+                val += f"{left_m:<{max_left}} | Matches: {o_m}\n"
+                val += f"{left_w:<{max_left}} | WR: {o_w}\n"
                 val += "```"
             except Exception:
                 val += "\n"
