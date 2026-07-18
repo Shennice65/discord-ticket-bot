@@ -346,12 +346,17 @@ def is_observer_or_trial(member: discord.Member, ticket_type: str = None) -> boo
     if hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
         no_obs_role = member.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
     
+    has_no_obs = no_obs_role and no_obs_role in member.roles
+    
     is_obs = (observer_role and observer_role in member.roles) or (trial_role and trial_role in member.roles)
     
     if not is_obs:
         return False
     
-    if ticket_type == "Personal Observation" and no_obs_role and no_obs_role in member.roles:
+    if ticket_type and "obs" in ticket_type.lower() and has_no_obs:
+        return False
+    
+    if ticket_type and "personal" in ticket_type.lower() and has_no_obs:
         return False
     
     return True
@@ -366,7 +371,7 @@ def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict, ticket_
         trial_role = guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
         if trial_role:
             overwrites[trial_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-    if ticket_type == "Personal Observation" and hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
+    if ticket_type and "obs" in ticket_type.lower() and hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
         no_obs_role = guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
         if no_obs_role:
             overwrites[no_obs_role] = discord.PermissionOverwrite(read_messages=False, send_messages=False)
