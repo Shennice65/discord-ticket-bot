@@ -621,6 +621,7 @@ class Database:
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                 winner_old: str, winner_new: str, loser_old: str, loser_new: str, winner_id: int, winner: str, note: Optional[str] = None):
+        await self.ranked_results.delete_many({"ticket_id": ticket_id})
         result_id = await self._next_id("ranked_results")
         result = {
             "id": result_id,
@@ -642,6 +643,7 @@ class Database:
     
     async def add_observation_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                      starting_rank: str, ending_rank: str, note: Optional[str] = None):
+        await self.observation_results.delete_many({"ticket_id": ticket_id})
         result_id = await self._next_id("observation_results")
         result = {
             "id": result_id,
