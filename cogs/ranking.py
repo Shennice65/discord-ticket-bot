@@ -185,6 +185,7 @@ class Ranking(commands.Cog):
         import re
         
         tier_name = TIERS[page_index]
+        display_tier = "Novices" if tier_name == "Novice" else tier_name
         all_ranks = await self.db.get_all_player_ranks()
         
         # Filter and parse
@@ -198,7 +199,7 @@ class Ranking(commands.Cog):
         # Sort by number ascending (lower number is better)
         tier_players.sort(key=lambda x: x[1])
         
-        desc = f"# 🏆 {tier_name} Leaderboard\n\n"
+        desc = f"# 🏆 {display_tier} Leaderboard\n\n"
         file = None
         
         if not tier_players:
@@ -223,7 +224,7 @@ class Ranking(commands.Cog):
             while len(top_3) < 3:
                 top_3.append((0, "", "", ""))
                 
-            podium_path = await get_podium_image(tier_name, top_3)
+            podium_path = await get_podium_image(display_tier, top_3)
             file = discord.File(podium_path, filename="podium.png")
             
             medals = ["🥇", "🥈", "🥉"]
