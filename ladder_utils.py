@@ -6,6 +6,15 @@ def parse_rank(rank_str: str):
     match = re.match(r'^([a-zA-Z]+)\s*(\d+)$', rank_str)
     if not match: return None
     tier = match.group(1).capitalize()
+    aliases = {
+        "Phantom": "Phantoms",
+        "Champion": "Champions",
+        "Elite": "Elites",
+        "Legend": "Legends",
+        "Master": "Masters",
+        "Novices": "Novice"
+    }
+    tier = aliases.get(tier, tier)
     num = int(match.group(2))
     return (tier, num)
 

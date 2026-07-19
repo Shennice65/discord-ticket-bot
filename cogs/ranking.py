@@ -27,6 +27,15 @@ def parse_rank(rank_str: str):
     if not match:
         return None
     tier_name = match.group(1).capitalize()
+    aliases = {
+        "Phantom": "Phantoms",
+        "Champion": "Champions",
+        "Elite": "Elites",
+        "Legend": "Legends",
+        "Master": "Masters",
+        "Novices": "Novice"
+    }
+    tier_name = aliases.get(tier_name, tier_name)
     number = int(match.group(2))
     return (tier_name, number)
 
