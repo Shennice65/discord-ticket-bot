@@ -836,16 +836,6 @@ class Tickets(commands.Cog):
         ticket_data = result
         
         try:
-            if not ticket_data.get("out_of_range", False):
-                idx_user = await self.db.get_global_rank_index(ticket_data['user_id'])
-                idx_opp = await self.db.get_global_rank_index(ticket_data['opponent_id'])
-                
-                if idx_user != -1 and idx_opp != -1:
-                    if abs(idx_user - idx_opp) > 5:
-                        await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                        await interaction.followup.send("Match Invalidated! The players are no longer within 5 ranks of each other. Please close this ticket manually without rank changes.", ephemeral=True)
-                        return
-                    
             winner_id = modal.winner_id
             loser_id = ticket_data['user_id'] if winner_id == ticket_data['opponent_id'] else ticket_data['opponent_id']
             
