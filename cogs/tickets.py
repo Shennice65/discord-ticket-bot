@@ -510,6 +510,10 @@ class Tickets(commands.Cog):
         idx_user = await self.db.get_global_rank_index(user.id)
         idx_opp = await self.db.get_global_rank_index(opponent.id)
         
+        if idx_user == -1:
+            await interaction.followup.send("You cannot request a ranked 1v1 while you are unranked!", ephemeral=True)
+            return
+            
         if idx_opp == -1:
             await interaction.followup.send("You cannot request a ranked 1v1 against an unranked player!", ephemeral=True)
             return
@@ -681,6 +685,11 @@ class Tickets(commands.Cog):
             days = int(cooldown)
             hours = int((cooldown - days) * 24)
             await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h**.", ephemeral=True)
+            return
+            
+        idx_user = await self.db.get_global_rank_index(user.id)
+        if idx_user == -1:
+            await interaction.followup.send("You cannot request a Personal Observation while you are unranked!", ephemeral=True)
             return
             
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
