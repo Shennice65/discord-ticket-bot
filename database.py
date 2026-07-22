@@ -729,6 +729,16 @@ class Database:
         )
         
         ranked_raw = ranked_raw_user + ranked_raw_opp
+        # Deduplicate: prevent the same ticket from appearing twice
+        # (e.g. if user_id == opponent_id due to data corruption, or edge cases)
+        seen_ticket_ids = set()
+        deduped = []
+        for doc in ranked_raw:
+            tid = doc.get("id")
+            if tid not in seen_ticket_ids:
+                seen_ticket_ids.add(tid)
+                deduped.append(doc)
+        ranked_raw = deduped
         ranked_raw.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
         
         if limit > 0:
