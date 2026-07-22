@@ -898,3 +898,67 @@ class Database:
         ranked = await self.clear_ranked_history(user_id)
         obs = await self.clear_observation_history(user_id)
         return (ranked, obs)
+    
+    async def scan_ticket_conflicts(self) -> Dict[int, List]:
+        """Scan all closed ranked tickets for conflicts where winner_id
+        doesn't match either user_id or opponent_id. Returns a dict mapping
+        affected user IDs to their list of suspect ticket IDs."""
+        pipeline = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "opponent_id": {"$ne": None}
+            }},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result"
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
+        ]
+        
+        tickets = await self.tickets.aggregate(pipeline).to_list(length=None)
+        
+        affected_users = {}
+        for t in tickets:
+            winner_id = t["result"].get("winner_id")
+            user_id = t["user_id"]
+            opponent_id = t.get("opponent_id")
+            
+            is_self_match = (user_id == opponent_id)
+            is_valid = (winner_id == user_id or winner_id == opponent_id)
+            
+            if not is_valid or is_self_match:
+                if opponent_id:
+                    affected_users.setdefault(opponent_id, []).append(t["id"])
+        
+        return affected_users
+    
+    async def fix_user_conflicts(self, user_id: int) -> int:
+        """Fix ticket conflicts for a specific user by nullifying opponent_id
+        on tickets where the user shouldn't be listed as opponent.
+        Returns the number of tickets fixed."""
+        opp_tickets = await self.tickets.find({
+            "status": "closed",
+            "ticket_type": "Ranked 1v1",
+            "opponent_id": user_id
+        }).to_list(length=None)
+        
+        fixed = 0
+        for t in opp_tickets:
+            result = await self.ranked_results.find_one({"ticket_id": t["id"]})
+            winner_id = result.get("winner_id") if result else None
+            ticket_user_id = t["user_id"]
+            
+            is_self_match = (ticket_user_id == user_id)
+            is_valid = (winner_id == user_id or winner_id == ticket_user_id)
+            
+            if not is_valid or is_self_match:
+                await self.tickets.update_one(
+                    {"_id": t["_id"]},
+                    {"$set": {"opponent_id": None}}
+                )
+                fixed += 1
+        
+        return fixed

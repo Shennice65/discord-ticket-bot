@@ -199,6 +199,85 @@ class History(commands.Cog):
         
         embed = TicketEmbeds.h2h_embed(player1, player2, h2h_data)
         await interaction.followup.send(embed=embed)
+    
+    @app_commands.command(name="scanconflicts", description="Scan all tickets for history conflicts (Observer only)")
+    async def scanconflicts(self, interaction: discord.Interaction):
+        if not is_observer_check(interaction.user, interaction.guild):
+            await interaction.response.send_message("Only observers can use this command!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        affected_users = await self.db.scan_ticket_conflicts()
+        
+        if not affected_users:
+            embed = discord.Embed(
+                title="✅ No Conflicts Found",
+                description="All ticket histories look clean!",
+                color=discord.Color.green()
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        embed = discord.Embed(
+            title="⚠️ Ticket Conflicts Found",
+            description=f"Found **{len(affected_users)}** user(s) with corrupted history.\nUse `/fixhistory` to fix a specific user.",
+            color=discord.Color.orange()
+        )
+        
+        for uid, ticket_ids in list(affected_users.items())[:20]:
+            member = interaction.guild.get_member(uid)
+            name = f"{member.display_name} ({member.name})" if member else f"User {uid}"
+            embed.add_field(
+                name=name,
+                value=f"**{len(ticket_ids)}** suspect ticket(s)\nIDs: {', '.join(str(t) for t in ticket_ids[:5])}{'...' if len(ticket_ids) > 5 else ''}",
+                inline=False
+            )
+        
+        if len(affected_users) > 20:
+            embed.set_footer(text=f"Showing 20 of {len(affected_users)} affected users")
+        
+        await interaction.followup.send(embed=embed)
+    
+    @app_commands.command(name="fixhistory", description="Fix corrupted ticket history for a user (Observer only)")
+    @app_commands.describe(user="The user whose history needs fixing")
+    async def fixhistory(self, interaction: discord.Interaction, user: discord.Member):
+        if not is_observer_check(interaction.user, interaction.guild):
+            await interaction.response.send_message("Only observers can use this command!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        fixed_count = await self.db.fix_user_conflicts(user.id)
+        
+        if fixed_count == 0:
+            embed = discord.Embed(
+                title="✅ No Conflicts Found",
+                description=f"**{user.display_name}**'s history has no conflicts to fix.",
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="🔧 History Fixed",
+                description=f"Fixed **{fixed_count}** corrupted ticket(s) for **{user.display_name}**.\n\nThese matches will no longer appear in their history.",
+                color=discord.Color.green()
+            )
+            
+            # Log the action
+            log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
+            if log_channel:
+                log_embed = discord.Embed(
+                    title="History Conflicts Fixed",
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+                log_embed.add_field(name="Target User", value=f"{user.mention} ({user.name})", inline=True)
+                log_embed.add_field(name="Fixed By", value=f"{interaction.user.mention} ({interaction.user.name})", inline=True)
+                log_embed.add_field(name="Tickets Fixed", value=str(fixed_count), inline=True)
+                log_embed.set_footer(text=f"User ID: {user.id}")
+                await log_channel.send(embed=log_embed)
+        
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(History(bot))
