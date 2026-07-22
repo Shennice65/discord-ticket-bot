@@ -744,8 +744,21 @@ class Database:
         if limit > 0:
             ranked_raw = ranked_raw[:limit]
             
-        ranked = [{**doc, **doc.pop("result")} for doc in ranked_raw]
-        obs = [{**doc, **doc.pop("result")} for doc in obs_raw]
+        # Fix field collision: both ticket and result have "id" and "created_at" fields.
+        # Rename to avoid the result's fields silently overwriting the ticket's fields.
+        ranked = []
+        for doc in ranked_raw:
+            result = doc.pop("result")
+            result["result_id"] = result.pop("id", None)
+            result["result_created_at"] = result.pop("created_at", None)
+            ranked.append({**doc, **result})
+        
+        obs = []
+        for doc in obs_raw:
+            result = doc.pop("result")
+            result["result_id"] = result.pop("id", None)
+            result["result_created_at"] = result.pop("created_at", None)
+            obs.append({**doc, **result})
         
         return {
             "ranked": ranked,
@@ -834,12 +847,20 @@ class Database:
             elif winner_id == player2_id:
                 p2_wins += 1
         
-        return {
+        h2h_result = {
             "total": len(matches),
             "p1_wins": p1_wins,
             "p2_wins": p2_wins,
-            "recent_matches": [{**doc, **doc.pop("result")} for doc in matches[:limit]]
+            "recent_matches": []
         }
+        
+        for doc in matches[:limit]:
+            result = doc.pop("result")
+            result["result_id"] = result.pop("id", None)
+            result["result_created_at"] = result.pop("created_at", None)
+            h2h_result["recent_matches"].append({**doc, **result})
+        
+        return h2h_result
     
     async def clear_ranked_history(self, user_id: int) -> int:
         tickets_cursor = self.tickets.find({"user_id": user_id, "ticket_type": "Ranked 1v1"})
