@@ -54,7 +54,7 @@ class TicketEmbeds:
                     wins += 1
             else:
                 w_str = entry.get('winner', '').lower()
-                if w_str == user_name.lower() or w_str in user_name.lower():
+                if w_str == user_name.lower():
                     wins += 1
         
         losses = total_matches - wins
@@ -156,7 +156,7 @@ class TicketEmbeds:
                     is_win = (entry['winner_id'] == user.id)
                 else:
                     winner_str = entry.get('winner', '').lower()
-                    is_win = (winner_str == user.name.lower() or winner_str in user.name.lower())
+                    is_win = (winner_str == user.name.lower())
                     
                 result_text = "WON" if is_win else "LOST"
                 
