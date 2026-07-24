@@ -332,6 +332,14 @@ class Database:
         """Returns days left before player can be re-ranked."""
         player = await self.player_ranks.find_one({"user_id": user_id})
         return self._get_unrank_cooldown_days(player)
+    
+    async def is_player_self_unranked(self, user_id: int) -> bool:
+        """Check if a player has deliberately unranked themselves (via the Unrank button).
+        Returns False for players who were never ranked or are currently ranked."""
+        player = await self.player_ranks.find_one({"user_id": user_id})
+        if not player:
+            return False  # Never ranked — not "self-unranked"
+        return bool(player.get("unranked_at"))
         
     async def can_player_r1(self, user_id: int) -> tuple:
         """Check if a formerly-ranked player can do R1s. Returns (allowed, reason)."""

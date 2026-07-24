@@ -687,8 +687,8 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h**.", ephemeral=True)
             return
             
-        idx_user = await self.db.get_global_rank_index(user.id)
-        if idx_user == -1:
+        is_self_unranked = await self.db.is_player_self_unranked(user.id)
+        if is_self_unranked:
             await interaction.followup.send("You cannot request a Personal Observation while you are unranked!", ephemeral=True)
             return
             
