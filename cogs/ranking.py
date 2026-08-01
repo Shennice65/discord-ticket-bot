@@ -607,6 +607,88 @@ class Ranking(commands.Cog):
         else:
             await interaction.followup.send("Failed to clear rematch cooldown. No recent match found between these players.", ephemeral=True)
 
+    @app_commands.command(name="giveobscd", description="Give a user the No Personal Obs cooldown role (Observer only)")
+    @app_commands.describe(user="The user to put on cooldown")
+    async def give_obs_cd(self, interaction: discord.Interaction, user: discord.Member):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        if not hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') or not Config.NO_PERSONAL_OBS_ROLE_ID:
+            await interaction.followup.send("❌ The `NO_PERSONAL_OBS_ROLE_ID` is not configured.", ephemeral=True)
+            return
+            
+        role = interaction.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
+        if not role:
+            await interaction.followup.send("❌ Could not find the No Personal Obs role in this server.", ephemeral=True)
+            return
+            
+        if role in user.roles:
+            await interaction.followup.send(f"{user.mention} already has the observation cooldown role.", ephemeral=True)
+            return
+            
+        try:
+            await user.add_roles(role, reason=f"Cooldown applied by {interaction.user.name}")
+            await interaction.followup.send(f"✅ Successfully applied the personal observation cooldown to {user.mention}.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🛑 Observation Cooldown Applied",
+                    color=discord.Color.red(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Applied By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                await log_channel.send(embed=embed)
+        except discord.Forbidden:
+            await interaction.followup.send("❌ Missing permissions to assign that role. Ensure the bot's role is higher in the hierarchy.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+    @app_commands.command(name="removeobscd", description="Remove the No Personal Obs cooldown role from a user (Observer only)")
+    @app_commands.describe(user="The user to remove the cooldown from")
+    async def remove_obs_cd(self, interaction: discord.Interaction, user: discord.Member):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        if not hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') or not Config.NO_PERSONAL_OBS_ROLE_ID:
+            await interaction.followup.send("❌ The `NO_PERSONAL_OBS_ROLE_ID` is not configured.", ephemeral=True)
+            return
+            
+        role = interaction.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
+        if not role:
+            await interaction.followup.send("❌ Could not find the No Personal Obs role in this server.", ephemeral=True)
+            return
+            
+        if role not in user.roles:
+            await interaction.followup.send(f"{user.mention} doesn't have the observation cooldown role.", ephemeral=True)
+            return
+            
+        try:
+            await user.remove_roles(role, reason=f"Cooldown removed by {interaction.user.name}")
+            await interaction.followup.send(f"✅ Successfully removed the personal observation cooldown from {user.mention}.", ephemeral=True)
+            
+            log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(
+                    title="🟢 Observation Cooldown Removed",
+                    color=discord.Color.green(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+                embed.add_field(name="Removed By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+                await log_channel.send(embed=embed)
+        except discord.Forbidden:
+            await interaction.followup.send("❌ Missing permissions to remove that role.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
     @app_commands.command(name="syncroles", description="Bulk-assign tier roles to all ranked players (Admin/Observer only)")
     async def sync_roles(self, interaction: discord.Interaction):
         if not is_admin_or_observer(interaction):
