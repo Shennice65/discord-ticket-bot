@@ -43,6 +43,10 @@ class UnrankConfirmView(discord.ui.View):
         
         success, result = await db.unrank_player(interaction.user.id)
         if success:
+            # Strip all tier roles since player is now unranked
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, interaction.user, "")
+            
             await interaction.edit_original_response(
                 content=f"You have been unranked. Your previous rank was **{result}**.\n\n"
                         f"**Warning:** You cannot be re-ranked for **1 month**.\n"
@@ -864,6 +868,11 @@ class Tickets(commands.Cog):
             )
             await self.db.close_ticket(interaction.channel.id, interaction.user.id)
             
+            # Auto-assign tier roles for both players
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, winner_id, new_win)
+            await update_tier_role(interaction.guild, loser_id, new_lose)
+            
             log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
             if log_channel:
                 user = await self.bot.fetch_user(ticket_data['user_id'])
@@ -970,6 +979,10 @@ class Tickets(commands.Cog):
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
                     await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
                     return
+            
+            # Auto-assign tier role for observed player
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, user_id, actual_new_rank)
             
             await self.db.add_observation_result(
                 ticket_data['id'],

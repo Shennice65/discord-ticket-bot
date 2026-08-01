@@ -13,5 +13,11 @@ class Config:
     RANK_LOG_CHANNEL_ID = int(os.environ.get('RANK_LOG_CHANNEL_ID', 0))
     RANKING_PANEL_CHANNEL_ID = int(os.environ.get('RANKING_PANEL_CHANNEL_ID', 0))
     TICKET_CATEGORY_ID = int(os.environ.get('TICKET_CATEGORY_ID', 0))
+    PHANTOM_ROLE_ID = int(os.environ.get('PHANTOM_ROLE_ID', 0))
+    CHAMPION_ROLE_ID = int(os.environ.get('CHAMPION_ROLE_ID', 0))
+    ELITE_ROLE_ID = int(os.environ.get('ELITE_ROLE_ID', 0))
+    LEGEND_ROLE_ID = int(os.environ.get('LEGEND_ROLE_ID', 0))
+    MASTER_ROLE_ID = int(os.environ.get('MASTER_ROLE_ID', 0))
+    NOVICE_ROLE_ID = int(os.environ.get('NOVICE_ROLE_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
-    VERSION = "1.8.15"
+    VERSION = "1.9.0"

@@ -297,6 +297,10 @@ class Ranking(commands.Cog):
         
         success = await self.db.remove_player_from_ladder(user.id)
         if success:
+            # Strip all tier roles since player is removed
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, user.id, "")
+            
             await interaction.followup.send(f"Successfully removed {user.mention} from the leaderboard! The ladder has been compressed to fill their gap.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
@@ -323,6 +327,10 @@ class Ranking(commands.Cog):
         
         success, actual_rank = await self.db.force_set_player_rank(user.id, rank, bypass_unrank=True)
         if success:
+            # Auto-assign the correct tier role
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, user.id, actual_rank)
+            
             await interaction.followup.send(f"Successfully slotted {user.mention} in at **{actual_rank}**! The rest of the ladder has been compressed and shifted automatically to make room.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
@@ -484,6 +492,10 @@ class Ranking(commands.Cog):
         success = await self.db.remove_player_from_ladder(user_id)
         
         if success:
+            # Strip all tier roles since player is removed
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, user_id, "")
+            
             user_mention = user.mention if user else f"<@{user_id}>"
             user_name = user.name if user else f"User {user_id}"
             
@@ -531,6 +543,11 @@ class Ranking(commands.Cog):
         success, message = await self.db.undo_last_action(user.id)
         
         if success:
+            # Update tier role to match restored rank
+            from utils.role_manager import update_tier_role
+            new_rank = await self.db.get_player_rank(user.id)
+            await update_tier_role(interaction.guild, user.id, new_rank)
+            
             await interaction.followup.send(f"✅ Undo successful! {user.mention} has been {message}. The leaderboard shifted back.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
@@ -589,6 +606,44 @@ class Ranking(commands.Cog):
                 await log_channel.send(embed=embed)
         else:
             await interaction.followup.send("Failed to clear rematch cooldown. No recent match found between these players.", ephemeral=True)
+
+    @app_commands.command(name="syncroles", description="Bulk-assign tier roles to all ranked players (Admin only)")
+    @app_commands.default_permissions(administrator=True)
+    async def sync_roles(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Only Admins can use this command!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        from utils.role_manager import update_tier_role
+        all_players = await self.db.get_all_player_ranks()
+        
+        success_count = 0
+        fail_count = 0
+        skip_count = 0
+        
+        for player in all_players:
+            user_id = player.get("user_id")
+            rank = player.get("rank", "")
+            
+            if not rank or not user_id:
+                skip_count += 1
+                continue
+            
+            try:
+                await update_tier_role(interaction.guild, user_id, rank)
+                success_count += 1
+            except Exception:
+                fail_count += 1
+        
+        await interaction.followup.send(
+            f"✅ **Role sync complete!**\n"
+            f"• Updated: **{success_count}** players\n"
+            f"• Skipped (unranked): **{skip_count}**\n"
+            f"• Failed: **{fail_count}**",
+            ephemeral=True
+        )
 
 async def setup(bot):
     await bot.add_cog(Ranking(bot))
