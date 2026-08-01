@@ -607,11 +607,10 @@ class Ranking(commands.Cog):
         else:
             await interaction.followup.send("Failed to clear rematch cooldown. No recent match found between these players.", ephemeral=True)
 
-    @app_commands.command(name="syncroles", description="Bulk-assign tier roles to all ranked players (Admin only)")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.command(name="syncroles", description="Bulk-assign tier roles to all ranked players (Admin/Observer only)")
     async def sync_roles(self, interaction: discord.Interaction):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("Only Admins can use this command!", ephemeral=True)
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
             return
         
         await interaction.response.defer(ephemeral=True)
