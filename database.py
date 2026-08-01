@@ -258,6 +258,14 @@ class Database:
             upsert=True
         )
         
+    async def reset_obs_cooldown(self, user_id: int) -> bool:
+        """Reset the personal observation cooldown for a user."""
+        result = await self.player_ranks.update_one(
+            {"user_id": user_id},
+            {"$unset": {"last_obs_request": ""}}
+        )
+        return result.modified_count > 0
+        
     async def _bulk_reassign_ranks(self, tier_lists: dict, tiers: list) -> None:
         """Batch-update all player ranks in a single bulk_write call."""
         ops = []
