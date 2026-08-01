@@ -27,11 +27,11 @@ def _get_tier_role_id(tier_name: str) -> int:
     """Return the role ID for a given tier name, or 0 if not configured."""
     attr = TIER_ROLE_MAP.get(tier_name)
     if not attr:
-        print(f"[RoleManager] No mapping found for tier: '{tier_name}'")
+        print(f"[RoleManager] No mapping found for tier: '{tier_name}'", flush=True)
         return 0
     role_id = getattr(Config, attr, 0)
     if not role_id:
-        print(f"[RoleManager] {attr} is not configured (value=0)")
+        print(f"[RoleManager] {attr} is not configured (value=0)", flush=True)
     return role_id
 
 
@@ -55,7 +55,7 @@ async def update_tier_role(guild: discord.Guild, member_or_id, new_rank_str: str
                 try:
                     member = await guild.fetch_member(member_or_id)
                 except (discord.NotFound, discord.HTTPException):
-                    print(f"[RoleManager] Member {member_or_id} not found in guild")
+                    print(f"[RoleManager] Member {member_or_id} not found in guild", flush=True)
                     return
         elif isinstance(member_or_id, discord.Member):
             member = member_or_id
@@ -65,10 +65,10 @@ async def update_tier_role(guild: discord.Guild, member_or_id, new_rank_str: str
                 try:
                     member = await guild.fetch_member(member_or_id.id)
                 except (discord.NotFound, discord.HTTPException):
-                    print(f"[RoleManager] Member {member_or_id.id} not found in guild")
+                    print(f"[RoleManager] Member {member_or_id.id} not found in guild", flush=True)
                     return
         else:
-            print(f"[RoleManager] Invalid member_or_id type: {type(member_or_id)}")
+            print(f"[RoleManager] Invalid member_or_id type: {type(member_or_id)}", flush=True)
             return
 
         # Determine which tier role to add (if any)
@@ -77,16 +77,16 @@ async def update_tier_role(guild: discord.Guild, member_or_id, new_rank_str: str
             parsed = parse_rank(new_rank_str)
             if parsed:
                 new_tier_role_id = _get_tier_role_id(parsed[0])
-                print(f"[RoleManager] {member.display_name}: rank='{new_rank_str}' → tier='{parsed[0]}' → role_id={new_tier_role_id}")
+                print(f"[RoleManager] {member.display_name}: rank='{new_rank_str}' → tier='{parsed[0]}' → role_id={new_tier_role_id}", flush=True)
             else:
-                print(f"[RoleManager] Could not parse rank string: '{new_rank_str}'")
+                print(f"[RoleManager] Could not parse rank string: '{new_rank_str}'", flush=True)
         else:
-            print(f"[RoleManager] {member.display_name}: stripping all tier roles (rank='{new_rank_str}')")
+            print(f"[RoleManager] {member.display_name}: stripping all tier roles (rank='{new_rank_str}')", flush=True)
 
         # Collect all tier role IDs
         all_tier_role_ids = _get_all_tier_role_ids()
         if not all_tier_role_ids:
-            print("[RoleManager] No tier role IDs configured! Check env vars.")
+            print("[RoleManager] No tier role IDs configured! Check env vars.", flush=True)
             return
 
         # Remove old tier roles
@@ -95,22 +95,22 @@ async def update_tier_role(guild: discord.Guild, member_or_id, new_rank_str: str
             if role.id in all_tier_role_ids and role.id != new_tier_role_id
         ]
         if roles_to_remove:
-            print(f"[RoleManager] Removing roles: {[r.name for r in roles_to_remove]}")
+            print(f"[RoleManager] Removing roles: {[r.name for r in roles_to_remove]}", flush=True)
             await member.remove_roles(*roles_to_remove, reason="Tier role update")
 
         # Add new tier role (if needed and not already assigned)
         if new_tier_role_id:
             new_role = guild.get_role(new_tier_role_id)
             if not new_role:
-                print(f"[RoleManager] Role ID {new_tier_role_id} not found in guild!")
+                print(f"[RoleManager] Role ID {new_tier_role_id} not found in guild!", flush=True)
                 return
             if new_role not in member.roles:
-                print(f"[RoleManager] Adding role '{new_role.name}' to {member.display_name}")
+                print(f"[RoleManager] Adding role '{new_role.name}' to {member.display_name}", flush=True)
                 await member.add_roles(new_role, reason="Tier role update")
             else:
-                print(f"[RoleManager] {member.display_name} already has role '{new_role.name}'")
+                print(f"[RoleManager] {member.display_name} already has role '{new_role.name}'", flush=True)
 
     except discord.Forbidden:
-        print(f"[RoleManager] Missing permissions to update roles for {member_or_id}")
+        print(f"[RoleManager] Missing permissions to update roles for {member_or_id}", flush=True)
     except Exception as e:
-        print(f"[RoleManager] Error updating tier role for {member_or_id}: {e}")
+        print(f"[RoleManager] Error updating tier role for {member_or_id}: {e}", flush=True)
