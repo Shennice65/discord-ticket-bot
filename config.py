@@ -17,7 +17,7 @@ class Config:
     CHAMPION_ROLE_ID = int(os.environ.get('CHAMPION_ROLE_ID', 0))
     ELITE_ROLE_ID = int(os.environ.get('ELITE_ROLE_ID', 0))
     LEGEND_ROLE_ID = int(os.environ.get('LEGEND_ROLE_ID', 0))
-    MASTER_ROLE_ID = int(os.environ.get('MASTER_ROLE_ID', 0))
+    MASTERS_ROLE_ID = int(os.environ.get('MASTERS_ROLE_ID', 0))
     NOVICE_ROLE_ID = int(os.environ.get('NOVICE_ROLE_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
     VERSION = "1.9.0"

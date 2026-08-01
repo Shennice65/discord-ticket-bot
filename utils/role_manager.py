@@ -8,7 +8,7 @@ TIER_ROLE_MAP = {
     "Champions": "CHAMPION_ROLE_ID",
     "Elites": "ELITE_ROLE_ID",
     "Legends": "LEGEND_ROLE_ID",
-    "Masters": "MASTER_ROLE_ID",
+    "Masters": "MASTERS_ROLE_ID",
     "Novice": "NOVICE_ROLE_ID",
 }
 
