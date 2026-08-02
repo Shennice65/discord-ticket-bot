@@ -200,7 +200,6 @@ class Tickets(commands.Cog):
             return
         
         if is_out_of_range:
-            await self.db.update_ranked_cooldown(user.id)
             
             user_rank = await self.db.get_player_rank(user.id)
             opp_rank = await self.db.get_player_rank(opponent.id)
@@ -236,8 +235,6 @@ class Tickets(commands.Cog):
             opponent_name=opponent.name, opponent_id=opponent.id
         )
         print(f"Ticket {ticket_id} saved")
-        
-        await self.db.update_ranked_cooldown(user.id)
         
         user_history = await self.db.get_user_history(user.id, user.name)
         opp_history = await self.db.get_user_history(opponent.id, opponent.name)
@@ -504,6 +501,7 @@ class Tickets(commands.Cog):
                 modal.note.value if modal.note.value else None
             )
             await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+            await self.db.update_ranked_cooldown(ticket_data['user_id'])
             
             # Auto-assign tier roles for both players
             from utils.role_manager import update_tier_role
@@ -545,7 +543,7 @@ class Tickets(commands.Cog):
         
         try:
             await self.db.close_ticket(interaction.channel.id, interaction.user.id)
-            await self.db.reset_ranked_cooldown_only(ticket_data['user_id'])
+
             
             log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
             if log_channel:
