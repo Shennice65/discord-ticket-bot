@@ -206,9 +206,9 @@ class Ranking(commands.Cog):
             await interaction.followup.send(f"{target_user.mention} is currently ranked at **{rank}**.", ephemeral=True)
         else:
             await interaction.followup.send(f"{target_user.mention} is currently **Unranked**.", ephemeral=True)
+    @app_commands.command(name="botversion", description="Check the current version of the bot")
     async def check_version(self, interaction: discord.Interaction):
         await interaction.response.send_message(f"**Ticket Bot Version:** `{Config.VERSION}`", ephemeral=True)
-
 
 async def setup(bot):
     await bot.add_cog(Ranking(bot))
