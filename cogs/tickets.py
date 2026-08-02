@@ -693,9 +693,14 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h {minutes}m**.", ephemeral=True)
             return
             
+        unrank_cooldown = await self.db.get_unrank_cooldown(user.id)
         is_self_unranked = await self.db.is_player_self_unranked(user.id)
-        if is_self_unranked:
-            await interaction.followup.send("You cannot request a Personal Observation while you are unranked!", ephemeral=True)
+        if is_self_unranked and unrank_cooldown > 0:
+            d = int(unrank_cooldown)
+            remainder_hours = (unrank_cooldown - d) * 24
+            h = int(remainder_hours)
+            m = int((remainder_hours - h) * 60)
+            await interaction.followup.send(f"You cannot request a Personal Observation while your unrank cooldown is active! Please wait **{d}d {h}h {m}m**.", ephemeral=True)
             return
             
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
