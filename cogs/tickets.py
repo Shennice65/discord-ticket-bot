@@ -363,8 +363,6 @@ class Tickets(commands.Cog):
         ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
         print(f"Ticket {ticket_id} saved")
         
-        await self.db.update_obs_cooldown(user.id)
-        
         total_obs = await self.db.get_user_observation_count(user.id)
         u_rank = await self.db.get_player_rank(user.id) or "Unranked"
         user_stats = f"**Rank**: `{u_rank}`\n**Total Observations**: `{total_obs}`"
@@ -632,6 +630,7 @@ class Tickets(commands.Cog):
                 modal.note.value if modal.note.value else None
             )
             await self.db.close_ticket(interaction.channel.id, interaction.user.id)
+            await self.db.update_obs_cooldown(user_id)
             
             log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
             if log_channel:
