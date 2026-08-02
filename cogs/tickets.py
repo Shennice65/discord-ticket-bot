@@ -608,11 +608,11 @@ class Tickets(commands.Cog):
                     await interaction.followup.send(f"Failed to unrank: {old_r}", ephemeral=True)
                     return
             else:
-                success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
+                success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank, bypass_unrank=True)
                 
                 if not success:
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                    await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
+                    await interaction.followup.send(f"Failed to update rank: {actual_new_rank}", ephemeral=True)
                     return
             
             # Auto-assign tier role for observed player
