@@ -106,7 +106,7 @@ class TicketEmbeds:
         return embed
 
     @staticmethod
-    def history_overview_embed(user: discord.Member, history: dict, unrank_info: dict = None) -> discord.Embed:
+    def history_overview_embed(user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0) -> discord.Embed:
         embed = TicketEmbeds._base_embed(
             user, 
             f"History Overview for {user.display_name}", 
@@ -140,7 +140,18 @@ class TicketEmbeds:
             embed.add_field(name="Ranked Stats Overview", value="*No matches recorded yet.*", inline=False)
             
         total_obs = len(history['observations'])
-        embed.add_field(name="Personal Observations", value=f"**Total Observations**: {total_obs}", inline=False)
+        obs_status = f"**Total Observations**: {total_obs}"
+        
+        if obs_cooldown_days > 0:
+            d = int(obs_cooldown_days)
+            remainder_hours = (obs_cooldown_days - d) * 24
+            h = int(remainder_hours)
+            m = int((remainder_hours - h) * 60)
+            obs_status += f"\nCooldown: **{d}d {h}h {m}m**"
+        else:
+            obs_status += f"\nCooldown: **Ready**"
+            
+        embed.add_field(name="Personal Observations", value=obs_status, inline=False)
         
         return embed
 

@@ -687,8 +687,10 @@ class Tickets(commands.Cog):
         cooldown = await self.db.get_obs_cooldown(user.id)
         if cooldown > 0:
             days = int(cooldown)
-            hours = int((cooldown - days) * 24)
-            await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h**.", ephemeral=True)
+            remainder_hours = (cooldown - days) * 24
+            hours = int(remainder_hours)
+            minutes = int((remainder_hours - hours) * 60)
+            await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h {minutes}m**.", ephemeral=True)
             return
             
         is_self_unranked = await self.db.is_player_self_unranked(user.id)

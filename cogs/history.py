@@ -148,6 +148,7 @@ class History(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         history = await self.db.get_user_history(target_user.id, target_user.name)
+        obs_cooldown_days = await self.db.get_obs_cooldown(target_user.id)
         
         player = await self.db.player_ranks.find_one({"user_id": target_user.id})
         unrank_info = None
@@ -158,7 +159,7 @@ class History(commands.Cog):
                 "cooldown_days": cooldown
             }
         
-        embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info)
+        embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info, obs_cooldown_days=obs_cooldown_days)
         view = HistoryView(target_user, history, unrank_info, is_observer)
         
         if not is_observer:
