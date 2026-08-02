@@ -142,7 +142,9 @@ class TicketEmbeds:
         total_obs = len(history['observations'])
         obs_status = f"**Total Observations**: {total_obs}"
         
-        if obs_cooldown_days > 0:
+        if unrank_info:
+            obs_status += f"\nCooldown: **Blocked (Unranked)**"
+        elif obs_cooldown_days > 0:
             d = int(obs_cooldown_days)
             remainder_hours = (obs_cooldown_days - d) * 24
             h = int(remainder_hours)
