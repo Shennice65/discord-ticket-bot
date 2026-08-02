@@ -67,8 +67,7 @@ class ObservationConfirmView(discord.ui.View):
     
     @discord.ui.button(label="Yes, Request Observation", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.edit_original_response(content="Processing...", view=None)
+        await interaction.response.edit_message(content="Processing...", view=None)
         cog = interaction.client.get_cog('Tickets')
         if cog:
             await cog.create_observation_ticket(interaction)
@@ -681,7 +680,7 @@ class Tickets(commands.Cog):
             if not existing_channel:
                 await self.db.close_ticket(existing_ticket["channel_id"], self.bot.user.id)
             else:
-                await interaction.followup.send(f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", ephemeral=True)
+                await interaction.edit_original_response(content=f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", view=None)
                 return
             
         cooldown = await self.db.get_obs_cooldown(user.id)
@@ -690,7 +689,7 @@ class Tickets(commands.Cog):
             remainder_hours = (cooldown - days) * 24
             hours = int(remainder_hours)
             minutes = int((remainder_hours - hours) * 60)
-            await interaction.followup.send(f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h {minutes}m**.", ephemeral=True)
+            await interaction.edit_original_response(content=f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h {minutes}m**.", view=None)
             return
             
         unrank_cooldown = await self.db.get_unrank_cooldown(user.id)
@@ -700,12 +699,12 @@ class Tickets(commands.Cog):
             remainder_hours = (unrank_cooldown - d) * 24
             h = int(remainder_hours)
             m = int((remainder_hours - h) * 60)
-            await interaction.followup.send(f"You cannot request a Personal Observation while your unrank cooldown is active! Please wait **{d}d {h}h {m}m**.", ephemeral=True)
+            await interaction.edit_original_response(content=f"You cannot request a Personal Observation while your unrank cooldown is active! Please wait **{d}d {h}h {m}m**.", view=None)
             return
             
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
         if not category:
-            await interaction.followup.send("Ticket category not configured!", ephemeral=True)
+            await interaction.edit_original_response(content="Ticket category not configured!", view=None)
             return
         
         observer_mention = get_observer_mention(guild)
@@ -724,7 +723,7 @@ class Tickets(commands.Cog):
                 topic=f"Personal Observation | User: {user.name}"
             )
         except Exception as e:
-            await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
+            await interaction.edit_original_response(content=f"Failed to create channel: {e}", view=None)
             return
         
         ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
@@ -732,8 +731,7 @@ class Tickets(commands.Cog):
         
         await self.db.update_obs_cooldown(user.id)
         
-        user_history = await self.db.get_user_history(user.id, user.name)
-        total_obs = len(user_history.get('observations', []))
+        total_obs = await self.db.get_user_observation_count(user.id)
         u_rank = await self.db.get_player_rank(user.id) or "Unranked"
         user_stats = f"**Rank**: `{u_rank}`\n**Total Observations**: `{total_obs}`"
         
@@ -746,7 +744,7 @@ class Tickets(commands.Cog):
             embed=embed
         )
         
-        await interaction.followup.send(f"Ticket created! {channel.mention}", ephemeral=True)
+        await interaction.edit_original_response(content=f"Ticket created! {channel.mention}", view=None)
     
     @app_commands.command(name="clearticket", description="Forcefully close all open tickets for a user in the database")
     @app_commands.default_permissions(administrator=True)

@@ -781,6 +781,15 @@ class Database:
             "observations": obs
         }
     
+    async def get_user_observation_count(self, user_id: int) -> int:
+        """Returns the total number of closed Personal Observation tickets for a user."""
+        count = await self.tickets.count_documents({
+            "status": "closed",
+            "ticket_type": "Personal Observation",
+            "user_id": user_id
+        })
+        return count
+    
     async def get_rematch_cooldown(self, user1_id: int, user2_id: int) -> float:
         """Returns hours left before these two players can face each other again, or 0 if allowed.
         Checks for the most recent closed Ranked 1v1 between them (in either direction)."""
