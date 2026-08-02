@@ -34,7 +34,7 @@ def home():
         <body>
             <div class="container">
                 <h1>🎫 Ticket Bot</h1>
-                <p>Status: <span class="status">Online ✅</span></p>
+                <p>Status: <span class="status">Online</span></p>
                 <p>Last checked: <span id="time"></span></p>
             </div>
             <script>

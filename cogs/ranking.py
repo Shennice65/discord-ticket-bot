@@ -346,7 +346,7 @@ class Ranking(commands.Cog):
                 embed.set_footer(text=f"User ID: {user.id}")
                 await log_channel.send(embed=embed)
         else:
-            await interaction.followup.send(f"❌ Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
+            await interaction.followup.send(f"Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
             
     @app_commands.command(name="setstreak", description="Manually set a player's win streak")
     @app_commands.describe(user="The player to modify", streak="The new win streak (number)")
@@ -394,7 +394,7 @@ class Ranking(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         success = await self.db.reset_ranked_cooldown(user.id)
         if success:
-            await interaction.followup.send(f"✅ Reset ranked request cooldown for {user.mention}! They can now request another match immediately.", ephemeral=True)
+            await interaction.followup.send(f"Reset ranked request cooldown for {user.mention}! They can now request another match immediately.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
@@ -443,7 +443,7 @@ class Ranking(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self.db.reset_all_timers(user.id)
         
-        await interaction.followup.send(f"✅ Reset ALL timers (Ranked, Observation, Rematch, Unrank) for {user.mention}!", ephemeral=True)
+        await interaction.followup.send(f"Reset ALL timers (Ranked, Observation, Rematch, Unrank) for {user.mention}!", ephemeral=True)
         
         log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
         if log_channel:
@@ -471,7 +471,7 @@ class Ranking(commands.Cog):
         from ladder_utils import parse_rank
         parsed = parse_rank(rank)
         if not parsed:
-            await interaction.response.send_message(f"❌ Invalid rank format. Please use a format like `Legends 3`.", ephemeral=True)
+            await interaction.response.send_message(f"Invalid rank format. Please use a format like `Legends 3`.", ephemeral=True)
             return
             
         formatted_rank = f"{parsed[0]} {parsed[1]}"
@@ -481,7 +481,7 @@ class Ranking(commands.Cog):
         player = await self.db.get_player_by_rank(formatted_rank)
         
         if not player:
-            await interaction.followup.send(f"❌ No player is currently ranked at **{formatted_rank}**.", ephemeral=True)
+            await interaction.followup.send(f"No player is currently ranked at **{formatted_rank}**.", ephemeral=True)
             return
             
         user_id = player['user_id']
@@ -548,7 +548,7 @@ class Ranking(commands.Cog):
             new_rank = await self.db.get_player_rank(user.id)
             await update_tier_role(interaction.guild, user.id, new_rank)
             
-            await interaction.followup.send(f"✅ Undo successful! {user.mention} has been {message}. The leaderboard shifted back.", ephemeral=True)
+            await interaction.followup.send(f"Undo successful! {user.mention} has been {message}. The leaderboard shifted back.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
@@ -564,11 +564,11 @@ class Ranking(commands.Cog):
                 embed.set_footer(text=f"User ID: {user.id}")
                 await log_channel.send(embed=embed)
         else:
-            await interaction.followup.send(f"❌ Undo failed: {message}", ephemeral=True)
+            await interaction.followup.send(f"Undo failed: {message}", ephemeral=True)
 
     @app_commands.command(name="botversion", description="Check the current version of the bot")
     async def check_version(self, interaction: discord.Interaction):
-        await interaction.response.send_message(f"🤖 **Ticket Bot Version:** `{Config.VERSION}`", ephemeral=True)
+        await interaction.response.send_message(f"**Ticket Bot Version:** `{Config.VERSION}`", ephemeral=True)
 
     @app_commands.command(name="allowrematch", description="Reset the 24h rematch cooldown between two players (Observer only)")
     @app_commands.describe(player1="First player", player2="Second player")
@@ -591,7 +591,7 @@ class Ranking(commands.Cog):
         
         success = await self.db.reset_rematch_cooldown(player1.id, player2.id)
         if success:
-            await interaction.followup.send(f"✅ Rematch cooldown cleared! {player1.mention} and {player2.mention} can now face each other again.", ephemeral=True)
+            await interaction.followup.send(f"Rematch cooldown cleared! {player1.mention} and {player2.mention} can now face each other again.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
@@ -618,7 +618,7 @@ class Ranking(commands.Cog):
         
         try:
             await self.db.update_obs_cooldown(user.id)
-            await interaction.followup.send(f"✅ Successfully applied a 2-week personal observation cooldown to {user.mention}.", ephemeral=True)
+            await interaction.followup.send(f"Successfully applied a 2-week personal observation cooldown to {user.mention}.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
@@ -632,7 +632,7 @@ class Ranking(commands.Cog):
                 embed.add_field(name="Duration", value="2 Weeks", inline=False)
                 await log_channel.send(embed=embed)
         except Exception as e:
-            await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
 
     @app_commands.command(name="removeobscd", description="Remove the personal observation cooldown from a user (Observer only)")
     @app_commands.describe(user="The user to remove the cooldown from")
@@ -649,7 +649,7 @@ class Ranking(commands.Cog):
                 await interaction.followup.send(f"{user.mention} doesn't have an active observation cooldown.", ephemeral=True)
                 return
                 
-            await interaction.followup.send(f"✅ Successfully removed the personal observation cooldown from {user.mention}.", ephemeral=True)
+            await interaction.followup.send(f"Successfully removed the personal observation cooldown from {user.mention}.", ephemeral=True)
             
             log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
             if log_channel:
@@ -662,7 +662,7 @@ class Ranking(commands.Cog):
                 embed.add_field(name="Removed By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
                 await log_channel.send(embed=embed)
         except Exception as e:
-            await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
 
     @app_commands.command(name="syncroles", description="Bulk-assign tier roles to all ranked players (Admin/Observer only)")
     async def sync_roles(self, interaction: discord.Interaction):
@@ -694,7 +694,7 @@ class Ranking(commands.Cog):
                 fail_count += 1
         
         await interaction.followup.send(
-            f"✅ **Role sync complete!**\n"
+            f"**Role sync complete!**\n"
             f"• Updated: **{success_count}** players\n"
             f"• Skipped (unranked): **{skip_count}**\n"
             f"• Failed: **{fail_count}**",
