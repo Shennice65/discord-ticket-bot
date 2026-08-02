@@ -17,7 +17,8 @@ from utils.ranking_utils import *
 class RankingCooldowns(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = bot.db
+        from database import Database
+        self.db = Database()
 
     async def reset_request(self, interaction: discord.Interaction, user: discord.User):
         if not is_admin_or_observer(interaction):
