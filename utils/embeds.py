@@ -115,10 +115,15 @@ class TicketEmbeds:
         
         # Unranked badge
         if unrank_info:
-            days_left = int(unrank_info["cooldown_days"])
+            unrank_cd = float(unrank_info["cooldown_days"])
+            d = int(unrank_cd)
+            remainder_hours = (unrank_cd - d) * 24
+            h = int(remainder_hours)
+            m = int((remainder_hours - h) * 60)
+            
             status = f"UNRANKED — Was **{unrank_info['original_rank']}**"
-            if days_left > 0:
-                status += f"\nRe-rank locked for **{days_left} more days**"
+            if unrank_cd > 0:
+                status += f"\nRe-rank locked for **{d}d {h}h {m}m**"
                 status += f"\nR1s blocked until back to **{unrank_info['original_rank']}**"
             else:
                 status += f"\nRe-rank cooldown expired"
@@ -143,7 +148,12 @@ class TicketEmbeds:
         obs_status = f"**Total Observations**: {total_obs}"
         
         if unrank_info and float(unrank_info["cooldown_days"]) > 0:
-            obs_status += f"\nCooldown: **Blocked (Unrank Cooldown)**"
+            unrank_cd = float(unrank_info["cooldown_days"])
+            d = int(unrank_cd)
+            remainder_hours = (unrank_cd - d) * 24
+            h = int(remainder_hours)
+            m = int((remainder_hours - h) * 60)
+            obs_status += f"\nCooldown: **Blocked (Unrank Cooldown: {d}d {h}h {m}m)**"
         elif obs_cooldown_days > 0:
             d = int(obs_cooldown_days)
             remainder_hours = (obs_cooldown_days - d) * 24
