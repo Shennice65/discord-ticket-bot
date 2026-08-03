@@ -73,8 +73,10 @@ class LeaderboardLauncherView(discord.ui.View):
             await interaction.response.send_message("No observers found.", ephemeral=True)
             return
             
-        desc = "# 👀 Server Observers\n\n"
-        for observer in observers:
-            desc += f"→ {observer.display_name} {observer.mention}\n"
-                
-        await interaction.response.send_message(desc, ephemeral=True)
+        bullet_list = "\n".join([f"• {observer.mention}" for observer in observers])
+        embed = discord.Embed(
+            title="👀 Server Observers",
+            description=bullet_list,
+            color=discord.Color(0x2b2d31)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
