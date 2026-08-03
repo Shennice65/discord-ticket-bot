@@ -134,43 +134,10 @@ class Tickets(commands.Cog):
                 await interaction.followup.send(f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", ephemeral=True)
                 return
         
-        if opponent_member.id == user.id and not opponent_member.bot:
-            await interaction.followup.send("You cannot 1v1 yourself!", ephemeral=True)
-            return
-        
-        can_r1, r1_reason = await self.db.can_player_r1(user.id)
-        if not can_r1:
-            await interaction.followup.send(r1_reason, ephemeral=True)
-            return
-        
-        idx_user = await self.db.get_global_rank_index(user.id)
-        idx_opp = await self.db.get_global_rank_index(opponent.id)
-        
-        if idx_user == -1:
-            await interaction.followup.send("You cannot request a ranked 1v1 while you are unranked!", ephemeral=True)
-            return
-            
-        if idx_opp == -1:
-            await interaction.followup.send("You cannot request a ranked 1v1 against an unranked player!", ephemeral=True)
-            return
-        
-        is_out_of_range = False
-        if idx_user != -1 and idx_opp != -1:
-            if abs(idx_user - idx_opp) > 5:
-                is_out_of_range = True
-                
-        cooldown = await self.db.get_ranked_cooldown(user.id)
-        if cooldown > 0:
-            hours = int(cooldown)
-            minutes = int((cooldown - hours) * 60)
-            await interaction.followup.send(f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**.", ephemeral=True)
-            return
-        
-        rematch_cd = await self.db.get_rematch_cooldown(user.id, opponent.id)
-        if rematch_cd > 0:
-            hours = int(rematch_cd)
-            minutes = int((rematch_cd - hours) * 60)
-            await interaction.followup.send(f"You must wait **{hours}h {minutes}m** before facing {opponent_member.mention} again!", ephemeral=True)
+        ticket_service = self.bot.container.get('TicketService')
+        is_valid, error_msg, is_out_of_range = await ticket_service.validate_ranked_request(user.id, opponent.id)
+        if not is_valid:
+            await interaction.followup.send(error_msg, ephemeral=True)
             return
         
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)
@@ -313,23 +280,10 @@ class Tickets(commands.Cog):
                 await interaction.edit_original_response(content=f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", view=None)
                 return
             
-        cooldown = await self.db.get_obs_cooldown(user.id)
-        if cooldown > 0:
-            days = int(cooldown)
-            remainder_hours = (cooldown - days) * 24
-            hours = int(remainder_hours)
-            minutes = int((remainder_hours - hours) * 60)
-            await interaction.edit_original_response(content=f"You can only request a personal observation once every two weeks! Please wait **{days}d {hours}h {minutes}m**.", view=None)
-            return
-            
-        unrank_cooldown = await self.db.get_unrank_cooldown(user.id)
-        is_self_unranked = await self.db.is_player_self_unranked(user.id)
-        if is_self_unranked and unrank_cooldown > 0:
-            d = int(unrank_cooldown)
-            remainder_hours = (unrank_cooldown - d) * 24
-            h = int(remainder_hours)
-            m = int((remainder_hours - h) * 60)
-            await interaction.edit_original_response(content=f"You cannot request a Personal Observation while your unrank cooldown is active! Please wait **{d}d {h}h {m}m**.", view=None)
+        ticket_service = self.bot.container.get('TicketService')
+        is_valid, error_msg = await ticket_service.validate_observation_request(user.id)
+        if not is_valid:
+            await interaction.edit_original_response(content=error_msg, view=None)
             return
             
         category = guild.get_channel(Config.TICKET_CATEGORY_ID)

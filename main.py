@@ -24,6 +24,15 @@ class TicketBot(commands.Bot):
         
         from database import Database
         self.db = Database()
+        
+        from core.container import Container
+        from core.services.ranking_service import RankingService
+        from core.services.ticket_service import TicketService
+        
+        self.container = Container()
+        self.container.register('Database', self.db)
+        self.container.register('RankingService', RankingService(self, self.db))
+        self.container.register('TicketService', TicketService(self, self.db))
     
     async def setup_hook(self):
         print("Starting setup_hook...")

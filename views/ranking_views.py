@@ -21,19 +21,19 @@ class RankingPaginationView(discord.ui.View):
         
     @discord.ui.button(label="◀️ Back", style=discord.ButtonStyle.secondary, custom_id="ranking_back")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cog = interaction.client.get_cog('Ranking')
-        if not cog: return
+        ranking_service = interaction.client.container.get('RankingService')
+        if not ranking_service: return
         self.current_page = max(0, self.current_page - 1)
-        embeds, file = await cog.generate_leaderboard_content(self.current_page)
+        embeds, file = await ranking_service.generate_leaderboard_content(self.current_page)
         attachments = [file] if file else []
         await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
 
     @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cog = interaction.client.get_cog('Ranking')
-        if not cog: return
+        ranking_service = interaction.client.container.get('RankingService')
+        if not ranking_service: return
         self.current_page = min(len(TIERS) - 1, self.current_page + 1)
-        embeds, file = await cog.generate_leaderboard_content(self.current_page)
+        embeds, file = await ranking_service.generate_leaderboard_content(self.current_page)
         attachments = [file] if file else []
         await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
 
@@ -43,13 +43,13 @@ class LeaderboardLauncherView(discord.ui.View):
         
     @discord.ui.button(label="View Leaderboard", style=discord.ButtonStyle.primary, custom_id="view_leaderboard_btn", emoji="🏆")
     async def view_leaderboard(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cog = interaction.client.get_cog('Ranking')
-        if not cog: 
+        ranking_service = getattr(interaction.client, 'container', None) and interaction.client.container.get('RankingService')
+        if not ranking_service: 
             await interaction.response.send_message("Bot is starting up...", ephemeral=True)
             return
             
         await interaction.response.defer(ephemeral=True)
-        embeds, file = await cog.generate_leaderboard_content(0)
+        embeds, file = await ranking_service.generate_leaderboard_content(0)
         view = RankingPaginationView(0)
         kwargs = {"embeds": embeds, "view": view, "ephemeral": True}
         if file:
