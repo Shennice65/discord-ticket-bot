@@ -7,10 +7,6 @@ class TicketService:
         self.db = db
 
     async def validate_ranked_request(self, user_id: int, opponent_id: int) -> Tuple[bool, str, bool]:
-        """
-        Validates if a ranked ticket can be created.
-        Returns: (is_valid, error_message, is_out_of_range)
-        """
         if opponent_id == user_id:
             return False, "You cannot 1v1 yourself!", False
             
@@ -27,9 +23,7 @@ class TicketService:
         if idx_opp == -1:
             return False, "You cannot request a ranked 1v1 against an unranked player!", False
             
-        is_out_of_range = False
-        if abs(idx_user - idx_opp) > 5:
-            is_out_of_range = True
+        is_out_of_range = abs(idx_user - idx_opp) > 5
             
         cooldown = await self.db.get_ranked_cooldown(user_id)
         if cooldown > 0:
@@ -46,10 +40,6 @@ class TicketService:
         return True, "", is_out_of_range
 
     async def validate_observation_request(self, user_id: int) -> Tuple[bool, str]:
-        """
-        Validates if an observation ticket can be created.
-        Returns: (is_valid, error_message)
-        """
         cooldown = await self.db.get_obs_cooldown(user_id)
         if cooldown > 0:
             days = int(cooldown)

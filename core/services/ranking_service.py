@@ -16,7 +16,6 @@ class RankingService:
         display_tier = "Novices" if tier_name == "Novice" else tier_name
         all_ranks = await self.db.get_all_player_ranks()
         
-        # Filter and parse
         tier_players = []
         for r in all_ranks:
             parsed = parse_rank(r.get('rank', ''))
@@ -24,7 +23,6 @@ class RankingService:
                 streak = r.get('win_streak', 0)
                 tier_players.append((r['user_id'], parsed[1], streak))
                 
-        # Sort by number ascending (lower number is better)
         tier_players.sort(key=lambda x: x[1])
         
         desc = f"# 🏆 {display_tier} Leaderboard\n\n"
@@ -40,7 +38,7 @@ class RankingService:
                 if not user:
                     try:
                         user = await self.bot.fetch_user(uid)
-                    except:
+                    except Exception:
                         pass
                 
                 avatar_url = user.display_avatar.url if user else ""
@@ -56,7 +54,6 @@ class RankingService:
             file = discord.File(podium_path, filename="podium.png")
             
             medals = ["🥇", "🥈", "🥉"]
-            # Build a name cache from the top 3 we already fetched
             name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
@@ -70,7 +67,7 @@ class RankingService:
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
                 for i, (uid, num, streak) in enumerate(tier_players[3:], 4):
-                    # Use guild cache only — no API calls to avoid rate limits
+                    # Cache lookup only to prevent gateway rate limits on deep pagination
                     member = None
                     for guild in self.bot.guilds:
                         member = guild.get_member(uid)

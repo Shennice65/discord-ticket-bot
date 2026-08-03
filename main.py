@@ -9,6 +9,10 @@ if sys.platform == 'win32':
 
 from config import Config
 from keep_alive import keep_alive
+from database import Database
+from core.container import Container
+from core.services.ranking_service import RankingService
+from core.services.ticket_service import TicketService
 
 class TicketBot(commands.Bot):
     def __init__(self):
@@ -22,12 +26,7 @@ class TicketBot(commands.Bot):
             help_command=None
         )
         
-        from database import Database
         self.db = Database()
-        
-        from core.container import Container
-        from core.services.ranking_service import RankingService
-        from core.services.ticket_service import TicketService
         
         self.container = Container()
         self.container.register('Database', self.db)
@@ -37,7 +36,7 @@ class TicketBot(commands.Bot):
     async def setup_hook(self):
         print("Starting setup_hook...")
         await self.db.init()
-        # Load cogs
+        
         print("Loading cogs...")
         await self.load_extension("cogs.tickets")
         await self.load_extension("cogs.history")
@@ -46,7 +45,6 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.ranking_cooldowns")
         print("Cogs loaded. Syncing commands...")
         
-        # Sync commands
         try:
             if Config.GUILD_ID:
                 guild = discord.Object(id=Config.GUILD_ID)
@@ -78,7 +76,6 @@ class TicketBot(commands.Bot):
     @commands.command(name="sync")
     @commands.has_permissions(administrator=True)
     async def sync_commands(self, ctx):
-        """Manually sync slash commands"""
         msg = await ctx.send("Syncing commands...")
         try:
             if Config.GUILD_ID:

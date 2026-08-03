@@ -73,7 +73,6 @@ class LeaderboardLauncherView(discord.ui.View):
             await interaction.response.send_message("No observers found.", ephemeral=True)
             return
             
-        # Format the observers
         desc = "# 👀 Server Observers\n\n"
         for observer in observers:
             desc += f"→ {observer.display_name} {observer.mention}\n"
