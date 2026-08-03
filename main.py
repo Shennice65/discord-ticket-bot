@@ -21,9 +21,13 @@ class TicketBot(commands.Bot):
             intents=intents,
             help_command=None
         )
+        
+        from database import Database
+        self.db = Database()
     
     async def setup_hook(self):
         print("Starting setup_hook...")
+        await self.db.init()
         # Load cogs
         print("Loading cogs...")
         await self.load_extension("cogs.tickets")
@@ -57,10 +61,7 @@ class TicketBot(commands.Bot):
         
     async def on_member_remove(self, member):
         try:
-            from database import Database
-            db = Database()
-            await db.init()
-            await db.remove_player_from_ladder(member.id)
+            await self.db.remove_player_from_ladder(member.id)
             print(f"Removed leaving member {member.name} from ladder.")
         except Exception as e:
             print(f"Error removing member {member.id} from ladder: {e}")

@@ -136,8 +136,7 @@ class HistoryView(discord.ui.View):
 class History(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database()
-        self.bot.loop.create_task(self.db.init())
+        self.db = bot.db
     
     @app_commands.command(name="history", description="View a user's ranked and observation history")
     @app_commands.describe(user="The user to check history for (defaults to yourself)")

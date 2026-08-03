@@ -20,9 +20,8 @@ from utils.ticket_utils import *
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database()
+        self.db = bot.db
         self.db_ready = True
-        bot.loop.create_task(self.db.init())
         self.cleanup_stale_tickets.start()
         
     def cog_unload(self):

@@ -17,8 +17,7 @@ from utils.ranking_utils import *
 class RankingAdmin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        from database import Database
-        self.db = Database()
+        self.db = bot.db
 
     async def remove_player(self, interaction: discord.Interaction, user: discord.User):
         if not is_admin_or_observer(interaction):

@@ -17,8 +17,7 @@ from utils.ranking_utils import *
 class Ranking(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database()
-        self.bot.loop.create_task(self.db.init())
+        self.db = bot.db
         self._panel_task = None
         
     @commands.Cog.listener()
