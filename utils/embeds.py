@@ -106,12 +106,15 @@ class TicketEmbeds:
         return embed
 
     @staticmethod
-    def history_overview_embed(user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0) -> discord.Embed:
+    def history_overview_embed(user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0, current_rank: str = "Unranked") -> discord.Embed:
         embed = TicketEmbeds._base_embed(
             user, 
             f"History Overview for {user.display_name}", 
             discord.Color.red() if unrank_info else discord.Color.purple()
         )
+        
+        # Current Rank
+        embed.add_field(name="Current Rank", value=f"**{current_rank}**", inline=False)
         
         # Unranked badge
         if unrank_info:
