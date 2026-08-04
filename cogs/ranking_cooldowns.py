@@ -19,6 +19,8 @@ class RankingCooldowns(commands.Cog):
         self.bot = bot
         self.db = bot.db
 
+    @app_commands.command(name="resetrequest", description="Reset a player's ranked request cooldown")
+    @app_commands.describe(user="The player whose cooldown to reset")
     async def reset_request(self, interaction: discord.Interaction, user: discord.User):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
@@ -93,6 +95,8 @@ class RankingCooldowns(commands.Cog):
             except Exception:
                 pass
 
+    @app_commands.command(name="allowrematch", description="Clear the rematch cooldown between two specific players")
+    @app_commands.describe(player1="First player", player2="Second player")
     async def allow_rematch(self, interaction: discord.Interaction, player1: discord.User, player2: discord.User):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)

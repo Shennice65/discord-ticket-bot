@@ -18,6 +18,7 @@ class ConnectionMixin:
         self.player_ranks = None
         self.undo_logs = None
         self.bot_settings = None
+        self.bot_config = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -37,6 +38,7 @@ class ConnectionMixin:
             self.player_ranks = self.db.player_ranks
             self.undo_logs = self.db.undo_logs
             self.bot_settings = self.db.bot_settings
+            self.bot_config = self.db.bot_config
             
             # Simple ping to test connection
             await self.db.command('ping')

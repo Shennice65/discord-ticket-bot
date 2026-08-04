@@ -431,4 +431,18 @@ class LadderMixin:
             return 0.0
         except ValueError:
             return 0.0
-    
+
+    async def reset_rematch_cooldown(self, user1_id: int, user2_id: int) -> bool:
+        """Reset the rematch cooldown between two players by marking it cleared and backdating the closed_at."""
+        result = await self.tickets.update_one(
+            {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [
+                    {"user_id": user1_id, "opponent_id": user2_id},
+                    {"user_id": user2_id, "opponent_id": user1_id}
+                ]
+            },
+            {"$set": {"rematch_cooldown_cleared": True, "closed_at": str(datetime(2000, 1, 1))}},
+        )
+        return result.modified_count > 0    

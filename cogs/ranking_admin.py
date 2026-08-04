@@ -19,6 +19,8 @@ class RankingAdmin(commands.Cog):
         self.bot = bot
         self.db = bot.db
 
+    @app_commands.command(name="removeplayer", description="Remove a player from the leaderboard")
+    @app_commands.describe(user="The player to remove")
     async def remove_player(self, interaction: discord.Interaction, user: discord.User):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
@@ -78,6 +80,8 @@ class RankingAdmin(commands.Cog):
         else:
             await interaction.followup.send(f"Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
             
+    @app_commands.command(name="setstreak", description="Manually set a player's win streak")
+    @app_commands.describe(user="The player to modify", streak="The new streak number")
     async def set_streak(self, interaction: discord.Interaction, user: discord.User, streak: int):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
@@ -114,6 +118,8 @@ class RankingAdmin(commands.Cog):
             except Exception as e:
                 print(f"Failed to send streak log: {e}")
 
+    @app_commands.command(name="removebyrank", description="Remove a player by specifying their rank (e.g. Legends 3)")
+    @app_commands.describe(rank="The exact rank to clear (e.g. Legends 3)")
     async def remove_by_rank(self, interaction: discord.Interaction, rank: str):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
@@ -168,6 +174,8 @@ class RankingAdmin(commands.Cog):
         else:
             await interaction.followup.send(f"Failed to remove player from {formatted_rank}.", ephemeral=True)
 
+    @app_commands.command(name="undo", description="Undo the last rank change for a specific user")
+    @app_commands.describe(user="The user whose last rank change you want to undo")
     async def undo(self, interaction: discord.Interaction, user: discord.User):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
@@ -201,6 +209,7 @@ class RankingAdmin(commands.Cog):
         else:
             await interaction.followup.send(f"Undo failed: {message}", ephemeral=True)
 
+    @app_commands.command(name="syncroles", description="Sync all Discord tier roles to match current ladder ranks")
     async def sync_roles(self, interaction: discord.Interaction):
         if not is_admin_or_observer(interaction):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)

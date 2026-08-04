@@ -125,3 +125,43 @@ class HistoryMixin:
         })
         return count
     
+    async def get_h2h(self, player1_id: int, player2_id: int, limit: int = 10) -> Dict:
+        """Get head-to-head stats between two players from ranked results."""
+        pipeline = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [
+                    {"user_id": player1_id, "opponent_id": player2_id},
+                    {"user_id": player2_id, "opponent_id": player1_id}
+                ]
+            }},
+            {"$sort": {"closed_at": -1}},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result"
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
+        ]
+        
+        cursor = self.tickets.aggregate(pipeline)
+        matches = await cursor.to_list(length=None)
+        
+        p1_wins = 0
+        p2_wins = 0
+        
+        for match in matches:
+            winner_id = match["result"].get("winner_id")
+            if winner_id == player1_id:
+                p1_wins += 1
+            elif winner_id == player2_id:
+                p2_wins += 1
+        
+        return {
+            "total": len(matches),
+            "p1_wins": p1_wins,
+            "p2_wins": p2_wins,
+            "recent_matches": [{**doc, **doc.pop("result")} for doc in matches[:limit]]
+        }
