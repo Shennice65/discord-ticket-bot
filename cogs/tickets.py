@@ -43,12 +43,13 @@ class Tickets(commands.Cog):
             if channel:
                 try:
                     try:
-                        created = datetime.fromisoformat(ticket['created_at'])
+                        val = ticket['created_at']
+                        created = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
                         if (now_naive - created).total_seconds() > 604800:
                             observer_mention = get_observer_mention(channel.guild)
                             await channel.send(f"{observer_mention} This ticket has been inactive for 7 days. Please check if the requested player is avoiding the match.")
                             await self.db.mark_ducking_ping_sent(ticket['channel_id'])
-                    except ValueError:
+                    except (ValueError, TypeError):
                         pass
                 except Exception as e:
                     print(f"Cleanup error on {channel.id}: {e}")

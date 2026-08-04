@@ -65,13 +65,14 @@ class LadderMixin:
             return 0.0
             
         try:
-            last_request = datetime.fromisoformat(player["last_ranked_request"])
+            val = player["last_ranked_request"]
+            last_request = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
             time_passed = (datetime.utcnow() - last_request).total_seconds()
             cooldown_seconds = 24 * 3600
             if time_passed < cooldown_seconds:
                 return (cooldown_seconds - time_passed) / 3600.0
             return 0.0
-        except ValueError:
+        except (ValueError, TypeError):
             return 0.0
             
     async def update_ranked_cooldown(self, user_id: int):
@@ -103,13 +104,14 @@ class LadderMixin:
             return 0.0
             
         try:
-            last_request = datetime.fromisoformat(player["last_obs_request"])
+            val = player["last_obs_request"]
+            last_request = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
             time_passed = (datetime.utcnow() - last_request).total_seconds()
             cooldown_seconds = 14 * 24 * 3600
             if time_passed < cooldown_seconds:
                 return (cooldown_seconds - time_passed) / (24 * 3600.0)
             return 0.0
-        except ValueError:
+        except (ValueError, TypeError):
             return 0.0
             
     async def update_obs_cooldown(self, user_id: int):
@@ -188,13 +190,14 @@ class LadderMixin:
         if not player or "unranked_at" not in player:
             return 0.0
         try:
-            unranked_at = datetime.fromisoformat(player["unranked_at"])
+            val = player["unranked_at"]
+            unranked_at = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
             time_passed = (datetime.utcnow() - unranked_at).total_seconds()
             cooldown_seconds = 30 * 24 * 3600  # 1 month
             if time_passed < cooldown_seconds:
                 return (cooldown_seconds - time_passed) / (24 * 3600.0)
             return 0.0
-        except ValueError:
+        except (ValueError, TypeError):
             return 0.0
     
     async def get_unrank_cooldown(self, user_id: int) -> float:
@@ -423,13 +426,14 @@ class LadderMixin:
             return 0.0
             
         try:
-            closed_at = datetime.fromisoformat(ticket["closed_at"])
+            val = ticket["closed_at"]
+            closed_at = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
             time_passed = (datetime.utcnow() - closed_at).total_seconds()
             cooldown_seconds = 24 * 3600  # 24 hours
             if time_passed < cooldown_seconds:
                 return (cooldown_seconds - time_passed) / 3600.0
             return 0.0
-        except ValueError:
+        except (ValueError, TypeError):
             return 0.0
 
     async def reset_rematch_cooldown(self, user1_id: int, user2_id: int) -> bool:

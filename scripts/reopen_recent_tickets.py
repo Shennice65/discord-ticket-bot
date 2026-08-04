@@ -23,14 +23,14 @@ async def fix_tickets():
         closed_at_str = t.get('closed_at')
         if closed_at_str:
             try:
-                closed_at = datetime.fromisoformat(closed_at_str)
+                closed_at = closed_at_str if isinstance(closed_at_str, datetime) else datetime.fromisoformat(str(closed_at_str))
                 if closed_at > cutoff:
                     await db.tickets.update_one(
                         {"channel_id": t['channel_id']},
                         {"$set": {"status": "open", "closed_at": None, "closed_by": None}}
                     )
                     reopened += 1
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
                 
     print(f"\nDone! Reopened {reopened} tickets that were closed in the last 48 hours.")
