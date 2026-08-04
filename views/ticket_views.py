@@ -52,9 +52,18 @@ class ObservationConfirmView(discord.ui.View):
     @discord.ui.button(label="Yes, Request Observation", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="Processing...", view=None)
-        cog = interaction.client.get_cog('Tickets')
-        if cog:
+        try:
+            cog = interaction.client.get_cog('Tickets')
+            if not cog:
+                await interaction.edit_original_response(content="❌ Error: Ticket system cog is currently unavailable. Please try again later.", view=None)
+                return
             await cog.create_observation_ticket(interaction)
+        except Exception as e:
+            print(f"Error in ObservationConfirmView: {e}")
+            try:
+                await interaction.edit_original_response(content=f"❌ An error occurred while creating ticket: {e}", view=None)
+            except Exception:
+                pass
     
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -109,10 +118,18 @@ class OpponentSelect(discord.ui.UserSelect):
     async def callback(self, interaction: discord.Interaction):
         selected_user = self.values[0]
         await interaction.response.edit_message(content=f"Opponent {selected_user.mention} selected. Creating ticket...", view=None)
-        
-        cog = interaction.client.get_cog('Tickets')
-        if cog:
+        try:
+            cog = interaction.client.get_cog('Tickets')
+            if not cog:
+                await interaction.edit_original_response(content="❌ Error: Ticket system cog is currently unavailable. Please try again later.", view=None)
+                return
             await cog.create_ranked_ticket(interaction, selected_user)
+        except Exception as e:
+            print(f"Error in OpponentSelect: {e}")
+            try:
+                await interaction.edit_original_response(content=f"❌ An error occurred while creating ticket: {e}", view=None)
+            except Exception:
+                pass
 
 
 class OpponentSelectView(discord.ui.View):

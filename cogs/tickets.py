@@ -271,62 +271,89 @@ class Tickets(commands.Cog):
         guild = interaction.guild
         user = interaction.user
         
-        existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
-        if existing_ticket:
-            existing_channel = guild.get_channel(existing_ticket["channel_id"])
-            if not existing_channel:
-                await self.db.close_ticket(existing_ticket["channel_id"], self.bot.user.id)
-            else:
-                await interaction.edit_original_response(content=f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", view=None)
+        try:
+            existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
+            if existing_ticket:
+                existing_channel = guild.get_channel(existing_ticket["channel_id"])
+                if not existing_channel:
+                    try:
+                        existing_channel = await guild.fetch_channel(existing_ticket["channel_id"])
+                    except Exception:
+                        existing_channel = None
+                if not existing_channel:
+                    await self.db.close_ticket(existing_ticket["channel_id"], self.bot.user.id)
+                else:
+                    await interaction.edit_original_response(content=f"You already have an open ticket in {existing_channel.mention}! Please close it before opening a new one.", view=None)
+                    return
+                
+            ticket_service = self.bot.container.get('TicketService')
+            if not ticket_service:
+                await interaction.edit_original_response(content="Ticket service unavailable! Please contact an admin.", view=None)
+                return
+                
+            is_valid, error_msg = await ticket_service.validate_observation_request(user.id)
+            if not is_valid:
+                await interaction.edit_original_response(content=error_msg, view=None)
+                return
+                
+            category = guild.get_channel(Config.TICKET_CATEGORY_ID)
+            if not category:
+                try:
+                    category = await guild.fetch_channel(Config.TICKET_CATEGORY_ID)
+                except Exception:
+                    category = None
+            if not category:
+                await interaction.edit_original_response(content="Ticket category not configured or not found!", view=None)
                 return
             
-        ticket_service = self.bot.container.get('TicketService')
-        is_valid, error_msg = await ticket_service.validate_observation_request(user.id)
-        if not is_valid:
-            await interaction.edit_original_response(content=error_msg, view=None)
-            return
+            observer_mention = get_observer_mention(guild)
             
-        category = guild.get_channel(Config.TICKET_CATEGORY_ID)
-        if not category:
-            await interaction.edit_original_response(content="Ticket category not configured!", view=None)
-            return
-        
-        observer_mention = get_observer_mention(guild)
-        
-        overwrites = get_observer_overwrites(guild, {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        }, ticket_type="Personal Observation")
-        
-        channel_name = f"obs-{user.name}".lower().replace(" ", "-")
-        try:
-            channel = await guild.create_text_channel(
-                name=channel_name,
-                category=category,
-                overwrites=overwrites,
-                topic=f"Personal Observation | User: {user.name}"
+            overwrites = get_observer_overwrites(guild, {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            }, ticket_type="Personal Observation")
+            
+            channel_name = f"obs-{user.name}".lower().replace(" ", "-")
+            try:
+                channel = await asyncio.wait_for(
+                    guild.create_text_channel(
+                        name=channel_name,
+                        category=category,
+                        overwrites=overwrites,
+                        topic=f"Personal Observation | User: {user.name}"
+                    ),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                await interaction.edit_original_response(content="⚠️ Creating channel timed out (Discord rate limit or API delay). Please try again in a minute.", view=None)
+                return
+            except Exception as e:
+                await interaction.edit_original_response(content=f"Failed to create channel: {e}", view=None)
+                return
+            
+            ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
+            print(f"Ticket {ticket_id} saved")
+            
+            total_obs = await self.db.get_user_observation_count(user.id)
+            u_rank = await self.db.get_player_rank(user.id) or "Unranked"
+            user_stats = f"**Rank**: `{u_rank}`\n**Total Observations**: `{total_obs}`"
+            
+            embed = TicketEmbeds.ticket_created(
+                "Personal Observation", user, user_stats=user_stats
             )
+            
+            await channel.send(
+                content=f"{user.mention} {observer_mention}",
+                embed=embed
+            )
+            
+            await interaction.edit_original_response(content=f"Ticket created! {channel.mention}", view=None)
         except Exception as e:
-            await interaction.edit_original_response(content=f"Failed to create channel: {e}", view=None)
-            return
-        
-        ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
-        print(f"Ticket {ticket_id} saved")
-        
-        total_obs = await self.db.get_user_observation_count(user.id)
-        u_rank = await self.db.get_player_rank(user.id) or "Unranked"
-        user_stats = f"**Rank**: `{u_rank}`\n**Total Observations**: `{total_obs}`"
-        
-        embed = TicketEmbeds.ticket_created(
-            "Personal Observation", user, user_stats=user_stats
-        )
-        
-        await channel.send(
-            content=f"{user.mention} {observer_mention}",
-            embed=embed
-        )
-        
-        await interaction.edit_original_response(content=f"Ticket created! {channel.mention}", view=None)
+            print(f"Unhandled error in create_observation_ticket: {e}")
+            try:
+                await interaction.edit_original_response(content=f"An unexpected error occurred: {e}", view=None)
+            except Exception:
+                pass
     
     @app_commands.command(name="clearticket", description="Forcefully close all open tickets for a user in the database")
     @app_commands.default_permissions(administrator=True)
