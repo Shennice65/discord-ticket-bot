@@ -117,41 +117,7 @@ class Tickets(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="updateuserperms", description="Add a user's permissions to all existing ticket channels")
-    @app_commands.describe(user="The user to add to all ticket channels")
-    async def update_user_perms(self, interaction: discord.Interaction, user: discord.Member):
-        if not is_observer_or_trial(interaction.user):
-            await interaction.response.send_message("Only observers can use this.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        
-        guild = interaction.guild
-        category = guild.get_channel(Config.TICKET_CATEGORY_ID)
-        
-        if not category:
-            await interaction.followup.send("Ticket category not found!", ephemeral=True)
-            return
-        
-        updated = 0
-        skipped = 0
-        
-        for channel in category.channels:
-            if isinstance(channel, discord.TextChannel) and channel.name.startswith(("ranked-", "obs-")):
-                current_perms = channel.overwrites_for(user)
-                if current_perms.read_messages:
-                    skipped += 1
-                else:
-                    try:
-                        await channel.set_permissions(user, read_messages=True, send_messages=True)
-                        updated += 1
-                    except Exception as e:
-                        print(f"Failed to update {channel.name}: {e}")
-        
-        await interaction.followup.send(
-            f"Done! Updated {updated} channels with {user.mention} permissions.\n"
-            f"{skipped} channels already had permissions.",
-            ephemeral=True
-        )
+
     
     async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User):
         guild = interaction.guild
