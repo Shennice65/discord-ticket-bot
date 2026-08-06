@@ -118,9 +118,11 @@ class Tickets(commands.Cog):
         )
 
     @app_commands.command(name="updateuserperms", description="Add a user's permissions to all existing ticket channels")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="The user to add to all ticket channels")
     async def update_user_perms(self, interaction: discord.Interaction, user: discord.Member):
+        if not is_observer_or_trial(interaction.user):
+            await interaction.response.send_message("Only observers can use this.", ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         
         guild = interaction.guild
