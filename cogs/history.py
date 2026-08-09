@@ -8,7 +8,16 @@ from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
 
-def is_observer_check(user: discord.Member, guild: discord.Guild) -> bool:
+def can_clear_history(user: discord.Member | discord.User) -> bool:
+    if user.id == Config.MASTER_ADMIN_ID:
+        return True
+    if isinstance(user, discord.Member):
+        return user.guild_permissions.administrator
+    return False
+
+def can_view_history(user: discord.Member, guild: discord.Guild) -> bool:
+    if can_clear_history(user):
+        return True
     observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role and observer_role in user.roles:
         return True
@@ -107,7 +116,7 @@ class HistoryView(discord.ui.View):
         self.history = history
         self.unrank_info = unrank_info
         self.obs_cooldown_days = obs_cooldown_days
-        self.is_observer = is_observer
+        self.is_admin = is_observer
         self.current_rank = current_rank
 
     @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, custom_id="hist_overview")
@@ -127,8 +136,8 @@ class HistoryView(discord.ui.View):
 
     @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, custom_id="hist_clear")
     async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.is_observer:
-            await interaction.response.send_message("Only observers can clear history.", ephemeral=True)
+        if not self.is_admin:
+            await interaction.response.send_message("Only administrators can clear history.", ephemeral=True)
             return
             
         view = ClearHistoryView(self.target_user.id, self.target_user.name)
@@ -139,12 +148,16 @@ class History(commands.Cog):
         self.bot = bot
         self.db = bot.db
     
-    @app_commands.command(name="history", description="View a user's ranked and observation history")
+    @app_commands.command(name="history", description="View a user's ranked and observation history (Observers/Admins only)")
     @app_commands.describe(user="The user to check history for (defaults to yourself)")
     async def history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        if not can_view_history(interaction.user, interaction.guild):
+            await interaction.response.send_message("Only observers and administrators can view history.", ephemeral=True)
+            return
+            
         target_user = user or interaction.user
         
-        is_observer = is_observer_check(interaction.user, interaction.guild)
+        is_admin = can_clear_history(interaction.user)
         
         await interaction.response.defer(ephemeral=True)
         
@@ -162,14 +175,14 @@ class History(commands.Cog):
             }
         
         embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info, obs_cooldown_days=obs_cooldown_days, current_rank=current_rank)
-        view = HistoryView(target_user, history, unrank_info, obs_cooldown_days, is_observer, current_rank)
+        view = HistoryView(target_user, history, unrank_info, obs_cooldown_days, is_admin, current_rank)
         
-        if not is_observer:
+        if not is_admin:
             view.remove_item(view.btn_clear)
             
         await interaction.followup.send(embed=embed, view=view)
     
-    @app_commands.command(name="clearhistory", description="Clear a user's history (Observer only)")
+    @app_commands.command(name="clearhistory", description="Clear a user's history (Admin only)")
     @app_commands.describe(user="The user to clear history for", type="Type of history to clear")
     @app_commands.choices(type=[
         app_commands.Choice(name="Ranked 1v1", value="ranked"),
@@ -182,8 +195,8 @@ class History(commands.Cog):
         user: discord.Member, 
         type: app_commands.Choice[str]
     ):
-        if not is_observer_check(interaction.user, interaction.guild):
-            await interaction.response.send_message("Only observers can clear history!", ephemeral=True)
+        if not can_clear_history(interaction.user):
+            await interaction.response.send_message("Only administrators can clear history!", ephemeral=True)
             return
         
         modal = ConfirmClearModal(user.id, user.name, type.value)

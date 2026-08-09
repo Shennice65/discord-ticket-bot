@@ -1,0 +1,3 @@
+[submodule ".agents/superpowers"]
+	path = .agents/superpowers
+	url = https://github.com/obra/superpowers
