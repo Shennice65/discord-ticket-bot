@@ -149,13 +149,9 @@ class History(commands.Cog):
         self.bot = bot
         self.db = bot.db
     
-    @app_commands.command(name="history", description="View a user's ranked and observation history (Observers/Admins only)")
+    @app_commands.command(name="history", description="View a user's ranked and observation history")
     @app_commands.describe(user="The user to check history for (defaults to yourself)")
     async def history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
-        if not can_view_history(interaction.user, interaction.guild):
-            await interaction.response.send_message("Only observers and administrators can view history.", ephemeral=True)
-            return
-            
         target_user = user or interaction.user
         
         if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
