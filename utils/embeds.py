@@ -164,7 +164,7 @@ class TicketEmbeds:
 
         if unrank_info and float(unrank_info["cooldown_days"]) > 0:
             unrank_cd_str = format_cd(float(unrank_info["cooldown_days"]))
-            obs_status = f"<:locke:1537515688908824627> Blocked ({unrank_cd_str})"
+            obs_status = f"<:locke:1537533192343396483> Blocked ({unrank_cd_str})"
             
         embed.add_field(
             name="COOLDOWN",
@@ -336,4 +336,4 @@ class TicketEmbeds:
             embed.description += f"{rank} {user_name_or_mention} — **{win_rate:.1f}%** ({wins}W / {losses}L / {matches}M)\n"
             
         embed.set_footer(text="Ranked 1v1 Matches Only")
-        return embed
+        return embed
