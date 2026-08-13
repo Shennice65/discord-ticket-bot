@@ -23,9 +23,11 @@ class Tickets(commands.Cog):
         self.db = bot.db
         self.db_ready = True
         self.cleanup_stale_tickets.start()
+        self.cleanup_pending_tickets.start()
         
     def cog_unload(self):
         self.cleanup_stale_tickets.cancel()
+        self.cleanup_pending_tickets.cancel()
 
     @tasks.loop(hours=1)
     async def cleanup_stale_tickets(self):
@@ -53,11 +55,43 @@ class Tickets(commands.Cog):
                         pass
                 except Exception as e:
                     print(f"Cleanup error on {channel.id}: {e}")
+                    
+    @tasks.loop(minutes=5)
+    async def cleanup_pending_tickets(self):
+        await self.bot.wait_until_ready()
+        if self.db.tickets is None:
+            return
+            
+        now_naive = datetime.utcnow()
+        cursor = self.db.tickets.find({"status": "pending_accept"})
+        pending_tickets = await cursor.to_list(length=None)
+        
+        for ticket in pending_tickets:
+            try:
+                val = ticket['created_at']
+                created = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
+                if (now_naive - created).total_seconds() > 86400:  # 24 hours
+                    channel = self.bot.get_channel(ticket['channel_id'])
+                    if channel:
+                        try:
+                            await channel.send("The out-of-range challenge has expired. This channel will be deleted in 10 seconds.")
+                            await asyncio.sleep(10)
+                            await channel.delete()
+                        except discord.errors.NotFound:
+                            pass
+                    
+                    # reset cooldown for requester
+                    await self.db.reset_ranked_cooldown_only(ticket['user_id'])
+                    # remove from DB
+                    await self.db.tickets.delete_one({"_id": ticket['_id']})
+            except (ValueError, TypeError, KeyError) as e:
+                print(f"Pending cleanup error: {e}")
     
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
+        self.bot.add_view(OutOfRangeAcceptView())
     
     @app_commands.command(name="dbcheck", description="Check database status (Admin only)")
     @app_commands.default_permissions(administrator=True)
@@ -184,9 +218,16 @@ class Tickets(commands.Cog):
                 ),
                 color=discord.Color.orange()
             )
-            embed.set_footer(text="This request expires in 5 minutes.")
+            embed.set_footer(text="This request expires in 24 hours.")
             
-            view = OutOfRangeAcceptView(user, opponent_member, channel, self)
+            ticket_id = await self.db.create_ranked_ticket_db(
+                channel.id, user.id, 
+                opponent_name=opponent.name, opponent_id=opponent.id,
+                out_of_range=True, status="pending_accept"
+            )
+            print(f"Out-of-range ticket {ticket_id} pending accept")
+            
+            view = OutOfRangeAcceptView(self)
             await channel.send(
                 content=f"{user.mention} {opponent_member.mention}",
                 embed=embed,
@@ -234,12 +275,11 @@ class Tickets(commands.Cog):
     
     async def _finalize_out_of_range_ticket(self, channel: discord.TextChannel, 
                                              requester: discord.Member, opponent: discord.Member):
-        ticket_id = await self.db.create_ranked_ticket_db(
-            channel.id, requester.id,
-            opponent_name=opponent.name, opponent_id=opponent.id,
-            out_of_range=True
+        await self.db.tickets.update_one(
+            {"channel_id": channel.id, "status": "pending_accept"},
+            {"$set": {"status": "open"}}
         )
-        print(f"Out-of-range ticket {ticket_id} saved")
+        print(f"Out-of-range ticket in {channel.id} finalized and opened")
         
         observer_mention = get_observer_mention(channel.guild)
         

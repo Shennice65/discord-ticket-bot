@@ -139,77 +139,63 @@ class OpponentSelectView(discord.ui.View):
 
 
 class OutOfRangeAcceptView(discord.ui.View):
-    def __init__(self, requester: discord.Member, opponent: discord.Member, 
-                 channel: discord.TextChannel, cog):
-        super().__init__(timeout=300)
-        self.requester = requester
-        self.opponent = opponent
-        self.channel = channel
+    def __init__(self, cog=None):
+        super().__init__(timeout=None)
         self.cog = cog
-        
-        self.msg = None
-        self.responded = False
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.opponent.id:
+    async def _get_ticket_and_verify(self, interaction: discord.Interaction):
+        cog = self.cog or interaction.client.get_cog('Tickets')
+        if not cog:
+            await interaction.response.send_message("System unavailable.", ephemeral=True)
+            return None, None
+            
+        ticket = await cog.db.tickets.find_one({"channel_id": interaction.channel_id, "status": "pending_accept"})
+        if not ticket:
+            await interaction.response.send_message("This challenge has expired or is no longer valid.", ephemeral=True)
+            return None, None
+            
+        if interaction.user.id != ticket["opponent_id"]:
             await interaction.response.send_message("Only the challenged player can respond!", ephemeral=True)
-            return False
-        return True
+            return None, None
+            
+        return cog, ticket
 
-    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success, custom_id="oor_accept")
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.responded:
+        cog, ticket = await self._get_ticket_and_verify(interaction)
+        if not ticket:
             return
-        self.responded = True
-        self.stop()
 
         await interaction.response.edit_message(
-            content=f"{self.opponent.mention} **accepted** the out-of-range challenge!",
+            content=f"<@{ticket['opponent_id']}> **accepted** the out-of-range challenge!",
             view=None
         )
 
-        await self.cog._finalize_out_of_range_ticket(
-            self.channel, self.requester, self.opponent
+        requester = interaction.guild.get_member(ticket["user_id"]) or await interaction.guild.fetch_member(ticket["user_id"])
+        opponent = interaction.guild.get_member(ticket["opponent_id"]) or await interaction.guild.fetch_member(ticket["opponent_id"])
+        
+        await cog._finalize_out_of_range_ticket(
+            interaction.channel, requester, opponent
         )
 
-    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Decline", style=discord.ButtonStyle.danger, custom_id="oor_decline")
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.responded:
+        cog, ticket = await self._get_ticket_and_verify(interaction)
+        if not ticket:
             return
-        self.responded = True
-        self.stop()
 
         await interaction.response.edit_message(
-            content=f"{self.opponent.mention} **declined** the challenge. This channel will be deleted in 10 seconds.",
+            content=f"<@{ticket['opponent_id']}> **declined** the challenge. This channel will be deleted in 10 seconds.",
             view=None
         )
 
-        await self.cog.db.reset_ranked_cooldown_only(self.requester.id)
+        await cog.db.reset_ranked_cooldown_only(ticket["user_id"])
+        await cog.db.tickets.delete_one({"_id": ticket["_id"]})
 
+        import asyncio
         await asyncio.sleep(10)
         try:
-            await self.channel.delete()
-        except discord.errors.NotFound:
-            pass
-
-    async def on_timeout(self):
-        if self.responded:
-            return
-        self.responded = True
-
-        try:
-            await self.channel.send(
-                f"The out-of-range challenge from {self.requester.mention} to {self.opponent.mention} has **expired** (5 min timeout). "
-                f"This channel will be deleted in 10 seconds."
-            )
-        except Exception:
-            pass
-
-        await self.cog.db.reset_ranked_cooldown_only(self.requester.id)
-
-        await asyncio.sleep(10)
-        try:
-            await self.channel.delete()
+            await interaction.channel.delete()
         except discord.errors.NotFound:
             pass
 

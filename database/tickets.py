@@ -31,14 +31,14 @@ class TicketsMixin:
         return ticket_id
         
     async def create_ranked_ticket_db(self, channel_id: int, user_id: int, 
-                           opponent_name: str, opponent_id: int, out_of_range: bool = False) -> int:
+                           opponent_name: str, opponent_id: int, out_of_range: bool = False, status: str = "open") -> int:
         ticket_id = await self._next_id("tickets")
         ticket = {
             "id": ticket_id,
             "channel_id": channel_id,
             "user_id": user_id,
             "ticket_type": "Ranked 1v1",
-            "status": "open",
+            "status": status,
             "created_at": str(datetime.utcnow()),
             "closed_at": None,
             "closed_by": None,
