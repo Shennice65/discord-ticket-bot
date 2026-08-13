@@ -210,6 +210,10 @@ class RankingAdmin(commands.Cog):
                 embed.add_field(name="Undone By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
                 embed.set_footer(text=f"User ID: {user.id}")
                 await log_channel.send(embed=embed)
+                
+            ticket_service = interaction.client.container.get('TicketService')
+            if ticket_service:
+                await ticket_service.check_and_notify_rank_change(user.id, new_rank if new_rank else "Unranked")
         else:
             await interaction.followup.send(f"Undo failed: {message}", ephemeral=True)
 
