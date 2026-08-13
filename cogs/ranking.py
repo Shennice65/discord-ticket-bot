@@ -144,11 +144,21 @@ class Ranking(commands.Cog):
             t_api_end = time.time()
             api_time = t_api_end - t_api_start
                 
-            embed = TicketEmbeds.winrate_leaderboard_embed(entries, min_matches)
-            await interaction.followup.send(embed=embed)
+            if not entries:
+                msg = f"**Top Winrate Leaderboard**\n*No players found with at least {min_matches} matches.*"
+            else:
+                msg = f"**📈 Top Winrate Leaderboard (Minimum {min_matches} matches)**\n\n"
+                for i, (name_display, stat) in enumerate(entries, 1):
+                    win_rate = stat.get('win_rate', 0)
+                    wins = stat.get('wins', 0)
+                    losses = stat.get('losses', 0)
+                    matches = stat.get('matches', 0)
+                    msg += f"{i}. {name_display} — **{win_rate:.1f}%** ({wins}W / {losses}L / {matches}M)\n"
+                    
+            await interaction.followup.send(msg)
             
             # Send diagnostics directly to Discord
-            await interaction.followup.send(f"**[Diagnostic Data]**\n- DB Query: `{db_time:.3f}s`\n- Discord API: `{api_time:.3f}s`", ephemeral=True)
+            # await interaction.followup.send(f"**[Diagnostic Data]**\n- DB Query: `{db_time:.3f}s`\n- Discord API: `{api_time:.3f}s`", ephemeral=True)
             
         except Exception as e:
             error_msg = f"**Command Crashed!**\n```py\n{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-1000:]}```"
