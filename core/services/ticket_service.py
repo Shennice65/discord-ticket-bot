@@ -58,3 +58,33 @@ class TicketService:
             return False, f"You cannot request a Personal Observation while your unrank cooldown is active! Please wait **{d}d {h}h {m}m**."
             
         return True, ""
+
+    async def check_and_notify_rank_change(self, user_id: int, new_rank: str) -> None:
+        cursor = self.db.tickets.find({
+            "status": "open", 
+            "ticket_type": "Ranked 1v1", 
+            "$or": [{"user_id": user_id}, {"opponent_id": user_id}]
+        })
+        open_tickets = await cursor.to_list(length=None)
+        
+        for ticket in open_tickets:
+            channel = self.bot.get_channel(ticket['channel_id'])
+            if not channel:
+                continue
+                
+            other_id = ticket['opponent_id'] if ticket['user_id'] == user_id else ticket['user_id']
+            if not other_id:
+                continue
+                
+            idx1 = await self.db.get_global_rank_index(user_id)
+            idx2 = await self.db.get_global_rank_index(other_id)
+            
+            out_of_range = False
+            if idx1 != -1 and idx2 != -1:
+                out_of_range = abs(idx1 - idx2) > 5
+                
+            msg = f"<@{user_id}>'s rank has been updated to **{new_rank}**!\n"
+            if out_of_range:
+                msg += "⚠️ **Warning:** This matchup is now outside the allowed 5-rank range. You may decide whether to continue or cancel this ticket."
+                
+            await channel.send(msg)

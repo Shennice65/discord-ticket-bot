@@ -77,6 +77,10 @@ class RankingAdmin(commands.Cog):
                 embed.add_field(name="New Rank", value=f"**{actual_rank}**", inline=True)
                 embed.set_footer(text=f"User ID: {user.id}")
                 await log_channel.send(embed=embed)
+                
+            ticket_service = interaction.client.container.get('TicketService')
+            if ticket_service:
+                await ticket_service.check_and_notify_rank_change(user.id, actual_rank)
         else:
             await interaction.followup.send(f"Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
             

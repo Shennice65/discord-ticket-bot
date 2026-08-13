@@ -491,6 +491,11 @@ class Tickets(commands.Cog):
             await update_tier_role(interaction.guild, winner_id, new_win)
             await update_tier_role(interaction.guild, loser_id, new_lose)
             
+            ticket_service = self.bot.container.get('TicketService')
+            if ticket_service:
+                await ticket_service.check_and_notify_rank_change(winner_id, new_win)
+                await ticket_service.check_and_notify_rank_change(loser_id, new_lose)
+            
             log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
             if log_channel:
                 user = await self.bot.fetch_user(ticket_data['user_id'])
@@ -601,6 +606,10 @@ class Tickets(commands.Cog):
             # Auto-assign tier role for observed player
             from utils.role_manager import update_tier_role
             await update_tier_role(interaction.guild, user_id, actual_new_rank)
+            
+            ticket_service = self.bot.container.get('TicketService')
+            if ticket_service:
+                await ticket_service.check_and_notify_rank_change(user_id, actual_new_rank)
             
             await self.db.add_observation_result(
                 ticket_data['id'],
