@@ -152,7 +152,7 @@ class TicketEmbeds:
         
         def format_cd(cd_days):
             if cd_days <= 0:
-                return "Ready"
+                return "<:ready:1537511180875079680>"
             d = int(cd_days)
             rem_h = (cd_days - d) * 24
             h = int(rem_h)
@@ -164,7 +164,7 @@ class TicketEmbeds:
 
         if unrank_info and float(unrank_info["cooldown_days"]) > 0:
             unrank_cd_str = format_cd(float(unrank_info["cooldown_days"]))
-            obs_status = f"Blocked (Unrank Cooldown: {unrank_cd_str})"
+            obs_status = f"<:blocked:1537511136574971955> Blocked ({unrank_cd_str})"
             
         embed.add_field(
             name="COOLDOWN",
