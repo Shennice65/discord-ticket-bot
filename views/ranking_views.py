@@ -41,7 +41,7 @@ class LeaderboardLauncherView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         
-    @discord.ui.button(label="Rank", style=discord.ButtonStyle.secondary, custom_id="view_leaderboard_btn", emoji=discord.PartialEmoji(id=1537488071258538045, name="rank"))
+    @discord.ui.button(label="Ranking", style=discord.ButtonStyle.secondary, custom_id="view_leaderboard_btn", emoji=discord.PartialEmoji(id=1537488071258538045, name="rank"))
     async def view_leaderboard(self, interaction: discord.Interaction, button: discord.ui.Button):
         ranking_service = getattr(interaction.client, 'container', None) and interaction.client.container.get('RankingService')
         if not ranking_service: 
@@ -101,7 +101,7 @@ class LeaderboardLauncherView(discord.ui.View):
             error_msg = f"**Command Crashed!**\n```py\n{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-1000:]}```"
             await interaction.followup.send(error_msg, ephemeral=True)
 
-    @discord.ui.button(label="View Observers", style=discord.ButtonStyle.secondary, custom_id="view_observers_btn", emoji="👀")
+    @discord.ui.button(label="Observers", style=discord.ButtonStyle.secondary, custom_id="view_observers_btn", emoji=discord.PartialEmoji(id=1537491259957182574, name="observers"))
     async def view_observers(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.guild:
             await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
