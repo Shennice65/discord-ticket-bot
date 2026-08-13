@@ -19,6 +19,7 @@ class Ranking(commands.Cog):
         self.bot = bot
         self.db = bot.db
         self._panel_task = None
+        self._message_count = 0
         
     @commands.Cog.listener()
     async def on_ready(self):
@@ -35,16 +36,18 @@ class Ranking(commands.Cog):
         if message.author == self.bot.user and message.embeds and message.embeds[0].title == "🏆 Server Leaderboard":
             return
             
-        if self._panel_task and not self._panel_task.done():
-            self._panel_task.cancel()
-            
-        self._panel_task = self.bot.loop.create_task(self._replace_panel(message.channel))
+        self._message_count += 1
+        
+        if self._message_count >= 3:
+            self._message_count = 0
+            if self._panel_task and not self._panel_task.done():
+                self._panel_task.cancel()
+                
+            self._panel_task = self.bot.loop.create_task(self._replace_panel(message.channel))
         
     async def _replace_panel(self, channel: discord.TextChannel):
         import asyncio
         try:
-            # 10s debounce buffer to avoid spamming panel updates during active chat
-            await asyncio.sleep(10.0)
             
             old_id = await self.db.get_setting("ranking_panel_id")
             if old_id:
@@ -72,7 +75,6 @@ class Ranking(commands.Cog):
             print(f"Error replacing sticky panel: {e}")
 
     @app_commands.command(name="setupranking", description="Setup the live ranking leaderboard button in this channel")
-    @app_commands.default_permissions(administrator=True)
     async def setupranking(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         
