@@ -159,7 +159,7 @@ class History(commands.Cog):
         target_user = user or interaction.user
         
         if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
-            await interaction.response.send_message("<:locke:1537515688908824627> you can not see this person history", ephemeral=True)
+            await interaction.response.send_message("<:locke:1537515688908824627> you can not view this person history", ephemeral=True)
             return
         
         is_admin = can_clear_history(interaction.user)
@@ -223,4 +223,4 @@ class History(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(History(bot))
+    await bot.add_cog(History(bot))
