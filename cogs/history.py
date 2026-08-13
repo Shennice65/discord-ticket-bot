@@ -158,6 +158,10 @@ class History(commands.Cog):
             
         target_user = user or interaction.user
         
+        if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
+            await interaction.response.send_message("<:locke:1537515688908824627> you can not see this person history", ephemeral=True)
+            return
+        
         is_admin = can_clear_history(interaction.user)
         
         await interaction.response.defer(ephemeral=True)
