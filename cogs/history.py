@@ -110,18 +110,19 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
         await interaction.edit_original_response(content=None, embed=embed, view=None)
 
 class HistoryView(discord.ui.View):
-    def __init__(self, target_user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0, is_observer: bool = False, current_rank: str = "Unranked"):
+    def __init__(self, target_user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0, ranked_cooldown_days: float = 0.0, is_observer: bool = False, current_rank: str = "Unranked"):
         super().__init__(timeout=180)
         self.target_user = target_user
         self.history = history
         self.unrank_info = unrank_info
         self.obs_cooldown_days = obs_cooldown_days
+        self.ranked_cooldown_days = ranked_cooldown_days
         self.is_admin = is_observer
         self.current_rank = current_rank
 
     @discord.ui.button(label="Overview", style=discord.ButtonStyle.primary, custom_id="hist_overview")
     async def btn_overview(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = TicketEmbeds.history_overview_embed(self.target_user, self.history, self.unrank_info, self.obs_cooldown_days, current_rank=self.current_rank)
+        embed = TicketEmbeds.history_overview_embed(self.target_user, self.history, self.unrank_info, self.obs_cooldown_days, self.ranked_cooldown_days, current_rank=self.current_rank)
         await interaction.response.edit_message(embed=embed)
 
     @discord.ui.button(label="Ranked Matches", style=discord.ButtonStyle.secondary, custom_id="hist_ranked")
@@ -163,6 +164,7 @@ class History(commands.Cog):
         
         history = await self.db.get_user_history(target_user.id, target_user.name)
         obs_cooldown_days = await self.db.get_obs_cooldown(target_user.id)
+        ranked_cooldown_days = await self.db.get_ranked_cooldown(target_user.id)
         
         player = await self.db.player_ranks.find_one({"user_id": target_user.id})
         current_rank = player.get("rank", "Unranked") if player else "Unranked"
@@ -174,8 +176,8 @@ class History(commands.Cog):
                 "cooldown_days": cooldown
             }
         
-        embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info, obs_cooldown_days=obs_cooldown_days, current_rank=current_rank)
-        view = HistoryView(target_user, history, unrank_info, obs_cooldown_days, is_admin, current_rank)
+        embed = TicketEmbeds.history_overview_embed(target_user, history, unrank_info=unrank_info, obs_cooldown_days=obs_cooldown_days, ranked_cooldown_days=ranked_cooldown_days, current_rank=current_rank)
+        view = HistoryView(target_user, history, unrank_info, obs_cooldown_days, ranked_cooldown_days, is_admin, current_rank)
         
         if not is_admin:
             view.remove_item(view.btn_clear)

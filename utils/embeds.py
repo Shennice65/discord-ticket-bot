@@ -106,7 +106,7 @@ class TicketEmbeds:
         return embed
 
     @staticmethod
-    def history_overview_embed(user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0, current_rank: str = "Unranked") -> discord.Embed:
+    def history_overview_embed(user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0, ranked_cooldown_days: float = 0.0, current_rank: str = "Unranked") -> discord.Embed:
         embed = TicketEmbeds._base_embed(
             user, 
             f"History Overview for {user.display_name}", 
@@ -148,25 +148,29 @@ class TicketEmbeds:
             embed.add_field(name="Ranked Stats Overview", value="*No matches recorded yet.*", inline=False)
             
         total_obs = len(history['observations'])
-        obs_status = f"**Total Observations**: {total_obs}"
+        embed.add_field(name="Personal Observations", value=f"**Total Observations**: {total_obs}", inline=False)
         
+        def format_cd(cd_days):
+            if cd_days <= 0:
+                return "Ready"
+            d = int(cd_days)
+            rem_h = (cd_days - d) * 24
+            h = int(rem_h)
+            m = int((rem_h - h) * 60)
+            return f"{d}d {h}h {m}m"
+
+        ranked_status = format_cd(ranked_cooldown_days)
+        obs_status = format_cd(obs_cooldown_days)
+
         if unrank_info and float(unrank_info["cooldown_days"]) > 0:
-            unrank_cd = float(unrank_info["cooldown_days"])
-            d = int(unrank_cd)
-            remainder_hours = (unrank_cd - d) * 24
-            h = int(remainder_hours)
-            m = int((remainder_hours - h) * 60)
-            obs_status += f"\nCooldown: **Blocked (Unrank Cooldown: {d}d {h}h {m}m)**"
-        elif obs_cooldown_days > 0:
-            d = int(obs_cooldown_days)
-            remainder_hours = (obs_cooldown_days - d) * 24
-            h = int(remainder_hours)
-            m = int((remainder_hours - h) * 60)
-            obs_status += f"\nCooldown: **{d}d {h}h {m}m**"
-        else:
-            obs_status += f"\nCooldown: **Ready**"
+            unrank_cd_str = format_cd(float(unrank_info["cooldown_days"]))
+            obs_status = f"Blocked (Unrank Cooldown: {unrank_cd_str})"
             
-        embed.add_field(name="Personal Observations", value=obs_status, inline=False)
+        embed.add_field(
+            name="COOLDOWN",
+            value=f"**Ranked**: {ranked_status}\n**Personal Obs**: {obs_status}",
+            inline=False
+        )
         
         return embed
 
