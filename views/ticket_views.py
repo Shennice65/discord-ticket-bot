@@ -220,15 +220,30 @@ class WinnerButtonView(discord.ui.View):
         btn3.callback = self.cancel_match
         self.add_item(btn3)
     
+    async def _lock_ticket(self, interaction: discord.Interaction) -> bool:
+        cog = interaction.client.get_cog('Tickets')
+        if cog:
+            result = await cog.db.tickets.find_one_and_update(
+                {"channel_id": interaction.channel.id, "status": "open"},
+                {"$set": {"status": "processing_modal", "processing_since": str(datetime.utcnow())}}
+            )
+            if not result:
+                await interaction.response.send_message("Another observer is already filling out the closing form, or the ticket is closed.", ephemeral=True)
+                return False
+        return True
+
     async def select_player1(self, interaction: discord.Interaction):
+        if not await self._lock_ticket(interaction): return
         modal = CloseRankedModal(winner_name=self.player1_name, winner_id=self.player1_id)
         await interaction.response.send_modal(modal)
     
     async def select_player2(self, interaction: discord.Interaction):
+        if not await self._lock_ticket(interaction): return
         modal = CloseRankedModal(winner_name=self.player2_name, winner_id=self.player2_id)
         await interaction.response.send_modal(modal)
 
     async def cancel_match(self, interaction: discord.Interaction):
+        if not await self._lock_ticket(interaction): return
         modal = CloseRankedCancelModal()
         await interaction.response.send_modal(modal)
 
