@@ -305,3 +305,31 @@ class TicketEmbeds:
         
         embed.set_footer(text=f"{player1.name} vs {player2.name}")
         return embed
+
+    @staticmethod
+    def winrate_leaderboard_embed(entries: list[tuple[discord.Member | discord.User | str, dict]], min_matches: int) -> discord.Embed:
+        """Create the winrate leaderboard embed."""
+        embed = discord.Embed(
+            title="📈 Top Winrate Leaderboard",
+            description=f"*Top 10 players by winrate (Minimum {min_matches} matches)*\n\n",
+            color=discord.Color.gold(),
+            timestamp=datetime.utcnow()
+        )
+        
+        if not entries:
+            embed.description += "*No players found matching the criteria.*"
+            return embed
+            
+        medal_emojis = ["🥇", "🥈", "🥉"]
+        
+        for i, (user_name_or_mention, stats) in enumerate(entries, 1):
+            rank = medal_emojis[i-1] if i <= 3 else f"**` {i} `**"
+            win_rate = stats.get('win_rate', 0)
+            wins = stats.get('wins', 0)
+            losses = stats.get('losses', 0)
+            matches = stats.get('matches', 0)
+            
+            embed.description += f"{rank} {user_name_or_mention} — **{win_rate:.1f}%** ({wins}W / {losses}L / {matches}M)\n"
+            
+        embed.set_footer(text="Ranked 1v1 Matches Only")
+        return embed
