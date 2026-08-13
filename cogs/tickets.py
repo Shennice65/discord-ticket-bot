@@ -93,6 +93,30 @@ class Tickets(commands.Cog):
         self.bot.add_view(TicketView())
         self.bot.add_view(OutOfRangeAcceptView())
     
+    @app_commands.command(name="cleanghostchannels", description="Delete out-of-range ticket channels that are missing from the DB (Admin only)")
+    @app_commands.default_permissions(administrator=True)
+    async def clean_ghost_channels(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        category = interaction.guild.get_channel(Config.TICKET_CATEGORY_ID)
+        if not category:
+            await interaction.followup.send("Ticket category not configured!")
+            return
+            
+        ghost_count = 0
+        for channel in category.text_channels:
+            if channel.name.startswith("ranked-"):
+                ticket = await self.db.tickets.find_one({"channel_id": channel.id})
+                if not ticket:
+                    try:
+                        await channel.delete()
+                        ghost_count += 1
+                        await asyncio.sleep(0.5)  # Rate limit protection
+                    except Exception:
+                        pass
+                        
+        await interaction.followup.send(f"Found and deleted {ghost_count} ghost ticket channels!")
+    
     @app_commands.command(name="dbcheck", description="Check database status (Admin only)")
     @app_commands.default_permissions(administrator=True)
     async def db_check(self, interaction: discord.Interaction):
