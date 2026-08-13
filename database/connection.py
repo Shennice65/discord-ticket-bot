@@ -46,20 +46,26 @@ class ConnectionMixin:
             
             # Create indexes for fast lookups
             try:
-                # Drop old non-unique index if it exists before creating unique one
-                existing = await self.player_ranks.index_information()
-                if "user_id_1" in existing and not existing["user_id_1"].get("unique"):
-                    await self.player_ranks.drop_index("user_id_1")
-                await self.player_ranks.create_index("user_id", unique=True)
+                async def ensure_unique_index(collection, field_name):
+                    existing = await collection.index_information()
+                    idx_name = f"{field_name}_1"
+                    if idx_name in existing and not existing[idx_name].get("unique"):
+                        await collection.drop_index(idx_name)
+                    await collection.create_index(field_name, unique=True)
+                
+                await ensure_unique_index(self.player_ranks, "user_id")
+                await ensure_unique_index(self.tickets, "id")
+                await ensure_unique_index(self.ranked_results, "id")
+                await ensure_unique_index(self.ranked_results, "ticket_id")
+                await ensure_unique_index(self.observation_results, "id")
+                await ensure_unique_index(self.observation_results, "ticket_id")
+                
                 await self.tickets.create_index("channel_id")
                 await self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])
                 await self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])
                 # New indexes for rapid history command execution
                 await self.tickets.create_index([("user_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])
                 await self.tickets.create_index([("opponent_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])
-                
-                await self.ranked_results.create_index("ticket_id")
-                await self.observation_results.create_index("ticket_id")
             except Exception as e:
                 print(f"Index creation note: {e}")
             
