@@ -193,6 +193,16 @@ class HistoryMixin:
                 }
             }},
             {"$match": {"matches": {"$gte": min_matches}}},
+            {"$lookup": {
+                "from": "player_ranks",
+                "localField": "_id",
+                "foreignField": "user_id",
+                "as": "rank_info"
+            }},
+            {"$unwind": {"path": "$rank_info", "preserveNullAndEmptyArrays": True}},
+            {"$match": {
+                "rank_info.rank": {"$nin": [None, "Unranked"]}
+            }},
             {"$addFields": {
                 "losses": {"$subtract": ["$matches", "$wins"]},
                 "win_rate": {"$multiply": [{"$divide": ["$wins", "$matches"]}, 100]}
