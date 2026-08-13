@@ -140,7 +140,7 @@ async def scan_all(db):
         
         if not is_valid or is_self_match:
             tid = t["id"]
-            print(f"  ⚠️  Ticket #{tid}:")
+            print(f"  [SUSPECT]  Ticket #{tid}:")
             print(f"    user_id={user_id}, opponent_id={opponent_id}, winner_id={winner_id}")
             print(f"    opponent_name={t.get('opponent_name')}, winner={t['result'].get('winner')}")
             print(f"    closed_at={t.get('closed_at')}")
