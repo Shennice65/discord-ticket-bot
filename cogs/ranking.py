@@ -147,7 +147,7 @@ class Ranking(commands.Cog):
             if not entries:
                 msg = f"**Top Winrate Leaderboard**\n*No players found with at least {min_matches} matches.*"
             else:
-                msg = f"**📈 Top Winrate Leaderboard (Minimum {min_matches} matches)**\n\n"
+                msg = f"**Top Winrate Leaderboard (Minimum {min_matches} matches)**\n\n"
                 for i, (name_display, stat) in enumerate(entries, 1):
                     win_rate = stat.get('win_rate', 0)
                     wins = stat.get('wins', 0)
