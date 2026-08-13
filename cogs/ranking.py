@@ -104,5 +104,35 @@ class Ranking(commands.Cog):
     async def check_version(self, interaction: discord.Interaction):
         await interaction.response.send_message(f"**Ticket Bot Version:** `{Config.VERSION}`", ephemeral=True)
 
+    @app_commands.command(name="topwinrates", description="View the top 10 winrate leaderboard")
+    @app_commands.describe(min_matches="Minimum number of matches to qualify (default: 3)")
+    async def topwinrates(self, interaction: discord.Interaction, min_matches: int = 3):
+        await interaction.response.defer(ephemeral=False)
+        
+        # Get raw data from DB
+        raw_data = await self.db.get_top_winrates(min_matches=min_matches, limit=10)
+        
+        entries = []
+        for stat in raw_data:
+            user_id = stat.get('_id')
+            if not user_id: continue
+            
+            # Try to resolve user
+            member = interaction.guild.get_member(user_id)
+            if member:
+                name_display = member.mention
+            else:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                    name_display = f"`{user.name}`"
+                except discord.NotFound:
+                    name_display = f"`Unknown User ({user_id})`"
+            
+            entries.append((name_display, stat))
+            
+        embed = TicketEmbeds.winrate_leaderboard_embed(entries, min_matches)
+        await interaction.followup.send(embed=embed)
+
+
 async def setup(bot):
     await bot.add_cog(Ranking(bot))

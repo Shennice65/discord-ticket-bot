@@ -165,3 +165,41 @@ class HistoryMixin:
             "p2_wins": p2_wins,
             "recent_matches": [{**doc, **doc.pop("result")} for doc in matches[:limit]]
         }
+
+    async def get_top_winrates(self, min_matches: int = 3, limit: int = 10) -> List[Dict]:
+        """Get the top players by win rate who have at least min_matches."""
+        pipeline = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1"
+            }},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result"
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}},
+            {"$project": {
+                "players": ["$user_id", "$opponent_id"],
+                "winner_id": "$result.winner_id"
+            }},
+            {"$unwind": "$players"},
+            {"$group": {
+                "_id": "$players",
+                "matches": {"$sum": 1},
+                "wins": {
+                    "$sum": {"$cond": [{"$eq": ["$players", "$winner_id"]}, 1, 0]}
+                }
+            }},
+            {"$match": {"matches": {"$gte": min_matches}}},
+            {"$addFields": {
+                "losses": {"$subtract": ["$matches", "$wins"]},
+                "win_rate": {"$multiply": [{"$divide": ["$wins", "$matches"]}, 100]}
+            }},
+            {"$sort": {"win_rate": -1, "matches": -1}},
+            {"$limit": limit}
+        ]
+        
+        cursor = self.tickets.aggregate(pipeline)
+        return await cursor.to_list(length=None)
