@@ -93,9 +93,14 @@ class Tickets(commands.Cog):
         self.bot.add_view(TicketView())
         self.bot.add_view(OutOfRangeAcceptView())
     
-    @app_commands.command(name="cleanghostchannels", description="Delete out-of-range ticket channels that are missing from the DB (Admin only)")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.command(name="cleanghostchannels", description="Delete out-of-range ticket channels that are missing from the DB (Observer/Admin only)")
     async def clean_ghost_channels(self, interaction: discord.Interaction):
+        is_admin = interaction.user.guild_permissions.administrator
+        has_observer = any(role.id == Config.OBSERVER_ROLE_ID for role in interaction.user.roles)
+        if not (is_admin or has_observer):
+            await interaction.response.send_message("You must be an Observer or Administrator to use this command.", ephemeral=True)
+            return
+            
         await interaction.response.defer(ephemeral=True)
         
         category = interaction.guild.get_channel(Config.TICKET_CATEGORY_ID)
