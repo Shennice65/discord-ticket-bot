@@ -41,7 +41,7 @@ class LeaderboardLauncherView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         
-    @discord.ui.button(label="Rank Leaderboard", style=discord.ButtonStyle.primary, custom_id="view_leaderboard_btn", emoji="🏆")
+    @discord.ui.button(label="Rank", style=discord.ButtonStyle.secondary, custom_id="view_leaderboard_btn", emoji=discord.PartialEmoji(id=1537488071258538045, name="rank"))
     async def view_leaderboard(self, interaction: discord.Interaction, button: discord.ui.Button):
         ranking_service = getattr(interaction.client, 'container', None) and interaction.client.container.get('RankingService')
         if not ranking_service: 
@@ -56,7 +56,7 @@ class LeaderboardLauncherView(discord.ui.View):
             kwargs["file"] = file
         await interaction.followup.send(**kwargs)
 
-    @discord.ui.button(label="Winrate Leaderboard", style=discord.ButtonStyle.success, custom_id="view_winrate_leaderboard_btn", emoji="📈")
+    @discord.ui.button(label="Winrate", style=discord.ButtonStyle.secondary, custom_id="view_winrate_leaderboard_btn", emoji=discord.PartialEmoji(id=1537488434103455784, name="winrate"))
     async def view_winrate_leaderboard(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         

@@ -192,7 +192,10 @@ class HistoryMixin:
                     "$sum": {"$cond": [{"$eq": ["$players", "$winner_id"]}, 1, 0]}
                 }
             }},
-            {"$match": {"matches": {"$gte": min_matches}}},
+            {"$match": {
+                "matches": {"$gte": min_matches},
+                "wins": {"$gt": 0}
+            }},
             {"$lookup": {
                 "from": "player_ranks",
                 "localField": "_id",
