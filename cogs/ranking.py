@@ -108,42 +108,50 @@ class Ranking(commands.Cog):
     @app_commands.describe(min_matches="Minimum number of matches to qualify (default: 3)")
     async def topwinrates(self, interaction: discord.Interaction, min_matches: int = 3):
         import time
+        import traceback
         await interaction.response.defer(ephemeral=False)
         
-        # Gather evidence: Time the database query
-        t0 = time.time()
-        raw_data = await self.db.get_top_winrates(min_matches=min_matches, limit=10)
-        t1 = time.time()
-        db_time = t1 - t0
-        
-        entries = []
-        # Gather evidence: Time the Discord API calls
-        t_api_start = time.time()
-        for stat in raw_data:
-            user_id = stat.get('_id')
-            if not user_id: continue
+        try:
+            # Gather evidence: Time the database query
+            t0 = time.time()
+            raw_data = await self.db.get_top_winrates(min_matches=min_matches, limit=10)
+            t1 = time.time()
+            db_time = t1 - t0
             
-            # Try to resolve user
-            member = interaction.guild.get_member(user_id)
-            if member:
-                name_display = member.mention
-            else:
-                try:
-                    user = await self.bot.fetch_user(user_id)
-                    name_display = f"`{user.name}`"
-                except discord.NotFound:
-                    name_display = f"`Unknown User ({user_id})`"
+            entries = []
+            # Gather evidence: Time the Discord API calls
+            t_api_start = time.time()
+            for stat in raw_data:
+                user_id = stat.get('_id')
+                if not user_id: continue
+                
+                # Try to resolve user
+                member = interaction.guild.get_member(user_id)
+                if member:
+                    name_display = member.mention
+                else:
+                    try:
+                        user = await self.bot.fetch_user(user_id)
+                        name_display = f"`{user.name}`"
+                    except discord.NotFound:
+                        name_display = f"`Unknown User ({user_id})`"
+                    except discord.HTTPException:
+                        name_display = f"`Invalid User ID ({user_id})`"
+                
+                entries.append((name_display, stat))
             
-            entries.append((name_display, stat))
-        
-        t_api_end = time.time()
-        api_time = t_api_end - t_api_start
+            t_api_end = time.time()
+            api_time = t_api_end - t_api_start
+                
+            embed = TicketEmbeds.winrate_leaderboard_embed(entries, min_matches)
+            await interaction.followup.send(embed=embed)
             
-        embed = TicketEmbeds.winrate_leaderboard_embed(entries, min_matches)
-        await interaction.followup.send(embed=embed)
-        
-        # Send diagnostics directly to Discord
-        await interaction.followup.send(f"**[Diagnostic Data]**\n- DB Query: `{db_time:.3f}s`\n- Discord API: `{api_time:.3f}s`", ephemeral=True)
+            # Send diagnostics directly to Discord
+            await interaction.followup.send(f"**[Diagnostic Data]**\n- DB Query: `{db_time:.3f}s`\n- Discord API: `{api_time:.3f}s`", ephemeral=True)
+            
+        except Exception as e:
+            error_msg = f"**Command Crashed!**\n```py\n{type(e).__name__}: {str(e)}\n{traceback.format_exc()[-1000:]}```"
+            await interaction.followup.send(error_msg, ephemeral=True)
 
 
 async def setup(bot):
