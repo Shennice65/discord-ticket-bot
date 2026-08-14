@@ -327,7 +327,7 @@ class TicketEmbeds:
         medal_emojis = ["<:gold:1537886239674339472>", "<:silver:1537886287367766047>", "<:bronze:1537886327788535838>"]
         
         for i, (user_name_or_mention, stats) in enumerate(entries, 1):
-            rank = medal_emojis[i-1] if i <= 3 else f"**` {i} `**"
+            rank = f"{medal_emojis[i-1]} **#{i}**" if i <= 3 else f"**` {i} `**"
             win_rate = stats.get('win_rate', 0)
             wins = stats.get('wins', 0)
             losses = stats.get('losses', 0)
