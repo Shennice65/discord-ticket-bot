@@ -324,7 +324,7 @@ class TicketEmbeds:
             embed.description += "*No players found matching the criteria.*"
             return embed
             
-        medal_emojis = ["🥇", "🥈", "🥉"]
+        medal_emojis = ["<:gold:1537886239674339472>", "<:silver:1537886287367766047>", "<:bronze:1537886327788535838>"]
         
         for i, (user_name_or_mention, stats) in enumerate(entries, 1):
             rank = medal_emojis[i-1] if i <= 3 else f"**` {i} `**"

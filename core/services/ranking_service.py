@@ -53,7 +53,7 @@ class RankingService:
             podium_path = await get_podium_image(display_tier, top_3)
             file = discord.File(podium_path, filename="podium.png")
             
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["<:gold:1537886239674339472>", "<:silver:1537886287367766047>", "<:bronze:1537886327788535838>"]
             name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
