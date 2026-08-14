@@ -32,9 +32,26 @@ class TicketEmbeds:
                     opp_val += f"\n\n{opp_stats}"
                 embed.add_field(name="Opponent", value=opp_val, inline=True)
             
+        if ticket_type == "Ranked 1v1":
+            instructions = (
+                "- An observer will hop in to ref your match\n"
+                "- Play it out fair and square — no dodging, no throwing\n"
+                "- Once it's done, the observer calls the winner\n"
+                "- Both players' ranks get updated after that\n\n"
+                "Sit tight and wait for an observer before you start."
+            )
+        else:
+            instructions = (
+                "- An observer will drop in to watch you play\n"
+                "- Show them what you got — they're sizing up your skill level\n"
+                "- After they've seen enough, they'll set or adjust your rank\n"
+                "- Your rank can go up, down, or stay the same depending on how you perform\n\n"
+                "Hang tight and wait for an observer before you start."
+            )
+        
         embed.add_field(
-            name="Instructions",
-            value="An observer will assist you shortly.",
+            name="How It Works",
+            value=instructions,
             inline=False
         )
         embed.set_footer(text=f"User: {user.name}")
