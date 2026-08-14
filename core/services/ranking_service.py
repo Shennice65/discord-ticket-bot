@@ -62,7 +62,7 @@ class RankingService:
                 else:
                     name_text = f"**{display_name}** (@{username})"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                desc += f"{medals[i]} **#{i+1}** {name_text}{streak_text}\n"
+                desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
