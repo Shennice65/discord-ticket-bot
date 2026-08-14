@@ -146,6 +146,78 @@ class Tickets(commands.Cog):
         await interaction.channel.send(embed=embed, view=TicketView())
         await interaction.response.send_message("Ticket panel setup complete!", ephemeral=True)
     
+    @app_commands.command(name="refreshtickets", description="Re-edit embeds in all open ticket channels with updated instructions")
+    async def refresh_tickets(self, interaction: discord.Interaction):
+        if not interaction.permissions.administrator and interaction.user.id != Config.MASTER_ADMIN_ID:
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        cursor = self.db.tickets.find({"status": {"$in": ["open", "pending_accept"]}})
+        open_tickets = await cursor.to_list(length=None)
+        
+        if not open_tickets:
+            await interaction.followup.send("No open tickets found.", ephemeral=True)
+            return
+        
+        updated = 0
+        skipped = 0
+        
+        for ticket in open_tickets:
+            channel = self.bot.get_channel(ticket['channel_id'])
+            if not channel:
+                skipped += 1
+                continue
+            
+            try:
+                async for message in channel.history(limit=20, oldest_first=True):
+                    if message.author == self.bot.user and message.embeds:
+                        embed = message.embeds[0]
+                        if embed.title and "Ticket Created" in embed.title:
+                            ticket_type = ticket.get('ticket_type', '')
+                            
+                            # Rebuild the embed with updated instructions
+                            new_embed = embed.copy()
+                            # Remove old Instructions/How It Works field and re-add
+                            new_fields = []
+                            for field in new_embed.fields:
+                                if field.name not in ("Instructions", "How It Works"):
+                                    new_fields.append(field)
+                            
+                            new_embed.clear_fields()
+                            for f in new_fields:
+                                new_embed.add_field(name=f.name, value=f.value, inline=f.inline)
+                            
+                            if ticket_type == "Ranked 1v1":
+                                instructions = (
+                                    "- An observer will hop in to ref your match\n"
+                                    "- Play it out fair and square — no dodging, no throwing\n"
+                                    "- Once it's done, the observer calls the winner\n"
+                                    "- Both players' ranks get updated after that\n\n"
+                                    "Sit tight and wait for an observer before you start."
+                                )
+                            else:
+                                instructions = (
+                                    "- An observer will drop in to watch you play\n"
+                                    "- Show them what you got — they're sizing up your skill level\n"
+                                    "- After they've seen enough, they'll set or adjust your rank\n"
+                                    "- Your rank can go up, down, or stay the same depending on how you perform\n\n"
+                                    "Hang tight and wait for an observer before you start."
+                                )
+                            
+                            new_embed.add_field(name="How It Works", value=instructions, inline=False)
+                            await message.edit(embed=new_embed)
+                            updated += 1
+                            break
+                else:
+                    skipped += 1
+            except Exception as e:
+                print(f"Error refreshing ticket in {channel.id}: {e}")
+                skipped += 1
+        
+        await interaction.followup.send(f"Done! Updated **{updated}** ticket(s), skipped **{skipped}**.", ephemeral=True)
+
     @app_commands.command(name="updateperms", description="Add a role's permissions to all existing ticket channels")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(role="The role to add to all ticket channels")
