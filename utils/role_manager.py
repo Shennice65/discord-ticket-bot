@@ -1,6 +1,6 @@
 import discord
 from config import Config
-from ladder_utils import parse_rank
+from utils.ladder_utils import parse_rank
 
 TIER_ROLE_MAP = {
     "Phantoms": "PHANTOM_ROLE_ID",

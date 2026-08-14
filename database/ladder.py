@@ -13,7 +13,7 @@ class LadderMixin:
         return await cursor.to_list(length=None)
         
     async def get_tier_count(self, tier: str) -> int:
-        from ladder_utils import parse_rank
+        from utils.ladder_utils import parse_rank
         all_players = await self.get_all_player_ranks()
         count = 0
         for p in all_players:
@@ -33,7 +33,7 @@ class LadderMixin:
         return player
         
     async def get_global_rank_index(self, user_id: int) -> int:
-        from ladder_utils import get_sort_key
+        from utils.ladder_utils import get_sort_key
         all_players = await self.player_ranks.find({}).to_list(length=None)
         
         valid_players = []
@@ -146,7 +146,7 @@ class LadderMixin:
     
     async def unrank_player(self, user_id: int) -> tuple:
         """Self-unrank: stores original rank, timestamp, removes from ladder."""
-        from ladder_utils import TIERS, parse_rank
+        from utils.ladder_utils import TIERS, parse_rank
         
         async with self.ladder_lock:
             player = await self.player_ranks.find_one({"user_id": user_id})
@@ -215,7 +215,7 @@ class LadderMixin:
         
     async def can_player_r1(self, user_id: int) -> tuple:
         """Check if a formerly-ranked player can do R1s. Returns (allowed, reason)."""
-        from ladder_utils import get_sort_key
+        from utils.ladder_utils import get_sort_key
         player = await self.player_ranks.find_one({"user_id": user_id})
         if not player:
             return True, ""  # Never ranked, no restriction
@@ -237,7 +237,7 @@ class LadderMixin:
             return False, f"You must reach your original rank (**{original_rank}**) or higher before you can request R1s. You are currently **{current_rank}**."
             
     async def remove_player_from_ladder(self, user_id: int, is_undo: bool = False) -> bool:
-        from ladder_utils import TIERS, parse_rank
+        from utils.ladder_utils import TIERS, parse_rank
         
         async with self.ladder_lock:
             player = await self.player_ranks.find_one({"user_id": user_id})
@@ -267,7 +267,7 @@ class LadderMixin:
             return True
         
     async def force_set_player_rank(self, user_id: int, target_rank: str, bypass_unrank: bool = False, is_undo: bool = False) -> tuple:
-        from ladder_utils import TIERS, parse_rank
+        from utils.ladder_utils import TIERS, parse_rank
         
         parsed_target = parse_rank(target_rank)
         if not parsed_target or parsed_target[0] not in TIERS:
@@ -326,7 +326,7 @@ class LadderMixin:
             return True, new_actual_rank
         
     async def process_match_result(self, winner_id: int, loser_id: int) -> tuple:
-        from ladder_utils import TIERS, parse_rank, get_sort_key
+        from utils.ladder_utils import TIERS, parse_rank, get_sort_key
         
         async with self.ladder_lock:
             winner_rank = await self.get_player_rank(winner_id)

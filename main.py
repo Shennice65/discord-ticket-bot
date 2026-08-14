@@ -8,7 +8,7 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from config import Config
-from keep_alive import keep_alive
+from utils.keep_alive import keep_alive
 from database import Database
 from core.container import Container
 from core.services.ranking_service import RankingService
@@ -38,11 +38,13 @@ class TicketBot(commands.Bot):
         await self.db.init()
         
         print("Loading cogs...")
-        await self.load_extension("cogs.tickets")
-        await self.load_extension("cogs.history")
-        await self.load_extension("cogs.ranking")
-        await self.load_extension("cogs.ranking_admin")
-        await self.load_extension("cogs.ranking_cooldowns")
+        await self.load_extension("cogs.tickets.core")
+        await self.load_extension("cogs.tickets.admin")
+        await self.load_extension("cogs.tickets.tasks")
+        await self.load_extension("cogs.ranking.history")
+        await self.load_extension("cogs.ranking.core")
+        await self.load_extension("cogs.ranking.admin")
+        await self.load_extension("cogs.ranking.cooldowns")
         print("Cogs loaded. Syncing commands...")
         
         try:

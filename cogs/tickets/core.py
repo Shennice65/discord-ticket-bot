@@ -1,11 +1,10 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 import asyncio
-import os
 import re
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 
 from config import Config
 from database import Database
@@ -16,243 +15,16 @@ from views.ticket_views import *
 from utils.ticket_utils import *
 
 
-
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = bot.db
-        self.db_ready = True
-        self.cleanup_stale_tickets.start()
-        self.cleanup_pending_tickets.start()
         
-    def cog_unload(self):
-        self.cleanup_stale_tickets.cancel()
-        self.cleanup_pending_tickets.cancel()
-
-    @tasks.loop(hours=1)
-    async def cleanup_stale_tickets(self):
-        await self.bot.wait_until_ready()
-        if self.db.tickets is None:
-            return
-            
-        now_naive = datetime.utcnow()
-        cursor = self.db.tickets.find({"status": "open", "ticket_type": "Ranked 1v1", "ducking_ping_sent": {"$ne": True}})
-        open_tickets = await cursor.to_list(length=None)
-        
-        for ticket in open_tickets:
-            channel = self.bot.get_channel(ticket['channel_id'])
-            
-            if channel:
-                try:
-                    try:
-                        val = ticket['created_at']
-                        created = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
-                        if (now_naive - created).total_seconds() > 604800:
-                            observer_mention = get_observer_mention(channel.guild)
-                            await channel.send(f"{observer_mention} This ticket has been inactive for 7 days. Please check if the requested player is avoiding the match.")
-                            await self.db.mark_ducking_ping_sent(ticket['channel_id'])
-                    except (ValueError, TypeError):
-                        pass
-                except Exception as e:
-                    print(f"Cleanup error on {channel.id}: {e}")
-                    
-    @tasks.loop(minutes=5)
-    async def cleanup_pending_tickets(self):
-        await self.bot.wait_until_ready()
-        if self.db.tickets is None:
-            return
-            
-        now_naive = datetime.utcnow()
-        cursor = self.db.tickets.find({"status": "pending_accept"})
-        pending_tickets = await cursor.to_list(length=None)
-        
-        for ticket in pending_tickets:
-            try:
-                val = ticket['created_at']
-                created = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
-                if (now_naive - created).total_seconds() > 86400:  # 24 hours
-                    channel = self.bot.get_channel(ticket['channel_id'])
-                    if channel:
-                        try:
-                            await channel.send("The out-of-range challenge has expired. This channel will be deleted in 10 seconds.")
-                            await asyncio.sleep(10)
-                            await channel.delete()
-                        except discord.errors.NotFound:
-                            pass
-                    
-                    # reset cooldown for requester
-                    await self.db.reset_ranked_cooldown_only(ticket['user_id'])
-                    # remove from DB
-                    await self.db.tickets.delete_one({"_id": ticket['_id']})
-            except (ValueError, TypeError, KeyError) as e:
-                print(f"Pending cleanup error: {e}")
-    
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
         self.bot.add_view(OutOfRangeAcceptView())
-    
-    @app_commands.command(name="cleanghostchannels", description="Delete out-of-range ticket channels that are missing from the DB (Observer/Admin only)")
-    async def clean_ghost_channels(self, interaction: discord.Interaction):
-        is_admin = interaction.user.guild_permissions.administrator
-        has_observer = any(role.id == Config.OBSERVER_ROLE_ID for role in interaction.user.roles)
-        if not (is_admin or has_observer):
-            await interaction.response.send_message("You must be an Observer or Administrator to use this command.", ephemeral=True)
-            return
-            
-        await interaction.response.defer(ephemeral=True)
-        
-        category = interaction.guild.get_channel(Config.TICKET_CATEGORY_ID)
-        if not category:
-            await interaction.followup.send("Ticket category not configured!")
-            return
-            
-        ghost_count = 0
-        for channel in category.text_channels:
-            if channel.name.startswith("ranked-"):
-                ticket = await self.db.tickets.find_one({"channel_id": channel.id})
-                if not ticket:
-                    try:
-                        await channel.delete()
-                        ghost_count += 1
-                        await asyncio.sleep(0.5)  # Rate limit protection
-                    except Exception:
-                        pass
-                        
-        await interaction.followup.send(f"Found and deleted {ghost_count} ghost ticket channels!")
-    
-    @app_commands.command(name="dbcheck", description="Check database status (Admin only)")
-    @app_commands.default_permissions(administrator=True)
-    async def db_check(self, interaction: discord.Interaction):
-        file_exists = os.path.exists('bot_data.json')
-        await interaction.response.send_message(
-            f"DB Ready: {self.db_ready}\nData file exists: {file_exists}",
-            ephemeral=True
-        )
-    
-    @app_commands.command(name="setup", description="Setup the ticket panel in this channel")
-    @app_commands.default_permissions(administrator=True)
-    async def setup(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="Ticket System",
-            description="Click a button below to create a ticket!\n\n"
-                       "**Ranked 1v1** - Request a ranked 1v1 match\n"
-                       "**Personal Observation** - Request a personal observation session",
-            color=discord.Color.blue()
-        )
-        embed.set_footer(text="An observer will assist you shortly after ticket creation")
-        
-        await interaction.channel.send(embed=embed, view=TicketView())
-        await interaction.response.send_message("Ticket panel setup complete!", ephemeral=True)
-    
-    @app_commands.command(name="refreshtickets", description="Re-edit embeds in all open ticket channels with updated instructions")
-    async def refresh_tickets(self, interaction: discord.Interaction):
-        if not interaction.permissions.administrator and interaction.user.id != Config.MASTER_ADMIN_ID:
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        cursor = self.db.tickets.find({"status": {"$in": ["open", "pending_accept"]}})
-        open_tickets = await cursor.to_list(length=None)
-        
-        if not open_tickets:
-            await interaction.followup.send("No open tickets found.", ephemeral=True)
-            return
-        
-        updated = 0
-        skipped = 0
-        
-        for ticket in open_tickets:
-            channel = self.bot.get_channel(ticket['channel_id'])
-            if not channel:
-                skipped += 1
-                continue
-            
-            try:
-                async for message in channel.history(limit=20, oldest_first=True):
-                    if message.author == self.bot.user and message.embeds:
-                        embed = message.embeds[0]
-                        if embed.title and "Ticket Created" in embed.title:
-                            ticket_type = ticket.get('ticket_type', '')
-                            
-                            # Rebuild the embed with updated instructions
-                            new_embed = embed.copy()
-                            # Remove old Instructions/How It Works field and re-add
-                            new_fields = []
-                            for field in new_embed.fields:
-                                if field.name not in ("Instructions", "How It Works"):
-                                    new_fields.append(field)
-                            
-                            new_embed.clear_fields()
-                            for f in new_fields:
-                                new_embed.add_field(name=f.name, value=f.value, inline=f.inline)
-                            
-                            if ticket_type == "Ranked 1v1":
-                                instructions = (
-                                    "- An observer will hop in to ref your match\n"
-                                    "- Play it out fair and square — no dodging, no throwing\n"
-                                    "- Once it's done, the observer calls the winner\n"
-                                    "- Both players' ranks get updated after that\n\n"
-                                    "Sit tight and wait for an observer before you start."
-                                )
-                            else:
-                                instructions = (
-                                    "- An observer will drop in to watch you play\n"
-                                    "- Show them what you got — they're sizing up your skill level\n"
-                                    "- After they've seen enough, they'll set or adjust your rank\n"
-                                    "- Your rank can go up, down, or stay the same depending on how you perform\n\n"
-                                    "Hang tight and wait for an observer before you start."
-                                )
-                            
-                            new_embed.add_field(name="How It Works", value=instructions, inline=False)
-                            await message.edit(embed=new_embed)
-                            updated += 1
-                            break
-                else:
-                    skipped += 1
-            except Exception as e:
-                print(f"Error refreshing ticket in {channel.id}: {e}")
-                skipped += 1
-        
-        await interaction.followup.send(f"Done! Updated **{updated}** ticket(s), skipped **{skipped}**.", ephemeral=True)
-
-    @app_commands.command(name="updateperms", description="Add a role's permissions to all existing ticket channels")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(role="The role to add to all ticket channels")
-    async def update_perms(self, interaction: discord.Interaction, role: discord.Role):
-        await interaction.response.defer(ephemeral=True)
-        
-        guild = interaction.guild
-        category = guild.get_channel(Config.TICKET_CATEGORY_ID)
-        
-        if not category:
-            await interaction.followup.send("Ticket category not found!", ephemeral=True)
-            return
-        
-        updated = 0
-        skipped = 0
-        
-        for channel in category.channels:
-            if channel.name.startswith(("ranked-", "obs-")):
-                current_perms = channel.overwrites_for(role)
-                if current_perms.read_messages:
-                    skipped += 1
-                else:
-                    try:
-                        await channel.set_permissions(role, read_messages=True, send_messages=True)
-                        updated += 1
-                    except Exception as e:
-                        print(f"Failed to update {channel.name}: {e}")
-        
-        await interaction.followup.send(
-            f"Done! Updated {updated} channels with {role.mention} permissions.\n"
-            f"{skipped} channels already had permissions.",
-            ephemeral=True
-        )
-
-
     
     async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User):
         guild = interaction.guild
@@ -498,24 +270,6 @@ class Tickets(commands.Cog):
                 await interaction.edit_original_response(content=f"An unexpected error occurred: {e}", view=None)
             except Exception:
                 pass
-    
-    @app_commands.command(name="clearticket", description="Forcefully close all open tickets for a user in the database")
-    @app_commands.default_permissions(administrator=True)
-    async def clearticket(self, interaction: discord.Interaction, target: discord.User):
-        await interaction.response.defer(ephemeral=True)
-        cursor = self.db.tickets.find({"user_id": target.id, "status": "open"})
-        open_tickets = await cursor.to_list(length=None)
-        
-        if not open_tickets:
-            await interaction.followup.send(f"{target.mention} has no open tickets in the database.", ephemeral=True)
-            return
-            
-        closed_count = 0
-        for ticket in open_tickets:
-            await self.db.close_ticket(ticket['channel_id'], interaction.user.id)
-            closed_count += 1
-            
-        await interaction.followup.send(f"Successfully closed {closed_count} open ticket(s) for {target.mention} in the database.", ephemeral=True)
 
     @app_commands.command(name="close", description="Close the current ticket")
     async def close(self, interaction: discord.Interaction):
@@ -747,7 +501,7 @@ class Tickets(commands.Cog):
             user_id = ticket_data['user_id']
             old_rank = await self.db.get_player_rank(user_id)
             
-            from ladder_utils import parse_rank
+            from utils.ladder_utils import parse_rank
             parsed = parse_rank(end_rank)
             if parsed:
                 tier, target_num = parsed
