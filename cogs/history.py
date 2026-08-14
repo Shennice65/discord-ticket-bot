@@ -164,7 +164,8 @@ class History(commands.Cog):
         
         history = await self.db.get_user_history(target_user.id, target_user.name)
         obs_cooldown_days = await self.db.get_obs_cooldown(target_user.id)
-        ranked_cooldown_days = await self.db.get_ranked_cooldown(target_user.id)
+        ranked_cooldown_hours = await self.db.get_ranked_cooldown(target_user.id)
+        ranked_cooldown_days = ranked_cooldown_hours / 24.0
         
         player = await self.db.player_ranks.find_one({"user_id": target_user.id})
         current_rank = player.get("rank", "Unranked") if player else "Unranked"
