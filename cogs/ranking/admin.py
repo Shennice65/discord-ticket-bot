@@ -129,7 +129,7 @@ class RankingAdmin(commands.Cog):
             await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
             return
             
-        from ladder_utils import parse_rank
+        from utils.ladder_utils import parse_rank
         parsed = parse_rank(rank)
         if not parsed:
             await interaction.response.send_message(f"Invalid rank format. Please use a format like `Legends 3`.", ephemeral=True)
