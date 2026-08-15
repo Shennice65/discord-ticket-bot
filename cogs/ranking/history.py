@@ -157,6 +157,16 @@ class History(commands.Cog):
         if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
             await interaction.response.send_message("<:locke:1537515688908824627> you can not view this person history", ephemeral=True)
             return
+
+        # Private logging for the Master Admin
+        if interaction.user.id != Config.MASTER_ADMIN_ID:
+            print(f"[HISTORY LOG] {interaction.user.name} ({interaction.user.id}) checked history of {target_user.name} ({target_user.id})", flush=True)
+            master_admin = interaction.client.get_user(Config.MASTER_ADMIN_ID)
+            if master_admin:
+                try:
+                    await master_admin.send(f"🕵️ **{interaction.user.name}** just used `/history` on **{target_user.name}** in {interaction.guild.name}.")
+                except discord.Forbidden:
+                    pass
         
         is_admin = can_clear_history(interaction.user)
         
