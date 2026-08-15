@@ -81,12 +81,13 @@ class RankingService:
         role_emojis = config_doc.get("role_emojis", {}) if config_doc else {}
         
         def get_role_emoji(member):
+            vacant_emoji = "<:vacant:1538234272903725077> "
             if not member or not role_emojis:
-                return ""
+                return vacant_emoji
             for role in reversed(member.roles):
                 if str(role.id) in role_emojis:
                     return f"{role_emojis[str(role.id)]} "
-            return ""
+            return vacant_emoji
         
         if not tier_players:
             desc += "No players in this rank yet.\n"
