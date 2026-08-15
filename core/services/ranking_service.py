@@ -93,13 +93,14 @@ class RankingService:
                 avatar_url = user.display_avatar.url if user else ""
                 
                 roblox_name = await self.get_roblox_username(uid)
+                discord_username = user.name if user else f"Player {uid}"
                 if roblox_name:
                     display_name = roblox_name
-                    username = roblox_name
+                    username = discord_username
                 else:
                     raw_display = user.display_name if user else f"Player {uid}"
                     display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
-                    username = user.name if user else f"Player {uid}"
+                    username = discord_username
                     
                 top_3.append((uid, avatar_url, display_name, username))
                 
@@ -116,7 +117,7 @@ class RankingService:
                 if display_name.lower() == username.lower():
                     name_text = f"**{display_name}**"
                 else:
-                    name_text = f"**{display_name}** (@{username})"
+                    name_text = f"**{display_name}** `{username}`"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                 desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}\n"
                 
@@ -124,24 +125,26 @@ class RankingService:
                 desc += "\n**Runners Up**\n"
                 for i, (uid, num, streak) in enumerate(tier_players[3:], 4):
                     roblox_name = await self.get_roblox_username(uid)
+                    # Cache lookup only to prevent gateway rate limits on deep pagination
+                    member = None
+                    for guild in self.bot.guilds:
+                        member = guild.get_member(uid)
+                        if member:
+                            break
+                    discord_username = member.name if member else "Unknown User"
+
                     if roblox_name:
                         display_name = roblox_name
-                        username = roblox_name
+                        username = discord_username
                     else:
-                        # Cache lookup only to prevent gateway rate limits on deep pagination
-                        member = None
-                        for guild in self.bot.guilds:
-                            member = guild.get_member(uid)
-                            if member:
-                                break
                         raw_display = member.display_name if member else "Unknown User"
                         display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
-                        username = member.name if member else "Unknown User"
+                        username = discord_username
                         
                     if display_name.lower() == username.lower():
                         name_text = f"{display_name}"
                     else:
-                        name_text = f"{display_name} (@{username})"
+                        name_text = f"{display_name} `{username}`"
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                     desc += f"`#{i}` {name_text}{streak_text}\n"
                 
