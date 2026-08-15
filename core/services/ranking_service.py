@@ -1,5 +1,6 @@
 import discord
 import re
+from config import Config
 from typing import List, Optional, Tuple
 from utils.ranking_utils import parse_rank
 from utils.podium_generator import get_podium_image
@@ -27,7 +28,14 @@ class RankingService:
 
         # Fetch from Bloxlink API
         import aiohttp
-        url = f"https://api.blox.link/v4/public/discord-to-roblox/{user_id}"
+        
+        # We must use the guild-specific endpoint for Server Keys!
+        guild_id = Config.GUILD_ID
+        if not guild_id or guild_id == 0:
+            # Fallback to the ID from your screenshot if Config is empty
+            guild_id = 1249581144597463040
+            
+        url = f"https://api.blox.link/v4/public/guilds/{guild_id}/discord-to-roblox/{user_id}"
         headers = {"Authorization": bloxlink_key}
         
         try:
@@ -44,6 +52,8 @@ class RankingService:
                                 upsert=True
                             )
                             return roblox_name
+                    else:
+                        print(f"Bloxlink API returned status {resp.status} for user {user_id}")
         except Exception as e:
             print(f"Error fetching Bloxlink data for {user_id}: {e}")
         return None
