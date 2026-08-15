@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from typing import Optional
 import asyncio
+import aiohttp
 
 from config import Config
 from database import Database
@@ -150,12 +151,71 @@ class History(commands.Cog):
         self.db = bot.db
     
     @app_commands.command(name="history", description="View a user's ranked and observation history")
-    @app_commands.describe(user="The user to check history for (defaults to yourself)")
-    async def history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    @app_commands.describe(user="The user to check history for", roblox_name="Or type a Roblox username instead")
+    async def history(self, interaction: discord.Interaction, user: Optional[discord.Member] = None, roblox_name: Optional[str] = None):
+        await interaction.response.defer(ephemeral=True)
+        
         target_user = user or interaction.user
         
+        if roblox_name:
+            # 1. Fetch Roblox ID from Username
+            roblox_url = "https://users.roblox.com/v1/usernames/users"
+            payload = {"usernames": [roblox_name], "excludeBannedUsers": False}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(roblox_url, json=payload) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        users = data.get("data", [])
+                        if not users:
+                            await interaction.followup.send(f"❌ Could not find a Roblox account named `{roblox_name}`.", ephemeral=True)
+                            return
+                        roblox_id = users[0]["id"]
+                    else:
+                        await interaction.followup.send("❌ Error connecting to Roblox API.", ephemeral=True)
+                        return
+                        
+            # 2. Fetch Discord ID from Bloxlink
+            config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
+            bloxlink_key = config_doc.get("bloxlink_key") if config_doc else None
+            if not bloxlink_key:
+                await interaction.followup.send("❌ Bloxlink API key not configured.", ephemeral=True)
+                return
+                
+            guild_id = 1249581144597463040
+            bloxlink_url = f"https://api.blox.link/v4/public/guilds/{guild_id}/roblox-to-discord/{roblox_id}"
+            headers = {"Authorization": bloxlink_key}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(bloxlink_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        discord_ids = data.get("discordIDs", [])
+                        if not discord_ids:
+                            await interaction.followup.send(f"❌ Roblox user `{roblox_name}` is not linked to any Discord account in this server.", ephemeral=True)
+                            return
+                        
+                        # Try to find the member in the guild
+                        found_member = None
+                        for d_id in discord_ids:
+                            found_member = interaction.guild.get_member(int(d_id))
+                            if found_member:
+                                break
+                                
+                        if found_member:
+                            target_user = found_member
+                        else:
+                            # Fallback: Just get the user object if they aren't in the server anymore
+                            try:
+                                target_user = await self.bot.fetch_user(int(discord_ids[0]))
+                            except Exception:
+                                await interaction.followup.send("❌ Could not fetch Discord user details.", ephemeral=True)
+                                return
+                    else:
+                        await interaction.followup.send(f"❌ Roblox user `{roblox_name}` is not verified in this server.", ephemeral=True)
+                        return
+        
         if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
-            await interaction.response.send_message("<:locke:1537515688908824627> you can not view this person history", ephemeral=True)
+            await interaction.followup.send("<:locke:1537515688908824627> you can not view this person history", ephemeral=True)
             
             # Snooper alert!
             print(f"[SECURITY LOG] {interaction.user.name} ({interaction.user.id}) tried to view Master Admin history", flush=True)
@@ -179,8 +239,6 @@ class History(commands.Cog):
                     pass
         
         is_admin = can_clear_history(interaction.user)
-        
-        await interaction.response.defer(ephemeral=True)
         
         history = await self.db.get_user_history(target_user.id, target_user.name)
         obs_cooldown_days = await self.db.get_obs_cooldown(target_user.id)
