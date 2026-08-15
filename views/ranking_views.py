@@ -21,21 +21,23 @@ class RankingPaginationView(discord.ui.View):
         
     @discord.ui.button(label="◀️ Back", style=discord.ButtonStyle.secondary, custom_id="ranking_back")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         ranking_service = interaction.client.container.get('RankingService')
         if not ranking_service: return
         self.current_page = max(0, self.current_page - 1)
         embeds, file = await ranking_service.generate_leaderboard_content(self.current_page)
         attachments = [file] if file else []
-        await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
+        await interaction.edit_original_response(content=None, embeds=embeds, attachments=attachments, view=self)
 
     @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         ranking_service = interaction.client.container.get('RankingService')
         if not ranking_service: return
         self.current_page = min(len(TIERS) - 1, self.current_page + 1)
         embeds, file = await ranking_service.generate_leaderboard_content(self.current_page)
         attachments = [file] if file else []
-        await interaction.response.edit_message(content=None, embeds=embeds, attachments=attachments, view=self)
+        await interaction.edit_original_response(content=None, embeds=embeds, attachments=attachments, view=self)
 
 class LeaderboardLauncherView(discord.ui.View):
     def __init__(self):
