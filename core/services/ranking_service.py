@@ -85,7 +85,7 @@ class RankingService:
                 return ""
             for role in reversed(member.roles):
                 if str(role.id) in role_emojis:
-                    return f" {role_emojis[str(role.id)]}"
+                    return f"{role_emojis[str(role.id)]} "
             return ""
         
         if not tier_players:
@@ -139,7 +139,7 @@ class RankingService:
                 else:
                     name_text = f"**{safe_display}** `@{username}`"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}{role_emoji_str}\n"
+                desc += f"{medals[i]} `#{i+1}` {role_emoji_str}{name_text}{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
@@ -168,7 +168,7 @@ class RankingService:
                     else:
                         name_text = f"{safe_display} `@{username}`"
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                    desc += f"`#{i}` {name_text}{streak_text}{role_emoji_str}\n"
+                    desc += f"`#{i}` {role_emoji_str}{name_text}{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
