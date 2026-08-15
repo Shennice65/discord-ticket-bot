@@ -42,15 +42,22 @@ class RankingService:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        roblox_name = data.get("resolved", {}).get("roblox", {}).get("name")
-                        if roblox_name:
-                            # Cache the username in MongoDB
-                            await self.db.db.roblox_usernames.update_one(
-                                {"_id": user_id},
-                                {"$set": {"username": roblox_name}},
-                                upsert=True
-                            )
-                            return roblox_name
+                        roblox_id = data.get("robloxID")
+                        if roblox_id:
+                            # Now ask Roblox for their actual username
+                            roblox_url = f"https://users.roblox.com/v1/users/{roblox_id}"
+                            async with session.get(roblox_url) as r_resp:
+                                if r_resp.status == 200:
+                                    r_data = await r_resp.json()
+                                    roblox_name = r_data.get("name")
+                                    if roblox_name:
+                                        # Cache the username in MongoDB
+                                        await self.db.db.roblox_usernames.update_one(
+                                            {"_id": user_id},
+                                            {"$set": {"username": roblox_name}},
+                                            upsert=True
+                                        )
+                                        return roblox_name
                     else:
                         print(f"Bloxlink API returned status {resp.status} for user {user_id}")
         except Exception as e:
