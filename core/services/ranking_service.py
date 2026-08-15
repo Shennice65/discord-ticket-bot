@@ -81,13 +81,12 @@ class RankingService:
         role_emojis = config_doc.get("role_emojis", {}) if config_doc else {}
         
         def get_role_emoji(member):
-            vacant_emoji = "<:vacant:1538234272903725077> "
             if not member or not role_emojis:
-                return vacant_emoji
+                return ""
             for role in reversed(member.roles):
                 if str(role.id) in role_emojis:
-                    return f"{role_emojis[str(role.id)]} "
-            return vacant_emoji
+                    return role_emojis[str(role.id)]
+            return ""
         
         if not tier_players:
             desc += "No players in this rank yet.\n"
@@ -115,7 +114,6 @@ class RankingService:
             podium_path = await get_podium_image(display_tier, top_3)
             file = discord.File(podium_path, filename="podium.png")
             
-            medals = ["<:gold:1537886239674339472>", "<:silver:1537886287367766047>", "<:bronze:1537886327788535838>"]
             name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
@@ -132,8 +130,11 @@ class RankingService:
                     name_text = f"**{safe_display}**"
                 else:
                     name_text = f"**{safe_display}** `@{username}`"
-                streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                desc += f"{medals[i]} {role_emoji_str}`#{i+1}` {name_text}{streak_text}\n"
+                
+                role_part = f"  {role_emoji_str}" if role_emoji_str else ""
+                streak_text = f"  <:streak:1538257784137580655> {streak}" if streak >= 2 else ""
+                
+                desc += f"`#{i+1}` {name_text}{role_part}{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
@@ -155,8 +156,11 @@ class RankingService:
                         name_text = f"{safe_display}"
                     else:
                         name_text = f"{safe_display} `@{username}`"
-                    streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                    desc += f"{role_emoji_str}`#{i}` {name_text}{streak_text}\n"
+                        
+                    role_part = f"  {role_emoji_str}" if role_emoji_str else ""
+                    streak_text = f"  <:streak:1538257784137580655> {streak}" if streak >= 2 else ""
+                    
+                    desc += f"`#{i}` {name_text}{role_part}{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
