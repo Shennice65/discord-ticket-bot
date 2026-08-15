@@ -81,6 +81,7 @@ class RankingService:
             desc += "No players in this rank yet.\n"
         else:
             top_3 = []
+            is_roblox_map = {}
             for i in range(min(3, len(tier_players))):
                 uid = tier_players[i][0]
                 user = self.bot.get_user(uid)
@@ -97,10 +98,12 @@ class RankingService:
                 if roblox_name:
                     display_name = roblox_name
                     username = discord_username
+                    is_roblox_map[uid] = True
                 else:
                     raw_display = user.display_name if user else f"Player {uid}"
                     display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                     username = discord_username
+                    is_roblox_map[uid] = False
                     
                 top_3.append((uid, avatar_url, display_name, username))
                 
@@ -115,10 +118,11 @@ class RankingService:
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
                 safe_display = discord.utils.escape_markdown(display_name)
+                roblox_icon = "<:roblox:1538218830130839612> " if is_roblox_map.get(uid) else ""
                 if display_name.lower() == username.lower():
-                    name_text = f"**{safe_display}**"
+                    name_text = f"{roblox_icon}**{safe_display}**"
                 else:
-                    name_text = f"**{safe_display}** `{username}`"
+                    name_text = f"{roblox_icon}**{safe_display}** `{username}`"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                 desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}\n"
                 
@@ -137,16 +141,18 @@ class RankingService:
                     if roblox_name:
                         display_name = roblox_name
                         username = discord_username
+                        roblox_icon = "<:roblox:1538218830130839612> "
                     else:
                         raw_display = member.display_name if member else "Unknown User"
                         display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                         username = discord_username
+                        roblox_icon = ""
                         
                     safe_display = discord.utils.escape_markdown(display_name)
                     if display_name.lower() == username.lower():
-                        name_text = f"{safe_display}"
+                        name_text = f"{roblox_icon}{safe_display}"
                     else:
-                        name_text = f"{safe_display} `{username}`"
+                        name_text = f"{roblox_icon}{safe_display} `{username}`"
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                     desc += f"`#{i}` {name_text}{streak_text}\n"
                 
