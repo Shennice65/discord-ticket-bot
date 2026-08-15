@@ -156,6 +156,16 @@ class History(commands.Cog):
         
         if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
             await interaction.response.send_message("<:locke:1537515688908824627> you can not view this person history", ephemeral=True)
+            
+            # Snooper alert!
+            print(f"[SECURITY LOG] {interaction.user.name} ({interaction.user.id}) tried to view Master Admin history", flush=True)
+            master_admin = interaction.client.get_user(Config.MASTER_ADMIN_ID)
+            if master_admin:
+                try:
+                    await master_admin.send(f"**SNOOP ALERT:** **{interaction.user.name}** just tried to view your history in {interaction.guild.name} but was blocked.")
+                except discord.Forbidden:
+                    pass
+            
             return
 
         # Private logging for the Master Admin
@@ -164,7 +174,7 @@ class History(commands.Cog):
             master_admin = interaction.client.get_user(Config.MASTER_ADMIN_ID)
             if master_admin:
                 try:
-                    await master_admin.send(f"🕵️ **{interaction.user.name}** just used `/history` on **{target_user.name}** in {interaction.guild.name}.")
+                    await master_admin.send(f"**{interaction.user.name}** just used `/history` on **{target_user.name}** in {interaction.guild.name}.")
                 except discord.Forbidden:
                     pass
         
@@ -215,19 +225,6 @@ class History(commands.Cog):
         modal = ConfirmClearModal(user.id, user.name, type.value)
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="h2h", description="View head-to-head stats between two players")
-    @app_commands.describe(player1="First player", player2="Second player")
-    async def h2h(self, interaction: discord.Interaction, player1: discord.Member, player2: discord.Member):
-        if player1.id == player2.id:
-            await interaction.response.send_message("You must select two different players!", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        h2h_data = await self.db.get_h2h(player1.id, player2.id)
-        
-        embed = TicketEmbeds.h2h_embed(player1, player2, h2h_data)
-        await interaction.followup.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(History(bot))
