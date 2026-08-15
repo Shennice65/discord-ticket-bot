@@ -104,16 +104,9 @@ class RankingService:
                 
                 avatar_url = user.display_avatar.url if user else ""
                 
-                roblox_name = await self.get_roblox_username(uid)
                 discord_username = user.name if user else f"Player {uid}"
-                if roblox_name:
-                    display_name = roblox_name
-                    username = discord_username
-                else:
-                    raw_display = user.display_name if user else f"Player {uid}"
-                    display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
-                    username = discord_username
-                    
+                display_name = discord_username
+                username = discord_username
                 top_3.append((uid, avatar_url, display_name, username))
                 
             while len(top_3) < 3:
@@ -145,7 +138,6 @@ class RankingService:
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
                 for i, (uid, num, streak) in enumerate(tier_players[3:], 4):
-                    roblox_name = await self.get_roblox_username(uid)
                     # Cache lookup only to prevent gateway rate limits on deep pagination
                     member = None
                     for guild in self.bot.guilds:
@@ -154,14 +146,9 @@ class RankingService:
                             break
                     discord_username = member.name if member else "Unknown User"
 
-                    if roblox_name:
-                        display_name = roblox_name
-                        username = discord_username
-                    else:
-                        raw_display = member.display_name if member else "Unknown User"
-                        display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
-                        username = discord_username
-                        
+                    display_name = discord_username
+                    username = discord_username
+                    
                     role_emoji_str = get_role_emoji(member)
                     safe_display = discord.utils.escape_markdown(display_name)
                     if display_name.lower() == username.lower():
