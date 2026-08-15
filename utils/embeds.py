@@ -179,9 +179,11 @@ class TicketEmbeds:
         ranked_status = format_cd(ranked_cooldown_days)
         obs_status = format_cd(obs_cooldown_days)
 
-        if unrank_info and float(unrank_info["cooldown_days"]) > 0:
-            unrank_cd_str = format_cd(float(unrank_info["cooldown_days"]))
-            obs_status = f"<:locke:1537533192343396483> Blocked ({unrank_cd_str})"
+        if unrank_info:
+            ranked_status = "<:locke:1537533192343396483> Blocked (Unranked)"
+            if float(unrank_info["cooldown_days"]) > 0:
+                unrank_cd_str = format_cd(float(unrank_info["cooldown_days"]))
+                obs_status = f"<:locke:1537533192343396483> Blocked ({unrank_cd_str})"
             
         embed.add_field(
             name="COOLDOWN",
