@@ -11,6 +11,43 @@ class RankingService:
         self.bot = bot
         self.db = db
 
+    async def get_roblox_username(self, user_id: int) -> Optional[str]:
+        # Check cache in DB first so we don't spam Bloxlink API
+        cached = await self.db.db.roblox_usernames.find_one({"_id": user_id})
+        if cached:
+            return cached.get("username")
+
+        # Get API Key from config collection
+        config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
+        if not config_doc:
+            return None
+        bloxlink_key = config_doc.get("bloxlink_key")
+        if not bloxlink_key:
+            return None
+
+        # Fetch from Bloxlink API
+        import aiohttp
+        url = f"https://api.blox.link/v4/public/discord-to-roblox/{user_id}"
+        headers = {"Authorization": bloxlink_key}
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        roblox_name = data.get("resolved", {}).get("roblox", {}).get("name")
+                        if roblox_name:
+                            # Cache the username in MongoDB
+                            await self.db.db.roblox_usernames.update_one(
+                                {"_id": user_id},
+                                {"$set": {"username": roblox_name}},
+                                upsert=True
+                            )
+                            return roblox_name
+        except Exception as e:
+            print(f"Error fetching Bloxlink data for {user_id}: {e}")
+        return None
+
     async def generate_leaderboard_content(self, page_index: int) -> Tuple[List[discord.Embed], Optional[discord.File]]:
         tier_name = TIERS[page_index]
         display_tier = "Novices" if tier_name == "Novice" else tier_name
@@ -42,9 +79,16 @@ class RankingService:
                         pass
                 
                 avatar_url = user.display_avatar.url if user else ""
-                raw_display = user.display_name if user else f"Player {uid}"
-                display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
-                username = user.name if user else f"Player {uid}"
+                
+                roblox_name = await self.get_roblox_username(uid)
+                if roblox_name:
+                    display_name = roblox_name
+                    username = roblox_name
+                else:
+                    raw_display = user.display_name if user else f"Player {uid}"
+                    display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
+                    username = user.name if user else f"Player {uid}"
+                    
                 top_3.append((uid, avatar_url, display_name, username))
                 
             while len(top_3) < 3:
@@ -67,15 +111,21 @@ class RankingService:
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
                 for i, (uid, num, streak) in enumerate(tier_players[3:], 4):
-                    # Cache lookup only to prevent gateway rate limits on deep pagination
-                    member = None
-                    for guild in self.bot.guilds:
-                        member = guild.get_member(uid)
-                        if member:
-                            break
-                    raw_display = member.display_name if member else "Unknown User"
-                    display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
-                    username = member.name if member else "Unknown User"
+                    roblox_name = await self.get_roblox_username(uid)
+                    if roblox_name:
+                        display_name = roblox_name
+                        username = roblox_name
+                    else:
+                        # Cache lookup only to prevent gateway rate limits on deep pagination
+                        member = None
+                        for guild in self.bot.guilds:
+                            member = guild.get_member(uid)
+                            if member:
+                                break
+                        raw_display = member.display_name if member else "Unknown User"
+                        display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
+                        username = member.name if member else "Unknown User"
+                        
                     if display_name.lower() == username.lower():
                         name_text = f"**{display_name}**"
                     else:
