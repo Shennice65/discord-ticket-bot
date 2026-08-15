@@ -131,10 +131,10 @@ class RankingService:
                 else:
                     name_text = f"**{safe_display}** `@{username}`"
                 
-                role_part = f"  {role_emoji_str}" if role_emoji_str else ""
+                role_part = f"{role_emoji_str} " if role_emoji_str else ""
                 streak_text = f"  <:streak:1538257784137580655>`{streak}`" if streak >= 2 else ""
                 
-                desc += f"`#{i+1}` {name_text}{role_part}{streak_text}\n"
+                desc += f"`#{i+1}` {role_part}{name_text}{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
@@ -157,10 +157,10 @@ class RankingService:
                     else:
                         name_text = f"{safe_display} `@{username}`"
                         
-                    role_part = f"  {role_emoji_str}" if role_emoji_str else ""
+                    role_part = f"{role_emoji_str} " if role_emoji_str else ""
                     streak_text = f"  <:streak:1538257784137580655>`{streak}`" if streak >= 2 else ""
                     
-                    desc += f"`#{i}` {name_text}{role_part}{streak_text}\n"
+                    desc += f"`#{i}` {role_part}{name_text}{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
