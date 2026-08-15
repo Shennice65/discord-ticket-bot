@@ -19,7 +19,7 @@ class RankingPaginationView(discord.ui.View):
         super().__init__(timeout=None)
         self.current_page = current_page
         
-    @discord.ui.button(label="⠀⠀⠀⠀⠀⠀⠀⠀", emoji="<:left:1538261389217501436>", style=discord.ButtonStyle.secondary, custom_id="ranking_back")
+    @discord.ui.button(emoji="<:left:1538261389217501436>", style=discord.ButtonStyle.secondary, custom_id="ranking_back")
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         ranking_service = interaction.client.container.get('RankingService')
@@ -29,7 +29,7 @@ class RankingPaginationView(discord.ui.View):
         attachments = [file] if file else []
         await interaction.edit_original_response(content=None, embeds=embeds, attachments=attachments, view=self)
 
-    @discord.ui.button(label="⠀⠀⠀⠀⠀⠀⠀⠀", emoji="<:right:1538261357219160124>", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
+    @discord.ui.button(emoji="<:right:1538261357219160124>", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         ranking_service = interaction.client.container.get('RankingService')
