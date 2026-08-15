@@ -77,11 +77,21 @@ class RankingService:
         desc = f"# 🏆 {display_tier} Leaderboard\n\n"
         file = None
         
+        config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
+        role_emojis = config_doc.get("role_emojis", {}) if config_doc else {}
+        
+        def get_role_emoji(member):
+            if not member or not role_emojis:
+                return ""
+            for role in reversed(member.roles):
+                if str(role.id) in role_emojis:
+                    return f" {role_emojis[str(role.id)]}"
+            return ""
+        
         if not tier_players:
             desc += "No players in this rank yet.\n"
         else:
             top_3 = []
-            is_roblox_map = {}
             for i in range(min(3, len(tier_players))):
                 uid = tier_players[i][0]
                 user = self.bot.get_user(uid)
@@ -98,12 +108,10 @@ class RankingService:
                 if roblox_name:
                     display_name = roblox_name
                     username = discord_username
-                    is_roblox_map[uid] = True
                 else:
                     raw_display = user.display_name if user else f"Player {uid}"
                     display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                     username = discord_username
-                    is_roblox_map[uid] = False
                     
                 top_3.append((uid, avatar_url, display_name, username))
                 
@@ -117,14 +125,21 @@ class RankingService:
             name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
+                
+                member = None
+                for guild in self.bot.guilds:
+                    member = guild.get_member(uid)
+                    if member:
+                        break
+                        
+                role_emoji_str = get_role_emoji(member)
                 safe_display = discord.utils.escape_markdown(display_name)
-                roblox_icon = "<:roblox:1538218830130839612> " if is_roblox_map.get(uid) else ""
                 if display_name.lower() == username.lower():
-                    name_text = f"{roblox_icon}**{safe_display}**"
+                    name_text = f"**{safe_display}**"
                 else:
-                    name_text = f"{roblox_icon}**{safe_display}** `{username}`"
+                    name_text = f"**{safe_display}** `@{username}`"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}\n"
+                desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}{role_emoji_str}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
@@ -141,20 +156,19 @@ class RankingService:
                     if roblox_name:
                         display_name = roblox_name
                         username = discord_username
-                        roblox_icon = "<:roblox:1538218830130839612> "
                     else:
                         raw_display = member.display_name if member else "Unknown User"
                         display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                         username = discord_username
-                        roblox_icon = ""
                         
+                    role_emoji_str = get_role_emoji(member)
                     safe_display = discord.utils.escape_markdown(display_name)
                     if display_name.lower() == username.lower():
-                        name_text = f"{roblox_icon}{safe_display}"
+                        name_text = f"{safe_display}"
                     else:
-                        name_text = f"{roblox_icon}{safe_display} `{username}`"
+                        name_text = f"{safe_display} `@{username}`"
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
-                    desc += f"`#{i}` {name_text}{streak_text}\n"
+                    desc += f"`#{i}` {name_text}{streak_text}{role_emoji_str}\n"
                 
         desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
