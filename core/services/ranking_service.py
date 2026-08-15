@@ -114,10 +114,11 @@ class RankingService:
             name_cache = {t[0]: (t[2], t[3]) for t in top_3 if t[0] != 0}
             for i, (uid, num, streak) in enumerate(tier_players[:3]):
                 display_name, username = name_cache.get(uid, ("Unknown User", "Unknown User"))
+                safe_display = discord.utils.escape_markdown(display_name)
                 if display_name.lower() == username.lower():
-                    name_text = f"**{display_name}**"
+                    name_text = f"**{safe_display}**"
                 else:
-                    name_text = f"**{display_name}** `{username}`"
+                    name_text = f"**{safe_display}** `{username}`"
                 streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                 desc += f"{medals[i]} `#{i+1}` {name_text}{streak_text}\n"
                 
@@ -141,10 +142,11 @@ class RankingService:
                         display_name = re.sub(r'\s*\(@[^)]+\)', '', raw_display).strip()
                         username = discord_username
                         
+                    safe_display = discord.utils.escape_markdown(display_name)
                     if display_name.lower() == username.lower():
-                        name_text = f"{display_name}"
+                        name_text = f"{safe_display}"
                     else:
-                        name_text = f"{display_name} `{username}`"
+                        name_text = f"{safe_display} `{username}`"
                     streak_text = f" `🔥{streak}`" if streak >= 2 else ""
                     desc += f"`#{i}` {name_text}{streak_text}\n"
                 
