@@ -181,7 +181,7 @@ class History(commands.Cog):
                 await interaction.followup.send("❌ Bloxlink API key not configured.", ephemeral=True)
                 return
                 
-            guild_id = 1249581144597463040
+            guild_id = config_doc.get("guild_id_key")
             bloxlink_url = f"https://api.blox.link/v4/public/guilds/{guild_id}/roblox-to-discord/{roblox_id}"
             headers = {"Authorization": bloxlink_key}
             
