@@ -30,10 +30,9 @@ class RankingService:
         import aiohttp
         
         # We must use the guild-specific endpoint for Server Keys!
-        guild_id = Config.GUILD_ID
-        if not guild_id or guild_id == 0:
-            # Fallback to the ID from your screenshot if Config is empty
-            guild_id = 1249581144597463040
+        # Your .env file has GUILD_ID = 1521168164292001832, but your Bloxlink key 
+        # is strictly tied to 1249581144597463040. So we MUST force it to 1249581144597463040.
+        guild_id = 1249581144597463040
             
         url = f"https://api.blox.link/v4/public/guilds/{guild_id}/discord-to-roblox/{user_id}"
         headers = {"Authorization": bloxlink_key}
