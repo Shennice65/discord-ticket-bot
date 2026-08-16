@@ -29,7 +29,7 @@ def crop_to_circle(im: Image.Image, size: int = 150) -> Image.Image:
     output.paste(im, (0, 0), mask=mask)
     return output
 
-def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], names: List[str]) -> io.BytesIO:
+def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], names: List[str], urls: List[str]) -> io.BytesIO:
     """Draws the podium, applies texture, and pastes avatars/names."""
     width, height = 800, 600
     bg_color = (43, 45, 49) # Discord dark theme bg
@@ -74,7 +74,12 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], nam
     for i, avatar in enumerate(avatars):
         if avatar:
             size = avatar_sizes[i]
-            avatar = crop_to_circle(avatar, size)
+            
+            is_roblox = urls[i] and "roblox.com" in urls[i].lower()
+            if not is_roblox:
+                avatar = crop_to_circle(avatar, size)
+            else:
+                avatar = avatar.resize((size, size), Image.Resampling.LANCZOS).convert("RGBA")
             
             # Paste so bottom of avatar overlaps top of podium slightly
             paste_x = centers[i] - (size // 2)
@@ -147,12 +152,14 @@ async def get_podium_image(tier_name: str, top_3: List[Tuple[int, str, str, str]
     async with aiohttp.ClientSession() as session:
         avatars = []
         names = []
+        urls = []
         for uid, url, display_name, *rest in top_3:
             avatars.append(await download_avatar(session, url) if url else None)
             names.append(display_name)
+            urls.append(url)
             
     loop = asyncio.get_running_loop()
-    buffer = await loop.run_in_executor(None, draw_simple_podium, tier_name, avatars, names)
+    buffer = await loop.run_in_executor(None, draw_simple_podium, tier_name, avatars, names, urls)
     
     with open(file_path, "wb") as f:
         f.write(buffer.getbuffer())
