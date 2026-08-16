@@ -1,4 +1,4 @@
-﻿import discord
+import discord
 import re
 from config import Config
 from typing import List, Optional, Tuple
@@ -132,7 +132,7 @@ class RankingService:
                     name_text = f"**{safe_display}** `@{username}`"
                 
                 role_part = f"{role_emoji_str} " if role_emoji_str else ""
-                streak_text = f"  <:streak:1538257784137580655>`{streak}`" if streak >= 2 else ""
+                streak_text = f"  <:firer:1538511859890659401>`{streak}`" if streak >= 2 else ""
                 
                 desc += f"`#{i+1}` {role_part}{name_text}{streak_text}\n"
                 
@@ -158,7 +158,7 @@ class RankingService:
                         name_text = f"{safe_display} `@{username}`"
                         
                     role_part = f"{role_emoji_str} " if role_emoji_str else ""
-                    streak_text = f"  <:streak:1538257784137580655>`{streak}`" if streak >= 2 else ""
+                    streak_text = f"  <:firer:1538511859890659401>`{streak}`" if streak >= 2 else ""
                     
                     desc += f"`#{i}` {role_part}{name_text}{streak_text}\n"
                 

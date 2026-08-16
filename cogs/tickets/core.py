@@ -283,7 +283,7 @@ class Tickets(commands.Cog):
             return
         
         status = ticket_data.get("status")
-        if status == "processing":
+        if status in ["processing", "processing_modal"]:
             processing_time = ticket_data.get("processing_since")
             now = datetime.utcnow()
             stuck = False
@@ -346,7 +346,7 @@ class Tickets(commands.Cog):
                 await interaction.response.send_message(f"**Who won this match?**\n`{p1_name}` vs `{p2_name}`", view=view, ephemeral=True)
             else:
                 if ticket_data.get('status') != 'open':
-                    await interaction.response.send_message("This ticket is already closed or being processed.", ephemeral=True)
+                    await interaction.response.send_message(f"This ticket is already closed or being processed. (Current status: {ticket_data.get('status')})", ephemeral=True)
                     return
                 current_rank = await self.db.get_player_rank(ticket_data['user_id'])
                 modal = CloseObservationModal(current_rank=current_rank)
