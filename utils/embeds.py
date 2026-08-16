@@ -1,8 +1,67 @@
+import os
 import discord
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
+from utils.ranking_utils import parse_rank
 
 class TicketEmbeds:
+    @staticmethod
+    def create_ranked_1v1_ticket_embed(user: discord.Member, opponent_name: str,
+                                       u_rank: str, o_rank: str,
+                                       u_rate: float, o_rate: float) -> Tuple[discord.Embed, Optional[discord.File]]:
+        """Creates the sleek 3-column Ranked 1v1 lobby ticket embed."""
+        embed = discord.Embed(
+            color=discord.Color(0x2b2d31),
+            timestamp=datetime.utcnow()
+        )
+        avatar_url = user.display_avatar.url if hasattr(user, 'display_avatar') and user.display_avatar else None
+        embed.set_author(name=user.display_name, icon_url=avatar_url)
+
+        # Truncate names if excessively long to maintain clean table layout
+        p1_name = user.display_name[:15]
+        p2_name = opponent_name[:15]
+        p1_rate = f"{u_rate:.1f}%"
+        p2_rate = f"{o_rate:.1f}%"
+
+        # Calculate column widths dynamically
+        col1_w = max(len("[Player]"), len(p1_name), len(p2_name)) + 1
+        col2_w = max(len("[Rank]"), len(u_rank), len(o_rank)) + 1
+        col3_w = max(len("[Winrate]"), len(p1_rate), len(p2_rate)) + 1
+
+        h_col1 = "[Player]".ljust(col1_w)
+        h_col2 = "[Rank]".ljust(col2_w)
+        h_col3 = "[Winrate]".ljust(col3_w)
+
+        r1_col1 = p1_name.ljust(col1_w)
+        r1_col2 = u_rank.ljust(col2_w)
+        r1_col3 = p1_rate.ljust(col3_w)
+
+        r2_col1 = p2_name.ljust(col1_w)
+        r2_col2 = o_rank.ljust(col2_w)
+        r2_col3 = p2_rate.ljust(col3_w)
+
+        table = (
+            f"```text\n"
+            f"│ {h_col1} │ {h_col2} │ {h_col3} │\n"
+            f"│ {r1_col1} │ {r1_col2} │ {r1_col3} │\n"
+            f"│ {r2_col1} │ {r2_col2} │ {r2_col3} │\n"
+            f"```"
+        )
+        embed.description = table
+        embed.set_footer(text="Wait for an observer to referee your match before starting.")
+
+        # Resolve tier thumbnail from challenger's rank
+        tier_file = None
+        parsed = parse_rank(u_rank)
+        if parsed:
+            tier_name = parsed[0].lower()
+            tier_path = os.path.join("assets", "tiers", f"{tier_name}.png")
+            if os.path.exists(tier_path):
+                tier_file = discord.File(tier_path, filename="tier.png")
+                embed.set_thumbnail(url="attachment://tier.png")
+
+        return embed, tier_file
+
     @staticmethod
     def ticket_created(ticket_type: str, user: discord.Member, opponent: Optional[str] = None,
                        user_stats: Optional[str] = None, opp_stats: Optional[str] = None) -> discord.Embed:
