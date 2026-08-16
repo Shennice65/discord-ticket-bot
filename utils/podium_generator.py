@@ -81,31 +81,20 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], nam
             else:
                 avatar = avatar.resize((size, size), Image.Resampling.LANCZOS).convert("RGBA")
             
-            # Paste so bottom of avatar overlaps top of podium slightly
             paste_x = centers[i] - (size // 2)
-            paste_y = avatar_y_offsets[i] - size + 15
+            
+            # Calculate Y offset based on avatar type
+            if is_roblox:
+                paste_y = avatar_y_offsets[i] - size
+            else:
+                paste_y = avatar_y_offsets[i] - size + 15
             
             # Ensure it doesn't paste out of bounds negatively
             paste_y = max(0, paste_y)
             img.paste(avatar, (paste_x, paste_y), mask=avatar)
             
-            # Draw a crown on top of the 1st place avatar's head
-            if i == 0:
-                try:
-                    crown_img = Image.open(os.path.join("assets", "crown.png")).convert("RGBA")
-                    # Resize crown to fit nicely
-                    new_w = 140
-                    crown_w, crown_h = crown_img.size
-                    new_h = int((new_w / crown_w) * crown_h)
-                    crown_img = crown_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    
-                    cx = centers[i]
-                    # Paste so bottom of crown sits slightly lower to avoid covering the title text
-                    crown_y = paste_y + 60 - new_h
-                    img.paste(crown_img, (cx - (new_w // 2), crown_y), mask=crown_img)
-                except Exception as e:
-                    print(f"Failed to draw crown image: {e}")
             
+
         # Draw placement on the podium block
         text_y = avatar_y_offsets[i] + 40
         place = places[i]
