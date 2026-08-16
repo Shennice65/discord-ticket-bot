@@ -139,30 +139,61 @@ class TicketAdmin(commands.Cog):
                 async for message in channel.history(limit=20, oldest_first=True):
                     if message.author == self.bot.user and message.embeds:
                         embed = message.embeds[0]
-                        if embed.title and "Ticket Created" in embed.title:
+                        is_ticket_embed = False
+                        if embed.title and ("Ticket Created" in embed.title or "Lobby" in embed.title or "Promotion Match" in embed.title or "Personal Observation" in embed.title):
+                            is_ticket_embed = True
+                        if embed.footer and embed.footer.text and "Wait for an observer" in embed.footer.text:
+                            is_ticket_embed = True
+                            
+                        if is_ticket_embed:
                             ticket_type = ticket.get('ticket_type', '')
                             
-                            # Rebuild the embed with updated instructions
-                            new_embed = embed.copy()
-                            # Remove old Instructions/How It Works field and re-add
-                            new_fields = []
-                            for field in new_embed.fields:
-                                if field.name not in ("Instructions", "How It Works"):
-                                    new_fields.append(field)
-                            
-                            new_embed.clear_fields()
-                            for f in new_fields:
-                                new_embed.add_field(name=f.name, value=f.value, inline=f.inline)
-                            
                             if ticket_type == "Ranked 1v1":
-                                instructions = (
-                                    "- An observer will hop in to ref your match\n"
-                                    "- Play it out fair and square — no dodging, no throwing\n"
-                                    "- Once it's done, the observer calls the winner\n"
-                                    "- Both players' ranks get updated after that\n\n"
-                                    "Sit tight and wait for an observer before you start."
+                                user = interaction.guild.get_member(ticket['user_id'])
+                                if not user:
+                                    skipped += 1
+                                    break
+                                
+                                opponent_name = ticket.get('opponent_name', 'Unknown')
+                                opponent_id = ticket.get('opponent_id')
+                                
+                                user_history = await self.db.get_user_history(user.id, user.name)
+                                opp_history = await self.db.get_user_history(opponent_id, opponent_name) if opponent_id else []
+                                
+                                _, _, _, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
+                                _, _, _, o_rate = TicketEmbeds.calculate_ranked_stats(opponent_id, opponent_name, opp_history) if opponent_id else (0, 0, 0, 0.0)
+                                
+                                u_rank = await self.db.get_player_rank(user.id) or "Unranked"
+                                o_rank = await self.db.get_player_rank(opponent_id) or "Unranked" if opponent_id else "Unranked"
+                                
+                                new_embed, tier_file = TicketEmbeds.create_ranked_1v1_ticket_embed(
+                                    user=user,
+                                    opponent_name=opponent_name,
+                                    u_rank=u_rank,
+                                    o_rank=o_rank,
+                                    u_rate=u_rate,
+                                    o_rate=o_rate
                                 )
+                                
+                                if tier_file:
+                                    await message.edit(embed=new_embed, attachments=[tier_file])
+                                else:
+                                    await message.edit(embed=new_embed)
+                                
+                                updated += 1
+                                break
                             else:
+                                # For other ticket types, keep the old manual field refresh logic
+                                new_embed = embed.copy()
+                                new_fields = []
+                                for field in new_embed.fields:
+                                    if field.name not in ("Instructions", "How It Works"):
+                                        new_fields.append(field)
+                                
+                                new_embed.clear_fields()
+                                for f in new_fields:
+                                    new_embed.add_field(name=f.name, value=f.value, inline=f.inline)
+                                
                                 instructions = (
                                     "- An observer will drop in to watch you play\n"
                                     "- Show them what you got — they're sizing up your skill level\n"
@@ -170,11 +201,11 @@ class TicketAdmin(commands.Cog):
                                     "- Your rank can go up, down, or stay the same depending on how you perform\n\n"
                                     "Hang tight and wait for an observer before you start."
                                 )
-                            
-                            new_embed.add_field(name="How It Works", value=instructions, inline=False)
-                            await message.edit(embed=new_embed)
-                            updated += 1
-                            break
+                                
+                                new_embed.add_field(name="How It Works", value=instructions, inline=False)
+                                await message.edit(embed=new_embed)
+                                updated += 1
+                                break
                 else:
                     skipped += 1
             except Exception as e:
