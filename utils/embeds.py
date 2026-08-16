@@ -23,21 +23,21 @@ class TicketEmbeds:
         p1_rate = f"{u_rate:.1f}%"
         p2_rate = f"{o_rate:.1f}%"
 
-        # Use Discord Embed inline fields instead of codeblock to remove the background
-        # We use a zero-width space + pipe to emulate the dividers in the reference image
+        # Use custom emoji <vbar:1538654461126516866> to act as a wide, unselectable vertical divider
+        vbar = "<:vbar:1538654461126516866>"
         embed.add_field(
-            name="|\u2800[Player]", 
-            value=f"|\u2800**{p1_name}**\n|\u2800**{p2_name}**", 
+            name=f"{vbar} [Player]", 
+            value=f"{vbar} **{p1_name}**\n{vbar} **{p2_name}**", 
             inline=True
         )
         embed.add_field(
-            name="|\u2800[Rank]", 
-            value=f"|\u2800**{u_rank}**\n|\u2800**{o_rank}**", 
+            name=f"{vbar} [Rank]", 
+            value=f"{vbar} **{u_rank}**\n{vbar} **{o_rank}**", 
             inline=True
         )
         embed.add_field(
-            name="|\u2800[Winrate]", 
-            value=f"|\u2800**{p1_rate}**\n|\u2800**{p2_rate}**", 
+            name=f"{vbar} [Winrate]", 
+            value=f"{vbar} **{p1_rate}**\n{vbar} **{p2_rate}**", 
             inline=True
         )
 
