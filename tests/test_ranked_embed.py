@@ -21,15 +21,20 @@ class TestRankedEmbed(unittest.TestCase):
         
         self.assertEqual(embed.author.name, "wolfboss5213")
         self.assertEqual(embed.footer.text, "Wait for an observer to referee your match before starting.")
-        self.assertIn("[Player]", embed.description)
-        self.assertIn("[Rank]", embed.description)
-        self.assertIn("[Winrate]", embed.description)
-        self.assertIn("wolfboss5213", embed.description)
-        self.assertIn("Champions 1", embed.description)
-        self.assertIn("75.0%", embed.description)
-        self.assertIn("opponent_player", embed.description)
-        self.assertIn("Champions 3", embed.description)
-        self.assertIn("60.0%", embed.description)
+        
+        self.assertEqual(len(embed.fields), 3)
+        self.assertIn("[Player]", embed.fields[0].name)
+        self.assertIn("wolfboss5213", embed.fields[0].value)
+        self.assertIn("opponent_player", embed.fields[0].value)
+        
+        self.assertIn("[Rank]", embed.fields[1].name)
+        self.assertIn("Champions 1", embed.fields[1].value)
+        self.assertIn("Champions 3", embed.fields[1].value)
+        
+        self.assertIn("[Winrate]", embed.fields[2].name)
+        self.assertIn("75.0%", embed.fields[2].value)
+        self.assertIn("60.0%", embed.fields[2].value)
+        
         self.assertIsNotNone(file)
         self.assertEqual(file.filename, "tier.png")
         self.assertEqual(embed.thumbnail.url, "attachment://tier.png")

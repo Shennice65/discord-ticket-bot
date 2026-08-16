@@ -18,10 +18,11 @@ class TestRankedTicketCreation(unittest.TestCase):
             o_rate=50.0
         )
         self.assertIsNotNone(embed)
-        self.assertIn("PlayerOne", embed.description)
-        self.assertIn("PlayerTwo", embed.description)
-        self.assertIn("Elites 2", embed.description)
-        self.assertIn("Elites 4", embed.description)
+        self.assertEqual(len(embed.fields), 3)
+        self.assertIn("PlayerOne", embed.fields[0].value)
+        self.assertIn("PlayerTwo", embed.fields[0].value)
+        self.assertIn("Elites 2", embed.fields[1].value)
+        self.assertIn("Elites 4", embed.fields[1].value)
         if file:
             file.close()
 

@@ -17,37 +17,30 @@ class TicketEmbeds:
         avatar_url = user.display_avatar.url if hasattr(user, 'display_avatar') and user.display_avatar else None
         embed.set_author(name=user.display_name, icon_url=avatar_url)
 
-        # Truncate names if excessively long to maintain clean table layout
+        # Truncate names if excessively long
         p1_name = user.display_name[:15]
         p2_name = opponent_name[:15]
         p1_rate = f"{u_rate:.1f}%"
         p2_rate = f"{o_rate:.1f}%"
 
-        # Calculate column widths dynamically
-        col1_w = max(len("[Player]"), len(p1_name), len(p2_name)) + 1
-        col2_w = max(len("[Rank]"), len(u_rank), len(o_rank)) + 1
-        col3_w = max(len("[Winrate]"), len(p1_rate), len(p2_rate)) + 1
-
-        h_col1 = "[Player]".ljust(col1_w)
-        h_col2 = "[Rank]".ljust(col2_w)
-        h_col3 = "[Winrate]".ljust(col3_w)
-
-        r1_col1 = p1_name.ljust(col1_w)
-        r1_col2 = u_rank.ljust(col2_w)
-        r1_col3 = p1_rate.ljust(col3_w)
-
-        r2_col1 = p2_name.ljust(col1_w)
-        r2_col2 = o_rank.ljust(col2_w)
-        r2_col3 = p2_rate.ljust(col3_w)
-
-        table = (
-            f"```text\n"
-            f"│ {h_col1} │ {h_col2} │ {h_col3} │\n"
-            f"│ {r1_col1} │ {r1_col2} │ {r1_col3} │\n"
-            f"│ {r2_col1} │ {r2_col2} │ {r2_col3} │\n"
-            f"```"
+        # Use Discord Embed inline fields instead of codeblock to remove the background
+        # We use a zero-width space + pipe to emulate the dividers in the reference image
+        embed.add_field(
+            name="|\u2800[Player]", 
+            value=f"|\u2800**{p1_name}**\n|\u2800**{p2_name}**", 
+            inline=True
         )
-        embed.description = table
+        embed.add_field(
+            name="|\u2800[Rank]", 
+            value=f"|\u2800**{u_rank}**\n|\u2800**{o_rank}**", 
+            inline=True
+        )
+        embed.add_field(
+            name="|\u2800[Winrate]", 
+            value=f"|\u2800**{p1_rate}**\n|\u2800**{p2_rate}**", 
+            inline=True
+        )
+
         embed.set_footer(text="Wait for an observer to referee your match before starting.")
 
         # Resolve tier thumbnail from challenger's rank
