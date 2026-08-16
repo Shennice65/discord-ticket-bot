@@ -75,7 +75,7 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], nam
         if avatar:
             size = avatar_sizes[i]
             
-            is_roblox = urls[i] and "roblox.com" in urls[i].lower()
+            is_roblox = urls[i] and ("roblox.com" in urls[i].lower() or "rbxcdn.com" in urls[i].lower())
             if not is_roblox:
                 avatar = crop_to_circle(avatar, size)
             else:
