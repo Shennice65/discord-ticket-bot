@@ -12,11 +12,11 @@ class RankingService:
         self.bot = bot
         self.db = db
 
-    async def get_roblox_username(self, user_id: int) -> Optional[str]:
+    async def get_roblox_data(self, user_id: int) -> Optional[Tuple[str, str]]:
         # Check cache in DB first so we don't spam Bloxlink API
         cached = await self.db.db.roblox_usernames.find_one({"_id": user_id})
-        if cached:
-            return cached.get("username")
+        if cached and "roblox_id" in cached:
+            return cached.get("username"), cached.get("roblox_id")
 
         # Get API Key from config collection
         config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
@@ -47,13 +47,13 @@ class RankingService:
                                     r_data = await r_resp.json()
                                     roblox_name = r_data.get("name")
                                     if roblox_name:
-                                        # Cache the username in MongoDB
+                                        # Cache the username and roblox_id in MongoDB
                                         await self.db.db.roblox_usernames.update_one(
                                             {"_id": user_id},
-                                            {"$set": {"username": roblox_name}},
+                                            {"$set": {"username": roblox_name, "roblox_id": str(roblox_id)}},
                                             upsert=True
                                         )
-                                        return roblox_name
+                                        return roblox_name, str(roblox_id)
                     else:
                         print(f"Bloxlink API returned status {resp.status} for user {user_id}")
         except Exception as e:
@@ -80,6 +80,26 @@ class RankingService:
         config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
         role_emojis = config_doc.get("role_emojis", {}) if config_doc else {}
         
+        use_roblox_avatars = False
+        settings_doc = await self.db.db.bot_settings.find_one({"key": "use_roblox_avatars"})
+        if settings_doc:
+            use_roblox_avatars = settings_doc.get("value", False)
+            
+        import aiohttp
+        
+        async def get_roblox_avatar_url(roblox_id: str) -> str:
+            url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={roblox_id}&size=150x150&format=Png&isCircular=false"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("data") and len(data["data"]) > 0:
+                                return data["data"][0].get("imageUrl", "")
+            except Exception as e:
+                print(f"Error fetching Roblox avatar for {roblox_id}: {e}")
+            return ""
+            
         def get_role_emoji(member):
             if not member or not role_emojis:
                 return ""
@@ -101,11 +121,20 @@ class RankingService:
                     except Exception:
                         pass
                 
-                avatar_url = user.display_avatar.url if user else ""
-                
                 discord_username = user.name if user else f"Player {uid}"
                 display_name = discord_username
                 username = discord_username
+                
+                avatar_url = user.display_avatar.url if user else ""
+                
+                if use_roblox_avatars:
+                    roblox_data = await self.get_roblox_data(uid)
+                    if roblox_data:
+                        r_username, r_id = roblox_data
+                        r_avatar = await get_roblox_avatar_url(r_id)
+                        if r_avatar:
+                            avatar_url = r_avatar
+                            
                 top_3.append((uid, avatar_url, display_name, username))
                 
             while len(top_3) < 3:

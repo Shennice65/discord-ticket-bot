@@ -19,6 +19,21 @@ class RankingAdmin(commands.Cog):
         self.bot = bot
         self.db = bot.db
 
+    @app_commands.command(name="togglelb3s", description="Toggle between Roblox avatar headshots and Discord pfps for leaderboard top 3.")
+    async def toggle_lb3s(self, interaction: discord.Interaction):
+        if interaction.user.id != Config.MASTER_ADMIN_ID:
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        current_setting = await self.db.get_setting("use_roblox_avatars", False)
+        new_setting = not current_setting
+        await self.db.set_setting("use_roblox_avatars", new_setting)
+        
+        msg = "Roblox avatar headshots" if new_setting else "Discord profile pictures"
+        await interaction.followup.send(f"Leaderboard top 3 will now use **{msg}**.", ephemeral=True)
+
     @app_commands.command(name="removeplayer", description="Remove a player from the leaderboard")
     @app_commands.describe(user="The player to remove")
     async def remove_player(self, interaction: discord.Interaction, user: discord.User):
