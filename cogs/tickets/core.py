@@ -283,15 +283,14 @@ class Tickets(commands.Cog):
             return
         
         status = ticket_data.get("status")
-        if status in ["processing", "processing_modal"]:
+        if status == "processing":
             processing_time = ticket_data.get("processing_since")
             now = datetime.utcnow()
             stuck = False
             if processing_time:
                 try:
                     pt = processing_time if isinstance(processing_time, datetime) else datetime.fromisoformat(str(processing_time))
-                    timeout = 300 if status == "processing_modal" else 60
-                    if (now - pt).total_seconds() > timeout:
+                    if (now - pt).total_seconds() > 60:
                         stuck = True
                 except (ValueError, TypeError):
                     stuck = True
@@ -302,10 +301,7 @@ class Tickets(commands.Cog):
                 await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
                 ticket_data["status"] = "open"
             else:
-                if status == "processing_modal":
-                    await interaction.response.send_message("Another observer is currently filling out the closing form. Please wait a few minutes.", ephemeral=True)
-                else:
-                    await interaction.response.send_message("This ticket is currently being processed. Please wait...", ephemeral=True)
+                await interaction.response.send_message("This ticket is currently being processed. Please wait...", ephemeral=True)
                 return
             
         if ticket_data.get("status") == "closed":
@@ -349,12 +345,8 @@ class Tickets(commands.Cog):
                 view = WinnerButtonView(player1_id, p1_name, player2_id, p2_name)
                 await interaction.response.send_message(f"**Who won this match?**\n`{p1_name}` vs `{p2_name}`", view=view, ephemeral=True)
             else:
-                result = await self.db.tickets.find_one_and_update(
-                    {"channel_id": interaction.channel.id, "status": "open"},
-                    {"$set": {"status": "processing_modal", "processing_since": str(datetime.utcnow())}}
-                )
-                if not result:
-                    await interaction.response.send_message("Another observer is already filling out the closing form, or the ticket is closed.", ephemeral=True)
+                if ticket_data.get('status') != 'open':
+                    await interaction.response.send_message("This ticket is already closed or being processed.", ephemeral=True)
                     return
                 current_rank = await self.db.get_player_rank(ticket_data['user_id'])
                 modal = CloseObservationModal(current_rank=current_rank)
@@ -381,7 +373,7 @@ class Tickets(commands.Cog):
     
     async def process_ranked_close(self, interaction: discord.Interaction, modal: CloseRankedModal):
         result = await self.db.tickets.find_one_and_update(
-            {"channel_id": interaction.channel.id, "status": "processing_modal"},
+            {"channel_id": interaction.channel.id, "status": "open"},
             {"$set": {"status": "processing", "processing_since": str(datetime.utcnow())}}
         )
         if not result:
@@ -445,7 +437,7 @@ class Tickets(commands.Cog):
 
     async def process_ranked_cancel(self, interaction: discord.Interaction, modal: CloseRankedCancelModal):
         result = await self.db.tickets.find_one_and_update(
-            {"channel_id": interaction.channel.id, "status": "processing_modal"},
+            {"channel_id": interaction.channel.id, "status": "open"},
             {"$set": {"status": "processing", "processing_since": str(datetime.utcnow())}}
         )
         if not result:
@@ -489,7 +481,7 @@ class Tickets(commands.Cog):
     
     async def process_observation_close(self, interaction: discord.Interaction, modal: CloseObservationModal, end_rank: str):
         result = await self.db.tickets.find_one_and_update(
-            {"channel_id": interaction.channel.id, "status": "processing_modal"},
+            {"channel_id": interaction.channel.id, "status": "open"},
             {"$set": {"status": "processing", "processing_since": str(datetime.utcnow())}}
         )
         if not result:
