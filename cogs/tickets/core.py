@@ -128,18 +128,23 @@ class Tickets(commands.Cog):
         u_rank = await self.db.get_player_rank(user.id) or "Unranked"
         o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"
         
-        user_stats = f"**Rank**: `{u_rank}`\n**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
-        opp_stats = f"**Rank**: `{o_rank}`\n**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
-        
-        embed = TicketEmbeds.ticket_created(
-            "Ranked 1v1", user, opponent.name,
-            user_stats=user_stats, opp_stats=opp_stats
+        embed, tier_file = TicketEmbeds.create_ranked_1v1_ticket_embed(
+            user=user,
+            opponent_name=opponent.name,
+            u_rank=u_rank,
+            o_rank=o_rank,
+            u_rate=u_rate,
+            o_rate=o_rate
         )
         
-        await channel.send(
-            content=f"{user.mention} {opponent_member.mention} {observer_mention}",
-            embed=embed
-        )
+        send_kwargs = {
+            "content": f"{user.mention} {opponent_member.mention} {observer_mention}",
+            "embed": embed
+        }
+        if tier_file:
+            send_kwargs["file"] = tier_file
+
+        await channel.send(**send_kwargs)
         
         await interaction.edit_original_response(
             content=f"Ticket created! {channel.mention}",
@@ -165,12 +170,13 @@ class Tickets(commands.Cog):
         u_rank = await self.db.get_player_rank(requester.id) or "Unranked"
         o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"
         
-        user_stats = f"**Rank**: `{u_rank}`\n**Total Matches**: `{u_matches}`\n**Win Rate**: `{u_rate:.1f}%`"
-        opp_stats = f"**Rank**: `{o_rank}`\n**Total Matches**: `{o_matches}`\n**Win Rate**: `{o_rate:.1f}%`"
-        
-        embed = TicketEmbeds.ticket_created(
-            "Ranked 1v1", requester, opponent.name,
-            user_stats=user_stats, opp_stats=opp_stats
+        embed, tier_file = TicketEmbeds.create_ranked_1v1_ticket_embed(
+            user=requester,
+            opponent_name=opponent.name,
+            u_rank=u_rank,
+            o_rank=o_rank,
+            u_rate=u_rate,
+            o_rate=o_rate
         )
         embed.add_field(
             name="Out-of-Range Match",
@@ -178,10 +184,14 @@ class Tickets(commands.Cog):
             inline=False
         )
 
-        await channel.send(
-            content=f"{requester.mention} {opponent.mention} {observer_mention}",
-            embed=embed
-        )
+        send_kwargs = {
+            "content": f"{requester.mention} {opponent.mention} {observer_mention}",
+            "embed": embed
+        }
+        if tier_file:
+            send_kwargs["file"] = tier_file
+
+        await channel.send(**send_kwargs)
     
     async def create_observation_ticket(self, interaction: discord.Interaction):
         guild = interaction.guild
