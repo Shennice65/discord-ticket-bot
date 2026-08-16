@@ -23,22 +23,21 @@ class TicketEmbeds:
         p1_rate = f"{u_rate:.1f}%"
         p2_rate = f"{o_rate:.1f}%"
 
-        # Use Unicode Left One Quarter Block (U+258E) as a thick vertical divider 
-        # This matches the wide, non-emoji appearance of the reference bot
-        vbar = "▎\u2800"
+        # Use Discord native blockquotes inside the Field Value to create 
+        # the unselectable, continuous grey vertical UI bar.
         embed.add_field(
-            name=f"{vbar}[Player]", 
-            value=f"{vbar}**{p1_name}**\n{vbar}**{p2_name}**", 
+            name="\u200B", 
+            value=f"> [Player]\n> **{p1_name}**\n> **{p2_name}**", 
             inline=True
         )
         embed.add_field(
-            name=f"{vbar}[Rank]", 
-            value=f"{vbar}**{u_rank}**\n{vbar}**{o_rank}**", 
+            name="\u200B", 
+            value=f"> [Rank]\n> **{u_rank}**\n> **{o_rank}**", 
             inline=True
         )
         embed.add_field(
-            name=f"{vbar}[Winrate]", 
-            value=f"{vbar}**{p1_rate}**\n{vbar}**{p2_rate}**", 
+            name="\u200B", 
+            value=f"> [Winrate]\n> **{p1_rate}**\n> **{p2_rate}**", 
             inline=True
         )
 

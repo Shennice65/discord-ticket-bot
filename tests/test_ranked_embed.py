@@ -23,15 +23,18 @@ class TestRankedEmbed(unittest.TestCase):
         self.assertEqual(embed.footer.text, "Wait for an observer to referee your match before starting.")
         
         self.assertEqual(len(embed.fields), 3)
-        self.assertIn("[Player]", embed.fields[0].name)
+        self.assertEqual(embed.fields[0].name, "\u200B")
+        self.assertIn("[Player]", embed.fields[0].value)
         self.assertIn("wolfboss5213", embed.fields[0].value)
         self.assertIn("opponent_player", embed.fields[0].value)
         
-        self.assertIn("[Rank]", embed.fields[1].name)
+        self.assertEqual(embed.fields[1].name, "\u200B")
+        self.assertIn("[Rank]", embed.fields[1].value)
         self.assertIn("Champions 1", embed.fields[1].value)
         self.assertIn("Champions 3", embed.fields[1].value)
         
-        self.assertIn("[Winrate]", embed.fields[2].name)
+        self.assertEqual(embed.fields[2].name, "\u200B")
+        self.assertIn("[Winrate]", embed.fields[2].value)
         self.assertIn("75.0%", embed.fields[2].value)
         self.assertIn("60.0%", embed.fields[2].value)
         
