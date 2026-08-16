@@ -110,7 +110,7 @@ class RankingAdmin(commands.Cog):
         log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
         if log_channel:
             embed = discord.Embed(
-                title="<:firer:1538511859890659401> Streak Manually Set",
+                title="<:strek:1538516254803890206> Streak Manually Set",
                 color=discord.Color.orange(),
                 timestamp=datetime.utcnow()
             )
