@@ -25,10 +25,9 @@ class TicketEmbeds:
             
             if u_tier_idx != -1 and o_tier_idx != -1:
                 title = f"**{u_tier} Lobby**"
-                # If Challenger tier index is greater (meaning lower tier rank) 
-                # OR same tier but Challenger div is greater (meaning lower div rank)
-                if u_tier_idx > o_tier_idx or (u_tier_idx == o_tier_idx and u_div > o_div):
-                    title = "**Rank Up game**"
+                # Only use a special title if the Challenger is in a completely lower tier (e.g. Elites vs Champions)
+                if u_tier_idx > o_tier_idx:
+                    title = "**Promotion Match**"
 
         embed = discord.Embed(
             title=title,
