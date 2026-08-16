@@ -20,6 +20,7 @@ class TestRankedEmbed(unittest.TestCase):
         )
         
         self.assertEqual(embed.author.name, "wolfboss5213 VS opponent_player")
+        self.assertEqual(embed.title, "**Champions Lobby**")
         self.assertEqual(embed.footer.text, "Wait for an observer to referee your match before starting.")
         
         self.assertEqual(len(embed.fields), 3)

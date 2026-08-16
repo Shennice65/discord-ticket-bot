@@ -2,7 +2,7 @@ import os
 import discord
 from datetime import datetime
 from typing import Optional, Tuple
-from utils.ranking_utils import parse_rank
+from utils.ranking_utils import parse_rank, TIERS
 
 class TicketEmbeds:
     @staticmethod
@@ -10,7 +10,28 @@ class TicketEmbeds:
                                        u_rank: str, o_rank: str,
                                        u_rate: float, o_rate: float) -> Tuple[discord.Embed, Optional[discord.File]]:
         """Creates the sleek 3-column Ranked 1v1 lobby ticket embed."""
+        # Determine the embed title based on ranks
+        title = f"**{u_rank} Lobby**"
+        
+        parsed_u = parse_rank(u_rank)
+        parsed_o = parse_rank(o_rank)
+        
+        if parsed_u and parsed_o:
+            u_tier, u_div = parsed_u
+            o_tier, o_div = parsed_o
+            
+            u_tier_idx = TIERS.index(u_tier) if u_tier in TIERS else -1
+            o_tier_idx = TIERS.index(o_tier) if o_tier in TIERS else -1
+            
+            if u_tier_idx != -1 and o_tier_idx != -1:
+                title = f"**{u_tier} Lobby**"
+                # If Challenger tier index is greater (meaning lower tier rank) 
+                # OR same tier but Challenger div is greater (meaning lower div rank)
+                if u_tier_idx > o_tier_idx or (u_tier_idx == o_tier_idx and u_div > o_div):
+                    title = "**Rank Up game**"
+
         embed = discord.Embed(
+            title=title,
             color=discord.Color(0x2b2d31),
             timestamp=datetime.utcnow()
         )
