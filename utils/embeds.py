@@ -23,21 +23,22 @@ class TicketEmbeds:
         p1_rate = f"{u_rate:.1f}%"
         p2_rate = f"{o_rate:.1f}%"
 
-        # Use custom emoji <vbar:1538654461126516866> to act as a wide, unselectable vertical divider
-        vbar = "<:vbar:1538654461126516866>"
+        # Use Unicode Left One Quarter Block (U+258E) as a thick vertical divider 
+        # This matches the wide, non-emoji appearance of the reference bot
+        vbar = "▎\u2800"
         embed.add_field(
-            name=f"{vbar} [Player]", 
-            value=f"{vbar} **{p1_name}**\n{vbar} **{p2_name}**", 
+            name=f"{vbar}[Player]", 
+            value=f"{vbar}**{p1_name}**\n{vbar}**{p2_name}**", 
             inline=True
         )
         embed.add_field(
-            name=f"{vbar} [Rank]", 
-            value=f"{vbar} **{u_rank}**\n{vbar} **{o_rank}**", 
+            name=f"{vbar}[Rank]", 
+            value=f"{vbar}**{u_rank}**\n{vbar}**{o_rank}**", 
             inline=True
         )
         embed.add_field(
-            name=f"{vbar} [Winrate]", 
-            value=f"{vbar} **{p1_rate}**\n{vbar} **{p2_rate}**", 
+            name=f"{vbar}[Winrate]", 
+            value=f"{vbar}**{p1_rate}**\n{vbar}**{p2_rate}**", 
             inline=True
         )
 
