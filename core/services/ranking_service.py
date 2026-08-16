@@ -88,7 +88,7 @@ class RankingService:
         import aiohttp
         
         async def get_roblox_avatar_url(roblox_id: str) -> str:
-            url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={roblox_id}&size=150x150&format=Png&isCircular=false"
+            url = f"https://thumbnails.roblox.com/v1/users/avatar?userIds={roblox_id}&size=352x352&format=Png&isCircular=false"
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url) as resp:

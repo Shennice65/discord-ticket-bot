@@ -95,7 +95,7 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], nam
             
             # Calculate Y offset based on avatar type
             if is_roblox:
-                paste_y = avatar_y_offsets[i] - size
+                paste_y = avatar_y_offsets[i] - size + 20
             else:
                 paste_y = avatar_y_offsets[i] - size + 15
             
