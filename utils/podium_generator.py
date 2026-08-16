@@ -32,8 +32,18 @@ def crop_to_circle(im: Image.Image, size: int = 150) -> Image.Image:
 def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], names: List[str], urls: List[str]) -> io.BytesIO:
     """Draws the podium, applies texture, and pastes avatars/names."""
     width, height = 800, 600
-    bg_color = (43, 45, 49) # Discord dark theme bg
-    img = Image.new("RGBA", (width, height), bg_color)
+    
+    # Load background image
+    try:
+        from PIL import ImageOps
+        bg_path = os.path.join("assets", "bg.png")
+        bg_img = Image.open(bg_path).convert("RGBA")
+        img = ImageOps.fit(bg_img, (width, height), Image.Resampling.LANCZOS)
+    except Exception as e:
+        print(f"Failed to load background image: {e}")
+        bg_color = (43, 45, 49) # Discord dark theme bg
+        img = Image.new("RGBA", (width, height), bg_color)
+        
     draw = ImageDraw.Draw(img)
     
     # 3 equal columns
