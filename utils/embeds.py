@@ -15,7 +15,7 @@ class TicketEmbeds:
             timestamp=datetime.utcnow()
         )
         avatar_url = user.display_avatar.url if hasattr(user, 'display_avatar') and user.display_avatar else None
-        embed.set_author(name=user.display_name, icon_url=avatar_url)
+        embed.set_author(name=f"{user.display_name} VS {opponent_name}", icon_url=avatar_url)
 
         # Truncate names if excessively long
         p1_name = user.display_name[:15]

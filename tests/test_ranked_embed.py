@@ -19,7 +19,7 @@ class TestRankedEmbed(unittest.TestCase):
             o_rate=60.0
         )
         
-        self.assertEqual(embed.author.name, "wolfboss5213")
+        self.assertEqual(embed.author.name, "wolfboss5213 VS opponent_player")
         self.assertEqual(embed.footer.text, "Wait for an observer to referee your match before starting.")
         
         self.assertEqual(len(embed.fields), 3)
@@ -57,7 +57,7 @@ class TestRankedEmbed(unittest.TestCase):
             o_rate=0.0
         )
         
-        self.assertEqual(embed.author.name, "new_player")
+        self.assertEqual(embed.author.name, "new_player VS other_player")
         self.assertIsNone(file)
 
 if __name__ == "__main__":
