@@ -6,7 +6,7 @@ from utils.embeds import TicketEmbeds
 class TestRankedTicketCreation(unittest.TestCase):
     def test_embed_generation_in_ticket_flow(self):
         user = MagicMock()
-        user.display_name = "PlayerOne"
+        user.name = "PlayerOne"
         user.display_avatar.url = "https://example.com/avatar.png"
         
         embed, file = TicketEmbeds.create_ranked_1v1_ticket_embed(

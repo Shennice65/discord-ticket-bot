@@ -7,7 +7,7 @@ from utils.embeds import TicketEmbeds
 class TestRankedEmbed(unittest.TestCase):
     def test_table_alignment_and_content(self):
         user = MagicMock()
-        user.display_name = "wolfboss5213"
+        user.name = "wolfboss5213"
         user.display_avatar.url = "https://example.com/avatar.png"
         
         embed, file = TicketEmbeds.create_ranked_1v1_ticket_embed(
@@ -46,7 +46,7 @@ class TestRankedEmbed(unittest.TestCase):
 
     def test_missing_tier_fallback(self):
         user = MagicMock()
-        user.display_name = "new_player"
+        user.name = "new_player"
         user.display_avatar.url = "https://example.com/avatar.png"
         
         embed, file = TicketEmbeds.create_ranked_1v1_ticket_embed(
