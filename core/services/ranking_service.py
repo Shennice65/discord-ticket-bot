@@ -1,11 +1,23 @@
 import discord
 import re
+import unicodedata
 from config import Config
 from typing import List, Optional, Tuple
 from utils.ranking_utils import parse_rank
 from utils.podium_generator import get_podium_image
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
+
+def sanitize_display_name(name: str) -> str:
+    """Strip emojis, special characters, and unicode decorations from a display name.
+    Keeps only normal alphanumeric text, spaces, hyphens, underscores, and periods."""
+    # Normalize unicode to decomposed form to handle accented chars etc.
+    normalized = unicodedata.normalize('NFKC', name)
+    # Keep only letters, digits, spaces, hyphens, underscores, periods
+    cleaned = re.sub(r'[^\w\s.\-]', '', normalized, flags=re.UNICODE)
+    # Collapse multiple spaces and strip
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned if cleaned else name  # Fallback to original if everything was stripped
 
 class RankingService:
     def __init__(self, bot, db):
@@ -121,9 +133,15 @@ class RankingService:
                     except Exception:
                         pass
                 
-                discord_username = user.name if user else f"Player {uid}"
-                display_name = discord_username
-                username = discord_username
+                # Resolve member from guild for display_name (nickname)
+                member = None
+                for guild in self.bot.guilds:
+                    member = guild.get_member(uid)
+                    if member:
+                        break
+                
+                username = user.name if user else f"Player {uid}"
+                display_name = sanitize_display_name(member.display_name) if member else username
                 
                 avatar_url = user.display_avatar.url if user else ""
                 
@@ -155,10 +173,7 @@ class RankingService:
                         
                 role_emoji_str = get_role_emoji(member)
                 safe_display = discord.utils.escape_markdown(display_name)
-                if display_name.lower() == username.lower():
-                    name_text = f"**{safe_display}**"
-                else:
-                    name_text = f"**{safe_display}** `@{username}`"
+                name_text = f"**{safe_display}** `(@{username})`"
                 
                 role_part = f"{role_emoji_str} " if role_emoji_str else ""
                 streak_text = f"  <:strek:1538516254803890206>`{streak}`" if streak >= 2 else ""
@@ -174,17 +189,12 @@ class RankingService:
                         member = guild.get_member(uid)
                         if member:
                             break
-                    discord_username = member.name if member else "Unknown User"
-
-                    display_name = discord_username
-                    username = discord_username
+                    username = member.name if member else "Unknown User"
+                    display_name = sanitize_display_name(member.display_name) if member else username
                     
                     role_emoji_str = get_role_emoji(member)
                     safe_display = discord.utils.escape_markdown(display_name)
-                    if display_name.lower() == username.lower():
-                        name_text = f"{safe_display}"
-                    else:
-                        name_text = f"{safe_display} `@{username}`"
+                    name_text = f"{safe_display} `(@{username})`"
                         
                     role_part = f"{role_emoji_str} " if role_emoji_str else ""
                     streak_text = f"  <:strek:1538516254803890206>`{streak}`" if streak >= 2 else ""
