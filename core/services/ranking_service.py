@@ -60,7 +60,7 @@ class RankingService:
             print(f"Error fetching Bloxlink data for {user_id}: {e}")
         return None
 
-    async def generate_leaderboard_content(self, page_index: int) -> Tuple[List[discord.Embed], Optional[discord.File]]:
+    async def generate_leaderboard_content(self, page_index: int) -> Tuple[List[discord.Embed], List[discord.File]]:
         tier_name = TIERS[page_index]
         display_tier = "Novices" if tier_name == "Novice" else tier_name
         all_ranks = await self.db.get_all_player_ranks()
@@ -74,7 +74,7 @@ class RankingService:
                 
         tier_players.sort(key=lambda x: x[1])
         
-        desc = f"# 🏆 {display_tier} Leaderboard\n\n"
+        desc = f"# {display_tier}\n\n"
         file = None
         
         config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
@@ -194,15 +194,27 @@ class RankingService:
         desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
         embeds = []
+        files = []
+        
         if file:
             image_embed = discord.Embed(color=discord.Color(0x2b2d31))
             image_embed.set_image(url="attachment://podium.png")
             embeds.append(image_embed)
+            files.append(file)
             
         text_embed = discord.Embed(description=desc, color=discord.Color(0x2b2d31))
+        
+        # Add tier thumbnail
+        import os
+        tier_path = os.path.join("assets", "tiers", f"{tier_name.lower()}.png")
+        if os.path.exists(tier_path):
+            tier_file = discord.File(tier_path, filename="tier_lb.png")
+            text_embed.set_thumbnail(url="attachment://tier_lb.png")
+            files.append(tier_file)
+            
         embeds.append(text_embed)
             
-        return embeds, file
+        return embeds, files
 
     async def get_player_rank(self, user_id: int) -> Optional[str]:
         return await self.db.get_player_rank(user_id)
