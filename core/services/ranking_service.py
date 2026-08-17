@@ -12,8 +12,10 @@ def sanitize_display_name(name: str, max_length: int = 15) -> str:
     """Strip emojis, special characters, and unicode decorations from a display name.
     Keeps only normal alphanumeric text, spaces, hyphens, underscores, and periods.
     Truncates to max_length to prevent wrapping on mobile."""
+    # Remove text inside (), [], {}, or <>
+    name_no_braces = re.sub(r'\(.*?\)|\[.*?\]|\{.*?\}|\<.*?\>', '', name)
     # Normalize unicode to decomposed form to handle accented chars etc.
-    normalized = unicodedata.normalize('NFKC', name)
+    normalized = unicodedata.normalize('NFKC', name_no_braces)
     # Keep only letters, digits, spaces, hyphens, underscores, periods
     cleaned = re.sub(r'[^\w\s.\-]', '', normalized, flags=re.UNICODE)
     # Collapse multiple spaces and strip
