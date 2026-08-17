@@ -1,4 +1,4 @@
-﻿import discord
+import discord
 from discord.ext import commands
 from discord import app_commands
 import re
@@ -25,8 +25,8 @@ class RankingPaginationView(discord.ui.View):
         ranking_service = interaction.client.container.get('RankingService')
         if not ranking_service: return
         self.current_page = max(0, self.current_page - 1)
-        embeds, file = await ranking_service.generate_leaderboard_content(self.current_page)
-        attachments = [file] if file else []
+        embeds, files = await ranking_service.generate_leaderboard_content(self.current_page)
+        attachments = files if files else []
         await interaction.edit_original_response(content=None, embeds=embeds, attachments=attachments, view=self)
 
     @discord.ui.button(emoji="<:right:1538261357219160124>", style=discord.ButtonStyle.secondary, custom_id="ranking_next")
@@ -35,8 +35,8 @@ class RankingPaginationView(discord.ui.View):
         ranking_service = interaction.client.container.get('RankingService')
         if not ranking_service: return
         self.current_page = min(len(TIERS) - 1, self.current_page + 1)
-        embeds, file = await ranking_service.generate_leaderboard_content(self.current_page)
-        attachments = [file] if file else []
+        embeds, files = await ranking_service.generate_leaderboard_content(self.current_page)
+        attachments = files if files else []
         await interaction.edit_original_response(content=None, embeds=embeds, attachments=attachments, view=self)
 
 class LeaderboardLauncherView(discord.ui.View):
@@ -51,11 +51,11 @@ class LeaderboardLauncherView(discord.ui.View):
             return
             
         await interaction.response.defer(ephemeral=True)
-        embeds, file = await ranking_service.generate_leaderboard_content(0)
+        embeds, files = await ranking_service.generate_leaderboard_content(0)
         view = RankingPaginationView(0)
         kwargs = {"embeds": embeds, "view": view, "ephemeral": True}
-        if file:
-            kwargs["file"] = file
+        if files:
+            kwargs["files"] = files
         await interaction.followup.send(**kwargs)
 
     @discord.ui.button(label="Winrate", style=discord.ButtonStyle.secondary, custom_id="view_winrate_leaderboard_btn", emoji=discord.PartialEmoji(id=1537488434103455784, name="winrate"))
