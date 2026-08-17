@@ -33,17 +33,8 @@ def draw_simple_podium(tier_name: str, avatars: List[Optional[Image.Image]], nam
     """Draws the podium, applies texture, and pastes avatars/names."""
     width, height = 800, 600
     
-    # Load background image
-    try:
-        from PIL import ImageOps
-        bg_path = os.path.join("assets", "bg.png")
-        bg_img = Image.open(bg_path).convert("RGBA")
-        # Crop keeping the right side of the image (centering x=1.0) to hide the logo on the left
-        img = ImageOps.fit(bg_img, (width, height), Image.Resampling.LANCZOS, centering=(1.0, 0.5))
-    except Exception as e:
-        print(f"Failed to load background image: {e}")
-        bg_color = (43, 45, 49) # Discord dark theme bg
-        img = Image.new("RGBA", (width, height), bg_color)
+    # Use a transparent background
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         
     draw = ImageDraw.Draw(img)
     

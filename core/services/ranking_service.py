@@ -74,7 +74,7 @@ class RankingService:
                 
         tier_players.sort(key=lambda x: x[1])
         
-        desc = f"# {display_tier}\n\n"
+        desc = ""
         file = None
         
         config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
@@ -163,7 +163,7 @@ class RankingService:
                 role_part = f"{role_emoji_str} " if role_emoji_str else ""
                 streak_text = f"  <:strek:1538516254803890206>`{streak}`" if streak >= 2 else ""
                 
-                desc += f"`#{i+1}` {role_part}{name_text}{streak_text}\n"
+                desc += f"`#{i+1}` {name_text}{streak_text}\n"
                 
             if len(tier_players) > 3:
                 desc += "\n**Runners Up**\n"
@@ -189,7 +189,7 @@ class RankingService:
                     role_part = f"{role_emoji_str} " if role_emoji_str else ""
                     streak_text = f"  <:strek:1538516254803890206>`{streak}`" if streak >= 2 else ""
                     
-                    desc += f"`#{i}` {role_part}{name_text}{streak_text}\n"
+                    desc += f"`#{i}` {name_text}{streak_text}\n"
                 
         desc += f"\n*Page {page_index + 1} of {len(TIERS)}*"
         
@@ -204,13 +204,15 @@ class RankingService:
             
         text_embed = discord.Embed(description=desc, color=discord.Color(0x2b2d31))
         
-        # Add tier thumbnail
+        # Add tier thumbnail next to tier word
         import os
         tier_path = os.path.join("assets", "tiers", f"{tier_name.lower()}.png")
         if os.path.exists(tier_path):
             tier_file = discord.File(tier_path, filename="tier_lb.png")
-            text_embed.set_thumbnail(url="attachment://tier_lb.png")
+            text_embed.set_author(name=f"{display_tier} Leaderboard", icon_url="attachment://tier_lb.png")
             files.append(tier_file)
+        else:
+            text_embed.set_author(name=f"{display_tier} Leaderboard")
             
         embeds.append(text_embed)
             
