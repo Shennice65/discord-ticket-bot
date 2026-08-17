@@ -8,7 +8,7 @@ from utils.podium_generator import get_podium_image
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
 
-def sanitize_display_name(name: str, max_length: int = 15) -> str:
+def sanitize_display_name(name: str, max_length: int = 10) -> str:
     """Strip emojis, special characters, and unicode decorations from a display name.
     Keeps only normal alphanumeric text, spaces, hyphens, underscores, and periods.
     Truncates to max_length to prevent wrapping on mobile."""
