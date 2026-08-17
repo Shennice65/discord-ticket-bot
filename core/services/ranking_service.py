@@ -8,16 +8,21 @@ from utils.podium_generator import get_podium_image
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
 
-def sanitize_display_name(name: str) -> str:
+def sanitize_display_name(name: str, max_length: int = 15) -> str:
     """Strip emojis, special characters, and unicode decorations from a display name.
-    Keeps only normal alphanumeric text, spaces, hyphens, underscores, and periods."""
+    Keeps only normal alphanumeric text, spaces, hyphens, underscores, and periods.
+    Truncates to max_length to prevent wrapping on mobile."""
     # Normalize unicode to decomposed form to handle accented chars etc.
     normalized = unicodedata.normalize('NFKC', name)
     # Keep only letters, digits, spaces, hyphens, underscores, periods
     cleaned = re.sub(r'[^\w\s.\-]', '', normalized, flags=re.UNICODE)
     # Collapse multiple spaces and strip
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    return cleaned if cleaned else name  # Fallback to original if everything was stripped
+    result = cleaned if cleaned else name  # Fallback to original if everything was stripped
+    
+    if len(result) > max_length:
+        return result[:max_length-1] + "…"
+    return result
 
 class RankingService:
     def __init__(self, bot, db):
@@ -173,7 +178,10 @@ class RankingService:
                         
                 role_emoji_str = get_role_emoji(member)
                 safe_display = discord.utils.escape_markdown(display_name)
-                name_text = f"**{safe_display}** `(@{username})`"
+                if display_name.lower() == username.lower():
+                    name_text = f"**{safe_display}**"
+                else:
+                    name_text = f"**{safe_display}** `(@{username})`"
                 
                 role_part = f"{role_emoji_str} " if role_emoji_str else ""
                 streak_text = f"  <:strek:1538516254803890206>`{streak}`" if streak >= 2 else ""
@@ -194,7 +202,10 @@ class RankingService:
                     
                     role_emoji_str = get_role_emoji(member)
                     safe_display = discord.utils.escape_markdown(display_name)
-                    name_text = f"{safe_display} `(@{username})`"
+                    if display_name.lower() == username.lower():
+                        name_text = f"{safe_display}"
+                    else:
+                        name_text = f"{safe_display} `(@{username})`"
                         
                     role_part = f"{role_emoji_str} " if role_emoji_str else ""
                     streak_text = f"  <:strek:1538516254803890206>`{streak}`" if streak >= 2 else ""

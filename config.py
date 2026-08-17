@@ -21,4 +21,4 @@ class Config:
     MASTERS_ROLE_ID = int(os.environ.get('MASTERS_ROLE_ID', 0))
     NOVICE_ROLE_ID = int(os.environ.get('NOVICE_ROLE_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
-    VERSION = "1.10.16"
+    VERSION = "1.10.17"
