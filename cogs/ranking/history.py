@@ -145,25 +145,12 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
             )
             return
         
-        source = get_clip_source(url)
+        # Send to conversion service
+        await interaction.edit_original_response(
+            content=f"⏳ Processing your {source.title()} clip... This may take a moment."
+        )
         
-        if source == "tiktok":
-            import re
-            clip_url = re.sub(r'https?://(?:www\.)?tiktok\.com', 'https://vxtiktok.com', url, flags=re.IGNORECASE)
-            clip_url = re.sub(r'https?://(?:vm\.)?tiktok\.com', 'https://vm.vxtiktok.com', clip_url, flags=re.IGNORECASE)
-            result = {
-                "success": True,
-                "clip_url": clip_url,
-                "title": "TikTok Clip",
-                "thumbnail_url": "",
-                "error": ""
-            }
-        else:
-            # Send to conversion service for Medal.tv
-            await interaction.edit_original_response(
-                content=f"⏳ Processing your {source.title()} clip... This may take a moment."
-            )
-            result = await convert_clip_via_service(url, Config.CLIPS_SERVICE_URL)
+        result = await convert_clip_via_service(url, Config.CLIPS_SERVICE_URL)
         
         if not result["success"]:
             await interaction.edit_original_response(
