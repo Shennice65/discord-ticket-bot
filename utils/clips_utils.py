@@ -94,42 +94,68 @@ async def validate_and_scrape_medal(url: str) -> Dict:
         return {"valid": False, "title": "", "thumbnail": "", "error": f"Error: {str(e)}"}
 
 
-async def convert_clip_via_service(url: str, service_base_url: str) -> Dict:
-    """Send a URL to the clips conversion service and get back the embeddable clip URL.
+async def convert_clip_via_service(url: str, service_base_url: str, title: str = "") -> Dict:
+    """Send a URL to the clips conversion service and get back a task ID for polling.
     
-    Returns dict with keys: success, clip_url, title, thumbnail_url, error
+    Returns dict with keys: success, task_id, error
     """
     if not service_base_url:
-        return {"success": False, "clip_url": "", "title": "", "thumbnail_url": "", "error": "Clips service URL not configured"}
+        return {"success": False, "task_id": "", "error": "Clips service URL not configured"}
     
     api_url = f"{service_base_url.rstrip('/')}/api/import"
     
+    payload = {"url": url}
+    if title:
+        payload["title"] = title
+        
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 api_url,
-                json={"url": url},
-                timeout=aiohttp.ClientTimeout(total=120)  # Video processing can be slow
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
                 data = await resp.json()
                 
                 if resp.status != 200 or not data.get("success"):
                     return {
                         "success": False,
-                        "clip_url": "",
-                        "title": "",
-                        "thumbnail_url": "",
+                        "task_id": "",
                         "error": data.get("error", f"Service returned status {resp.status}")
                     }
                 
                 return {
                     "success": True,
-                    "clip_url": data["clip_url"],
-                    "title": data.get("title", "Imported Clip"),
-                    "thumbnail_url": data.get("thumbnail_url", ""),
+                    "task_id": data["task_id"],
                     "error": ""
                 }
     except aiohttp.ClientError as e:
-        return {"success": False, "clip_url": "", "title": "", "thumbnail_url": "", "error": f"Could not connect to clips service: {str(e)}"}
+        return {"success": False, "task_id": "", "error": f"Could not connect to clips service: {str(e)}"}
     except Exception as e:
-        return {"success": False, "clip_url": "", "title": "", "thumbnail_url": "", "error": f"Error: {str(e)}"}
+        return {"success": False, "task_id": "", "error": f"Error: {str(e)}"}
+
+
+async def check_clip_progress(task_id: str, service_base_url: str) -> Dict:
+    """Check the progress of a clip import task.
+    
+    Returns dict with keys: success, progress_data, error
+    """
+    if not service_base_url or not task_id:
+        return {"success": False, "error": "Invalid service URL or task ID"}
+        
+    api_url = f"{service_base_url.rstrip('/')}/api/progress/{task_id}"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                api_url,
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                data = await resp.json()
+                
+                if resp.status != 200 or not data.get("success"):
+                    return {"success": False, "error": data.get("error", "Failed to get progress")}
+                
+                return {"success": True, "progress_data": data["progress_data"], "error": ""}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

@@ -9,7 +9,7 @@ import aiohttp
 from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
-from utils.clips_utils import is_valid_clip_url, get_clip_source, convert_clip_via_service, validate_and_scrape_medal
+from utils.clips_utils import is_valid_clip_url, get_clip_source, convert_clip_via_service, validate_and_scrape_medal, check_clip_progress
 
 def can_clear_history(user: discord.Member | discord.User) -> bool:
     if user.id == Config.MASTER_ADMIN_ID:
@@ -162,9 +162,53 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         
         if not result["success"]:
             await interaction.edit_original_response(
-                content=f"❌ Failed to process clip: {result['error']}"
+                content=f"❌ Failed to start processing: {result['error']}"
             )
             return
+            
+        task_id = result["task_id"]
+        final_result = None
+        
+        # Polling loop
+        while True:
+            await asyncio.sleep(2.5)  # Sleep to avoid ratelimits
+            prog_res = await check_clip_progress(task_id, Config.CLIPS_SERVICE_URL)
+            
+            if not prog_res["success"]:
+                continue
+                
+            pdata = prog_res["progress_data"]
+            status = pdata.get("status", "unknown")
+            percent = pdata.get("percent", 0.0)
+            detail = pdata.get("detail", "Processing...")
+            
+            if status == "error":
+                await interaction.edit_original_response(
+                    content=f"❌ Failed to process clip: {pdata.get('error', 'Unknown error')}"
+                )
+                return
+                
+            if status == "completed":
+                final_result = pdata.get("result")
+                break
+                
+            # Render progress bar
+            bar_len = 10
+            filled = int(bar_len * (percent / 100))
+            bar = "█" * filled + "░" * (bar_len - filled)
+            
+            msg = f"⏳ **{detail}**\n`[{bar}] {percent}%`"
+            try:
+                await interaction.edit_original_response(content=msg)
+            except:
+                pass  # Ignore rare Discord rate limits during rapid updates
+        
+        if not final_result or not final_result.get("success"):
+            await interaction.edit_original_response(content="❌ Backend finished but returned no data.")
+            return
+
+        # Use the final result
+        result = final_result
         
         # Store clip with both the original URL and the embeddable clip page URL
         success = await db.add_user_clip(
