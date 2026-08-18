@@ -182,6 +182,7 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         
         self.clips_view_ref.update_buttons()
         
+        clip = clips[-1]
         content_url = clip.get("clip_page_url") or clip.get("url", "")
         content = f"**Clip {len(clips)} of {len(clips)}**\n{content_url}"
         await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
