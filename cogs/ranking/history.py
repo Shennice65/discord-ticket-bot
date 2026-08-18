@@ -135,23 +135,21 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         # Check clip limit
         count = await db.get_user_clip_count(self.target_user.id)
         if count >= 5:
-            await interaction.followup.send("You've reached the maximum of **5 clips**. Delete one first!", ephemeral=True)
+            await interaction.edit_original_response(content="You've reached the maximum of **5 clips**. Delete one first!")
             return
         
         # Validate URL is Medal or TikTok
         if not is_valid_clip_url(url):
-            await interaction.followup.send(
-                "❌ Invalid link! Please submit a **Medal.tv** or **TikTok** URL.",
-                ephemeral=True
+            await interaction.edit_original_response(
+                content="❌ Invalid link! Please submit a **Medal.tv** or **TikTok** URL."
             )
             return
         
         source = get_clip_source(url)
         
         # Send to conversion service
-        await interaction.followup.send(
-            f"⏳ Processing your {source.title()} clip... This may take a moment.",
-            ephemeral=True
+        await interaction.edit_original_response(
+            content=f"⏳ Processing your {source.title()} clip... This may take a moment."
         )
         
         result = await convert_clip_via_service(url, Config.CLIPS_SERVICE_URL)
