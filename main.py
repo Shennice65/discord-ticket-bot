@@ -45,6 +45,7 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.ranking.core")
         await self.load_extension("cogs.ranking.admin")
         await self.load_extension("cogs.ranking.cooldowns")
+        await self.load_extension("cogs.owner")
         print("Cogs loaded. Syncing commands...")
         
         try:
