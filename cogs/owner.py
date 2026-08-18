@@ -9,7 +9,6 @@ class OwnerCog(commands.Cog):
 
     @app_commands.command(name="chat", description="Send a message to a specific channel (Owner only)")
     @app_commands.describe(message="The message to send")
-    @app_commands.default_permissions(administrator=True)
     async def chat(self, interaction: discord.Interaction, message: str):
         if interaction.user.id != Config.MASTER_ADMIN_ID:
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
