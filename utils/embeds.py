@@ -428,3 +428,41 @@ class TicketEmbeds:
             
         embed.set_footer(text="Ranked 1v1 Matches Only")
         return embed
+
+    @staticmethod
+    def clips_embed(user: discord.Member, clip: dict, page: int, total: int) -> discord.Embed:
+        """Build a rich embed for a single clip page."""
+        title = clip.get("title", "Untitled Clip")
+        url = clip.get("url", "")
+        thumbnail = clip.get("thumbnail", "")
+        submitted_at = clip.get("submitted_at", "")
+
+        embed = discord.Embed(
+            title=title,
+            url=url,
+            description=f"**[Watch on Medal.tv]({url})**",
+            color=discord.Color(0x2b2d31)
+        )
+
+        if thumbnail:
+            embed.set_image(url=thumbnail)
+
+        if submitted_at:
+            date_str = submitted_at[:10]
+            embed.add_field(name="Submitted", value=date_str, inline=True)
+
+        embed.set_author(name=f"{user.display_name}'s Clips", icon_url=user.display_avatar.url)
+        embed.set_footer(text=f"Clip {page + 1} of {total} | User ID: {user.id}")
+        return embed
+
+    @staticmethod
+    def clips_empty_embed(user: discord.Member) -> discord.Embed:
+        """Embed shown when a user has no clips."""
+        embed = discord.Embed(
+            title="Clips",
+            description="*No clips submitted yet.*\n\nUse the **Submit Clip** button to add your Medal.tv highlights!",
+            color=discord.Color(0x2b2d31)
+        )
+        embed.set_author(name=f"{user.display_name}'s Clips", icon_url=user.display_avatar.url)
+        embed.set_footer(text=f"User ID: {user.id}")
+        return embed

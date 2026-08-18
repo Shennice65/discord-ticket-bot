@@ -8,6 +8,7 @@ import aiohttp
 from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
+from utils.clips_utils import validate_and_scrape_medal
 
 def can_clear_history(user: discord.Member | discord.User) -> bool:
     if user.id == Config.MASTER_ADMIN_ID:
@@ -110,6 +111,217 @@ class ConfirmClearModal(discord.ui.Modal, title="Confirm Clear History"):
         
         await interaction.edit_original_response(content=None, embed=embed, view=None)
 
+class SubmitClipModal(discord.ui.Modal, title="Submit a Medal.tv Clip"):
+    def __init__(self, target_user: discord.Member, clips_view_ref):
+        super().__init__()
+        self.target_user = target_user
+        self.clips_view_ref = clips_view_ref
+        
+        self.medal_url = discord.ui.TextInput(
+            label="Medal.tv Link",
+            placeholder="https://medal.tv/clips/...",
+            required=True,
+            max_length=500
+        )
+        self.add_item(self.medal_url)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        url = self.medal_url.value.strip()
+        db = interaction.client.db
+        
+        # Check clip limit
+        count = await db.get_user_clip_count(self.target_user.id)
+        if count >= 5:
+            await interaction.followup.send("You've reached the maximum of **5 clips**. Delete one first!", ephemeral=True)
+            return
+        
+        # Validate and scrape
+        result = await validate_and_scrape_medal(url)
+        if not result["valid"]:
+            await interaction.followup.send(f"{result['error']}", ephemeral=True)
+            return
+        
+        # Store clip
+        success = await db.add_user_clip(
+            self.target_user.id,
+            url,
+            result["title"],
+            result["thumbnail"]
+        )
+        
+        if not success:
+            await interaction.followup.send("Failed to save clip. You may be at the limit.", ephemeral=True)
+            return
+        
+        # Refresh the clips view
+        clips = await db.get_user_clips(self.target_user.id)
+        self.clips_view_ref.clips = clips
+        self.clips_view_ref.current_page = len(clips) - 1  # Go to newly added clip
+        
+        embed = TicketEmbeds.clips_embed(self.target_user, clips[-1], len(clips) - 1, len(clips))
+        self.clips_view_ref.update_buttons()
+        await interaction.edit_original_response(embed=embed, view=self.clips_view_ref)
+
+
+class DeleteClipModal(discord.ui.Modal, title="Delete a Clip"):
+    def __init__(self, target_user: discord.Member, clips_view_ref):
+        super().__init__()
+        self.target_user = target_user
+        self.clips_view_ref = clips_view_ref
+        
+        self.clip_index = discord.ui.TextInput(
+            label="Clip Number to Delete (1-5)",
+            placeholder="Enter the clip number, e.g. 1, 2, 3...",
+            required=True,
+            max_length=2
+        )
+        self.add_item(self.clip_index)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            index = int(self.clip_index.value.strip()) - 1  # Convert to 0-based
+        except ValueError:
+            await interaction.followup.send("Please enter a valid number.", ephemeral=True)
+            return
+        
+        db = interaction.client.db
+        success = await db.delete_user_clip(self.target_user.id, index)
+        
+        if not success:
+            await interaction.followup.send("Invalid clip number. Check your clips and try again.", ephemeral=True)
+            return
+        
+        # Refresh
+        clips = await db.get_user_clips(self.target_user.id)
+        self.clips_view_ref.clips = clips
+        
+        if not clips:
+            self.clips_view_ref.current_page = 0
+            embed = TicketEmbeds.clips_empty_embed(self.target_user)
+        else:
+            self.clips_view_ref.current_page = min(self.clips_view_ref.current_page, len(clips) - 1)
+            embed = TicketEmbeds.clips_embed(
+                self.target_user, clips[self.clips_view_ref.current_page],
+                self.clips_view_ref.current_page, len(clips)
+            )
+        
+        self.clips_view_ref.update_buttons()
+        await interaction.edit_original_response(embed=embed, view=self.clips_view_ref)
+
+
+class DeleteClipSelect(discord.ui.Select):
+    def __init__(self, clips: list, target_user: discord.Member, clips_view_ref):
+        self.target_user = target_user
+        self.clips_view_ref = clips_view_ref
+        
+        options = []
+        for i, clip in enumerate(clips):
+            title = clip.get("title", "Untitled Clip")
+            if len(title) > 50:
+                title = title[:47] + "..."
+            options.append(discord.SelectOption(
+                label=f"#{i+1}: {title}",
+                value=str(i),
+                description=clip.get("url", "")[:100]
+            ))
+        
+        super().__init__(
+            placeholder="Select a clip to delete...",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        index = int(self.values[0])
+        db = interaction.client.db
+        success = await db.delete_user_clip(self.target_user.id, index)
+        
+        if not success:
+            await interaction.followup.send("Failed to delete clip.", ephemeral=True)
+            return
+        
+        # Refresh
+        clips = await db.get_user_clips(self.target_user.id)
+        self.clips_view_ref.clips = clips
+        
+        if not clips:
+            self.clips_view_ref.current_page = 0
+            embed = TicketEmbeds.clips_empty_embed(self.target_user)
+        else:
+            self.clips_view_ref.current_page = min(self.clips_view_ref.current_page, len(clips) - 1)
+            embed = TicketEmbeds.clips_embed(
+                self.target_user, clips[self.clips_view_ref.current_page],
+                self.clips_view_ref.current_page, len(clips)
+            )
+        
+        self.clips_view_ref.update_buttons()
+        await interaction.edit_original_response(embed=embed, view=self.clips_view_ref)
+
+
+class ClipsPaginationView(discord.ui.View):
+    def __init__(self, target_user: discord.Member, clips: list, is_owner: bool):
+        super().__init__(timeout=180)
+        self.target_user = target_user
+        self.clips = clips
+        self.is_owner = is_owner
+        self.current_page = 0
+        
+        # Remove owner-only buttons if not the owner
+        if not self.is_owner:
+            self.remove_item(self.btn_submit)
+            self.remove_item(self.btn_delete_modal)
+        
+        self.update_buttons()
+    
+    def update_buttons(self):
+        """Enable/disable navigation buttons based on current page."""
+        has_clips = len(self.clips) > 0
+        self.btn_prev.disabled = not has_clips or self.current_page <= 0
+        self.btn_next.disabled = not has_clips or self.current_page >= len(self.clips) - 1
+        
+        # Update select menu options if owner and has clips
+        if self.is_owner:
+            for item in self.children[:]:
+                if isinstance(item, DeleteClipSelect):
+                    self.remove_item(item)
+            if self.clips:
+                select = DeleteClipSelect(self.clips, self.target_user, self)
+                self.add_item(select)
+    
+    @discord.ui.button(label="Prev", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+        embed = TicketEmbeds.clips_embed(self.target_user, self.clips[self.current_page], self.current_page, len(self.clips))
+        self.update_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=0)
+    async def btn_next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < len(self.clips) - 1:
+            self.current_page += 1
+        embed = TicketEmbeds.clips_embed(self.target_user, self.clips[self.current_page], self.current_page, len(self.clips))
+        self.update_buttons()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="Submit Clip", style=discord.ButtonStyle.success, row=1)
+    async def btn_submit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SubmitClipModal(self.target_user, self)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="Delete Clip", style=discord.ButtonStyle.danger, row=1)
+    async def btn_delete_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = DeleteClipModal(self.target_user, self)
+        await interaction.response.send_modal(modal)
+
+
 class HistoryView(discord.ui.View):
     def __init__(self, target_user: discord.Member, history: dict, unrank_info: dict = None, obs_cooldown_days: float = 0.0, ranked_cooldown_days: float = 0.0, is_observer: bool = False, current_rank: str = "Unranked"):
         super().__init__(timeout=180)
@@ -135,6 +347,22 @@ class HistoryView(discord.ui.View):
     async def btn_obs(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = TicketEmbeds.history_observation_embed(self.target_user, self.history)
         await interaction.response.edit_message(embed=embed)
+
+    @discord.ui.button(label="Clips", style=discord.ButtonStyle.secondary, custom_id="hist_clips")
+    async def btn_clips(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        db = interaction.client.db
+        clips = await db.get_user_clips(self.target_user.id)
+        is_owner = (interaction.user.id == self.target_user.id)
+        
+        if not clips:
+            embed = TicketEmbeds.clips_empty_embed(self.target_user)
+        else:
+            embed = TicketEmbeds.clips_embed(self.target_user, clips[0], 0, len(clips))
+        
+        clips_view = ClipsPaginationView(self.target_user, clips, is_owner)
+        await interaction.followup.send(embed=embed, view=clips_view, ephemeral=True)
 
     @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, custom_id="hist_clear")
     async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
