@@ -152,7 +152,13 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
             content=f"⏳ Processing your {source.title()} clip... This may take a moment."
         )
         
-        result = await convert_clip_via_service(url, Config.CLIPS_SERVICE_URL)
+        scraped_title = ""
+        if source == "medal":
+            medal_data = await validate_and_scrape_medal(url)
+            if medal_data["valid"] and medal_data["title"]:
+                scraped_title = medal_data["title"]
+                
+        result = await convert_clip_via_service(url, Config.CLIPS_SERVICE_URL, title=scraped_title)
         
         if not result["success"]:
             await interaction.edit_original_response(
@@ -177,15 +183,15 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         
         # Refresh the clips view
         clips = await db.get_user_clips(self.target_user.id)
-        self.clips_view_ref.clips = clips
-        self.clips_view_ref.current_page = len(clips) - 1
-        
-        self.clips_view_ref.update_buttons()
-        
-        clip = clips[-1]
-        content_url = clip.get("clip_page_url") or clip.get("url", "")
-        content = f"**Clip {len(clips)} of {len(clips)}**\n{content_url}"
-        await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
+        if hasattr(self, 'clips_view_ref') and self.clips_view_ref:
+            self.clips_view_ref.clips = clips
+            self.clips_view_ref.current_page = len(clips) - 1
+            self.clips_view_ref.update_buttons()
+            
+            clip = clips[-1]
+            content_url = clip.get("clip_page_url") or clip.get("url", "")
+            content = f"{content_url}\n*Clip {len(clips)} of {len(clips)}*"
+            await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
 
 
 class DeleteClipModal(discord.ui.Modal, title="Delete a Clip"):
@@ -286,7 +292,7 @@ class DeleteClipSelect(discord.ui.Select):
                 self.clips_view_ref.current_page, len(clips)
             )
             content_url = clips[self.clips_view_ref.current_page].get("clip_page_url") or clips[self.clips_view_ref.current_page].get("url", "")
-            content = f"**Clip {self.clips_view_ref.current_page + 1} of {len(clips)}**\n{content_url}"
+            content = f"{content_url}\n*Clip {self.clips_view_ref.current_page + 1} of {len(clips)}*"
             await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
 
 
@@ -327,7 +333,7 @@ class ClipsPaginationView(discord.ui.View):
             self.current_page -= 1
         self.update_buttons()
         content_url = self.clips[self.current_page].get("clip_page_url") or self.clips[self.current_page].get("url", "")
-        content = f"**Clip {self.current_page + 1} of {len(self.clips)}**\n{content_url}"
+        content = f"{content_url}\n*Clip {self.current_page + 1} of {len(self.clips)}*"
         await interaction.edit_original_response(content=content, embed=None, view=self)
     
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=0)
@@ -337,7 +343,7 @@ class ClipsPaginationView(discord.ui.View):
             self.current_page += 1
         self.update_buttons()
         content_url = self.clips[self.current_page].get("clip_page_url") or self.clips[self.current_page].get("url", "")
-        content = f"**Clip {self.current_page + 1} of {len(self.clips)}**\n{content_url}"
+        content = f"{content_url}\n*Clip {self.current_page + 1} of {len(self.clips)}*"
         await interaction.edit_original_response(content=content, embed=None, view=self)
     
     @discord.ui.button(label="Submit Clip", style=discord.ButtonStyle.success, row=1)
@@ -388,7 +394,7 @@ class HistoryView(discord.ui.View):
         else:
             clips_view = ClipsPaginationView(self.target_user, clips, is_owner)
             content_url = clips[0].get("clip_page_url") or clips[0].get("url", "")
-            content = f"**Clip 1 of {len(clips)}**\n{content_url}"
+            content = f"{content_url}\n*Clip 1 of {len(clips)}*"
             await interaction.followup.send(content=content, embed=None, view=clips_view, ephemeral=True)
 
     @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, custom_id="hist_clear", row=1)
