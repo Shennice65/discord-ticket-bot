@@ -145,6 +145,8 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
             )
             return
         
+        source = get_clip_source(url)
+        
         # Send to conversion service
         await interaction.edit_original_response(
             content=f"⏳ Processing your {source.title()} clip... This may take a moment."
