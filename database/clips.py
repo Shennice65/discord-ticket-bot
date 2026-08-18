@@ -19,7 +19,7 @@ class ClipsMixin:
             return 0
         return len(doc.get("clips", []))
 
-    async def add_user_clip(self, user_id: int, url: str, title: str, thumbnail: str) -> bool:
+    async def add_user_clip(self, user_id: int, url: str, title: str, thumbnail: str, clip_page_url: str = "") -> bool:
         """Add a clip to a user's collection. Returns False if at max limit."""
         current_count = await self.get_user_clip_count(user_id)
         if current_count >= MAX_CLIPS_PER_USER:
@@ -29,6 +29,7 @@ class ClipsMixin:
             "url": url,
             "title": title or "Untitled Clip",
             "thumbnail": thumbnail or "",
+            "clip_page_url": clip_page_url or "",
             "submitted_at": datetime.now(timezone.utc).isoformat()
         }
 
