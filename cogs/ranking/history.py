@@ -182,14 +182,11 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         self.clips_view_ref.clips = clips
         self.clips_view_ref.current_page = len(clips) - 1
         
-        clip = clips[-1]
-        embed = TicketEmbeds.clips_embed(self.target_user, clip, len(clips) - 1, len(clips))
         self.clips_view_ref.update_buttons()
         
-        # Use raw /file/ endpoint for content so Discord natively embeds the video
         content_url = clip.get("clip_page_url") or clip.get("url", "")
-        content = content_url.replace("/clip/", "/file/")
-        await interaction.edit_original_response(content=content, embed=embed, view=self.clips_view_ref)
+        content = f"**Clip {len(clips)} of {len(clips)}**\n{content_url}"
+        await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
 
 
 class DeleteClipModal(discord.ui.Modal, title="Delete a Clip"):
@@ -237,7 +234,8 @@ class DeleteClipModal(discord.ui.Modal, title="Delete a Clip"):
                 self.clips_view_ref.current_page, len(clips)
             )
             content_url = clips[self.clips_view_ref.current_page].get("clip_page_url") or clips[self.clips_view_ref.current_page].get("url", "")
-            await interaction.edit_original_response(content=content_url.replace("/clip/", "/file/"), embed=embed, view=self.clips_view_ref)
+            content = f"**Clip {self.clips_view_ref.current_page + 1} of {len(clips)}**\n{content_url}"
+            await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
 
 
 class DeleteClipSelect(discord.ui.Select):
@@ -289,7 +287,8 @@ class DeleteClipSelect(discord.ui.Select):
                 self.clips_view_ref.current_page, len(clips)
             )
             content_url = clips[self.clips_view_ref.current_page].get("clip_page_url") or clips[self.clips_view_ref.current_page].get("url", "")
-            await interaction.edit_original_response(content=content_url.replace("/clip/", "/file/"), embed=embed, view=self.clips_view_ref)
+            content = f"**Clip {self.clips_view_ref.current_page + 1} of {len(clips)}**\n{content_url}"
+            await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
 
 
 class ClipsPaginationView(discord.ui.View):
@@ -327,20 +326,20 @@ class ClipsPaginationView(discord.ui.View):
         await interaction.response.defer()
         if self.current_page > 0:
             self.current_page -= 1
-        embed = TicketEmbeds.clips_embed(self.target_user, self.clips[self.current_page], self.current_page, len(self.clips))
         self.update_buttons()
         content_url = self.clips[self.current_page].get("clip_page_url") or self.clips[self.current_page].get("url", "")
-        await interaction.edit_original_response(content=content_url.replace("/clip/", "/file/"), embed=embed, view=self)
+        content = f"**Clip {self.current_page + 1} of {len(self.clips)}**\n{content_url}"
+        await interaction.edit_original_response(content=content, embed=None, view=self)
     
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, row=0)
     async def btn_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         if self.current_page < len(self.clips) - 1:
             self.current_page += 1
-        embed = TicketEmbeds.clips_embed(self.target_user, self.clips[self.current_page], self.current_page, len(self.clips))
         self.update_buttons()
         content_url = self.clips[self.current_page].get("clip_page_url") or self.clips[self.current_page].get("url", "")
-        await interaction.edit_original_response(content=content_url.replace("/clip/", "/file/"), embed=embed, view=self)
+        content = f"**Clip {self.current_page + 1} of {len(self.clips)}**\n{content_url}"
+        await interaction.edit_original_response(content=content, embed=None, view=self)
     
     @discord.ui.button(label="Submit Clip", style=discord.ButtonStyle.success, row=1)
     async def btn_submit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -388,10 +387,10 @@ class HistoryView(discord.ui.View):
             clips_view = ClipsPaginationView(self.target_user, clips, is_owner)
             await interaction.followup.send(content=None, embed=embed, view=clips_view, ephemeral=True)
         else:
-            embed = TicketEmbeds.clips_embed(self.target_user, clips[0], 0, len(clips))
             clips_view = ClipsPaginationView(self.target_user, clips, is_owner)
             content_url = clips[0].get("clip_page_url") or clips[0].get("url", "")
-            await interaction.followup.send(content=content_url.replace("/clip/", "/file/"), embed=embed, view=clips_view, ephemeral=True)
+            content = f"**Clip 1 of {len(clips)}**\n{content_url}"
+            await interaction.followup.send(content=content, embed=None, view=clips_view, ephemeral=True)
 
     @discord.ui.button(label="Clear History", style=discord.ButtonStyle.danger, custom_id="hist_clear", row=1)
     async def btn_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
