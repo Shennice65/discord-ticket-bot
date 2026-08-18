@@ -271,6 +271,28 @@ class DeleteClipSelect(discord.ui.Select):
         
         index = int(self.values[0])
         db = interaction.client.db
+        
+        # Get clip before deleting it from DB to get the filename/hash
+        clips = await db.get_user_clips(self.target_user.id)
+        if 0 <= index < len(clips):
+            clip = clips[index]
+            clip_page_url = clip.get("clip_page_url", "")
+            
+            # If we have a backend URL and a password, try to delete the R2 files
+            if clip_page_url and Config.CLIPS_SERVICE_URL and Config.CLIPS_ADMIN_PASSWORD:
+                # clip_page_url format: https://.../clip/filename.mp4
+                filename = clip_page_url.split('/')[-1]
+                if filename:
+                    try:
+                        delete_url = f"{Config.CLIPS_SERVICE_URL.rstrip('/')}/api/delete/{filename}"
+                        headers = {"Authorization": f"Bearer {Config.CLIPS_ADMIN_PASSWORD}"}
+                        async with aiohttp.ClientSession() as session:
+                            # We don't strictly need to wait or check success, but it's good practice
+                            async with session.delete(delete_url, headers=headers) as resp:
+                                pass
+                    except Exception as e:
+                        print(f"Error calling clips delete API: {e}")
+
         success = await db.delete_user_clip(self.target_user.id, index)
         
         if not success:
