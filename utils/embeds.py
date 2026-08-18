@@ -447,8 +447,8 @@ class TicketEmbeds:
         )
         
         # Show source link if we have a clip page URL (so user can see original)
-        if clip_page_url and source_url:
-            embed.description = f"**[Watch Clip]({clip_page_url})**\n*[Original Source]({source_url})*"
+        if clip_page_url:
+            embed.description = f"**[Watch Clip]({clip_page_url})**"
         elif display_url:
             embed.description = f"**[Watch Clip]({display_url})**"
 
