@@ -9,7 +9,7 @@ import aiohttp
 from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
-from utils.clips_utils import is_valid_clip_url, get_clip_source, convert_clip_via_service
+from utils.clips_utils import is_valid_clip_url, get_clip_source, convert_clip_via_service, validate_and_scrape_medal
 
 def can_clear_history(user: discord.Member | discord.User) -> bool:
     if user.id == Config.MASTER_ADMIN_ID:
