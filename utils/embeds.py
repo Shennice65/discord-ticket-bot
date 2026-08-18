@@ -433,19 +433,24 @@ class TicketEmbeds:
     def clips_embed(user: discord.Member, clip: dict, page: int, total: int) -> discord.Embed:
         """Build a rich embed for a single clip page."""
         title = clip.get("title", "Untitled Clip")
-        url = clip.get("url", "")
-        thumbnail = clip.get("thumbnail", "")
+        source_url = clip.get("url", "")
+        clip_page_url = clip.get("clip_page_url", "")
         submitted_at = clip.get("submitted_at", "")
+
+        # Link to the clip page (embeddable) if available, fall back to source
+        display_url = clip_page_url or source_url
 
         embed = discord.Embed(
             title=title,
-            url=url,
-            description=f"**[Watch on Medal.tv]({url})**",
+            url=display_url,
             color=discord.Color(0x2b2d31)
         )
-
-        if thumbnail:
-            embed.set_image(url=thumbnail)
+        
+        # Show source link if we have a clip page URL (so user can see original)
+        if clip_page_url and source_url:
+            embed.description = f"**[Watch Clip]({clip_page_url})**\n*[Original Source]({source_url})*"
+        elif display_url:
+            embed.description = f"**[Watch Clip]({display_url})**"
 
         if submitted_at:
             date_str = submitted_at[:10]
@@ -453,6 +458,11 @@ class TicketEmbeds:
 
         embed.set_author(name=f"{user.display_name}'s Clips", icon_url=user.display_avatar.url)
         embed.set_footer(text=f"Clip {page + 1} of {total} | User ID: {user.id}")
+        
+        thumbnail = clip.get("thumbnail")
+        if thumbnail:
+            embed.set_image(url=thumbnail)
+            
         return embed
 
     @staticmethod
