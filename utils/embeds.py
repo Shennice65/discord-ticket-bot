@@ -428,3 +428,51 @@ class TicketEmbeds:
             
         embed.set_footer(text="Ranked 1v1 Matches Only")
         return embed
+
+    @staticmethod
+    def clips_embed(user: discord.Member, clip: dict, page: int, total: int) -> discord.Embed:
+        """Build a rich embed for a single clip page."""
+        title = clip.get("title", "Untitled Clip")
+        source_url = clip.get("url", "")
+        clip_page_url = clip.get("clip_page_url", "")
+        submitted_at = clip.get("submitted_at", "")
+
+        # Link to the clip page (embeddable) if available, fall back to source
+        display_url = clip_page_url or source_url
+
+        embed = discord.Embed(
+            title=title,
+            url=display_url,
+            color=discord.Color(0x2b2d31)
+        )
+        
+        # Show source link if we have a clip page URL (so user can see original)
+        if clip_page_url:
+            embed.description = f"**[Watch Clip]({clip_page_url})**"
+        elif display_url:
+            embed.description = f"**[Watch Clip]({display_url})**"
+
+        if submitted_at:
+            date_str = submitted_at[:10]
+            embed.add_field(name="Submitted", value=date_str, inline=True)
+
+        embed.set_author(name=f"{user.display_name}'s Clips", icon_url=user.display_avatar.url)
+        embed.set_footer(text=f"Clip {page + 1} of {total} | User ID: {user.id}")
+        
+        thumbnail = clip.get("thumbnail")
+        if thumbnail:
+            embed.set_image(url=thumbnail)
+            
+        return embed
+
+    @staticmethod
+    def clips_empty_embed(user: discord.Member) -> discord.Embed:
+        """Embed shown when a user has no clips."""
+        embed = discord.Embed(
+            title="Clips",
+            description="*No clips submitted yet.*\n\nUse the **Submit Clip** button to add your Medal.tv highlights!",
+            color=discord.Color(0x2b2d31)
+        )
+        embed.set_author(name=f"{user.display_name}'s Clips", icon_url=user.display_avatar.url)
+        embed.set_footer(text=f"User ID: {user.id}")
+        return embed

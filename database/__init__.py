@@ -13,7 +13,8 @@ from .ladder import LadderMixin
 from .tickets import TicketsMixin
 from .history import HistoryMixin
 from .admin import AdminMixin
+from .clips import ClipsMixin
 
-class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin):
+class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin):
     def __init__(self):
         super().__init__()

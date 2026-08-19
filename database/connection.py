@@ -19,6 +19,7 @@ class ConnectionMixin:
         self.undo_logs = None
         self.bot_settings = None
         self.bot_config = None
+        self.player_clips = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -39,6 +40,7 @@ class ConnectionMixin:
             self.undo_logs = self.db.undo_logs
             self.bot_settings = self.db.bot_settings
             self.bot_config = self.db.bot_config
+            self.player_clips = self.db.player_clips
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -59,6 +61,7 @@ class ConnectionMixin:
                 await ensure_unique_index(self.ranked_results, "ticket_id")
                 await ensure_unique_index(self.observation_results, "id")
                 await ensure_unique_index(self.observation_results, "ticket_id")
+                await ensure_unique_index(self.db.player_clips, "user_id")
                 
                 await self.tickets.create_index("channel_id")
                 await self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])
