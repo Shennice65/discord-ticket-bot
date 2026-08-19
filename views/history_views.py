@@ -110,8 +110,8 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         
         # Check clip limit
         count = await db.get_user_clip_count(self.target_user.id)
-        if count >= 5:
-            await interaction.edit_original_response(content="You've reached the maximum of **5 clips**. Delete one first!")
+        if count >= 10:
+            await interaction.edit_original_response(content="You've reached the maximum of **10 clips**. Delete one first!")
             return
         
         # Validate URL is Medal or TikTok

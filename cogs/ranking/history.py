@@ -130,8 +130,8 @@ class History(commands.Cog):
         
         # Check clip limit
         count = await db.get_user_clip_count(interaction.user.id)
-        if count >= 5:
-            await interaction.followup.send("You've reached the maximum of **5 clips**. Delete one first via `/stats`!")
+        if count >= 10:
+            await interaction.followup.send("You've reached the maximum of **10 clips**. Delete one first via `/stats`!")
             return
             
         await interaction.followup.send("Processing your uploaded clip... This may take a moment.")

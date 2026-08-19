@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Dict
 
-MAX_CLIPS_PER_USER = 5
+MAX_CLIPS_PER_USER = 10
 
 
 class ClipsMixin:
