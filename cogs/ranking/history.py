@@ -6,7 +6,7 @@ from typing import Optional
 
 from config import Config
 from utils.embeds import TicketEmbeds
-from utils.clips_utils import convert_clip_via_service, check_clip_progress, format_clip_display
+from utils.clips_utils import convert_clip_via_service, check_clip_progress
 
 # Import our modularized views
 from views.history_views import (
@@ -205,27 +205,85 @@ class History(commands.Cog):
             
         await interaction.edit_original_response(content=f"Successfully uploaded and saved **{video.filename}**! View it in your `/stats`.")
 
-    @app_commands.command(name="shareclip", description="Share one of your clips to the channel")
-    @app_commands.describe(clip="The clip number to share (e.g. 1 for your first clip)")
-    async def shareclip(self, interaction: discord.Interaction, clip: int):
+    @app_commands.command(name="shareclip", description="Share a clip to the channel")
+    @app_commands.describe(user="The user whose clip to share (defaults to yourself)")
+    async def shareclip(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        target_user = user or interaction.user
         db = interaction.client.db
-        clips = await db.get_user_clips(interaction.user.id)
+        clips = await db.get_user_clips(target_user.id)
         
         if not clips:
-            await interaction.response.send_message("You don't have any clips to share! Upload some using `/uploadclip` or add them via `/stats`.", ephemeral=True)
+            if target_user.id == interaction.user.id:
+                await interaction.response.send_message("You don't have any clips to share! Upload some using `/uploadclip` or add them via `/stats`.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"**{target_user.display_name}** doesn't have any clips.", ephemeral=True)
             return
-            
-        if clip < 1 or clip > len(clips):
-            await interaction.response.send_message(f"Invalid clip number! You only have {len(clips)} clip(s). Please choose a number between 1 and {len(clips)}.", ephemeral=True)
-            return
-            
-        clip_data = clips[clip - 1]
-        content = format_clip_display(clip_data, clip - 1, len(clips))
+        
+        # Build select menu options from clips
+        options = []
+        for i, clip in enumerate(clips[:25]):  # Discord select max 25 options
+            title = clip.get("title", "Untitled Clip")
+            if len(title) > 80:
+                title = title[:77] + "..."
+            options.append(discord.SelectOption(
+                label=f"#{i+1}: {title}",
+                value=str(i)
+            ))
+        
+        view = ShareClipSelectView(target_user, clips, options)
+        await interaction.response.send_message(
+            f"Select a clip from **{target_user.display_name}** to share:",
+            view=view,
+            ephemeral=True
+        )
+
+
+class ShareClipSelectView(discord.ui.View):
+    """Ephemeral dropdown for picking which clip to share publicly."""
+    def __init__(self, target_user, clips, options):
+        super().__init__(timeout=60)
+        self.target_user = target_user
+        self.clips = clips
+        
+        self.select = discord.ui.Select(
+            placeholder="Choose a clip to share...",
+            options=options
+        )
+        self.select.callback = self.on_select
+        self.add_item(self.select)
+    
+    async def on_select(self, interaction: discord.Interaction):
+        index = int(self.select.values[0])
+        clip_data = self.clips[index]
+        content_url = clip_data.get("clip_page_url") or clip_data.get("url", "")
+        
+        # Build uploaded date string
+        date_str = ""
+        submitted_at = clip_data.get("submitted_at")
+        if submitted_at:
+            try:
+                from datetime import datetime
+                if submitted_at.endswith('Z'):
+                    submitted_at = submitted_at[:-1] + '+00:00'
+                dt = datetime.fromisoformat(submitted_at)
+                timestamp = int(dt.timestamp())
+                date_str = f" • Uploaded <t:{timestamp}:d>"
+            except Exception:
+                pass
+        
         stars = len(clip_data.get("stars", []))
         skulls = len(clip_data.get("skulls", []))
         
-        view = ShareClipView(interaction.user.id, clip - 1, stars, skulls)
-        await interaction.response.send_message(f"**{interaction.user.mention} shared a clip:**\n{content}", view=view)
+        view = ShareClipView(self.target_user.id, index, stars, skulls)
+        
+        # Send public message to the channel
+        await interaction.channel.send(
+            f"**{self.target_user.display_name}'s clip**{date_str}\n{content_url}",
+            view=view
+        )
+        
+        # Dismiss the ephemeral picker
+        await interaction.response.edit_message(content="Clip shared!", view=None)
 
 
 async def setup(bot):

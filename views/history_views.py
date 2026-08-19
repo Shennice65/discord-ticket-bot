@@ -449,25 +449,27 @@ class ShareClipView(discord.ui.View):
         await self.handle_reaction(interaction, "skull")
 
     async def handle_reaction(self, interaction: discord.Interaction, reaction_type: str):
-        # Parse the owner_id and clip_index from the message if this is a
-        # reconstituted persistent view (owner_id will be 0 after restart).
         owner_id = self.owner_id
         clip_index = self.clip_index
 
         if owner_id == 0:
-            # Recover from the message content.
-            # The message starts with "**<@owner_id> shared a clip:**"
-            # We need to look up clip data from the DB using the message.
-            # Fallback: parse the mention from the message content.
+            # After a bot restart, recover owner/clip by looking up the URL in the DB
             msg = interaction.message
             if msg and msg.content:
                 import re
-                mention_match = re.search(r"<@!?(\d+)>", msg.content)
-                index_match = re.search(r"Clip (\d+) of \d+", msg.content)
-                if mention_match:
-                    owner_id = int(mention_match.group(1))
-                if index_match:
-                    clip_index = int(index_match.group(1)) - 1  # Convert to 0-indexed
+                # Extract the clip URL from the message (first URL found)
+                url_match = re.search(r"(https?://\S+)", msg.content)
+                if url_match:
+                    clip_url = url_match.group(1)
+                    db = interaction.client.db
+                    # Search all players' clips for this URL
+                    async for player in db.db.player_clips.find({"clips.clip_page_url": clip_url}):
+                        owner_id = player["user_id"]
+                        for i, clip in enumerate(player.get("clips", [])):
+                            if clip.get("clip_page_url") == clip_url:
+                                clip_index = i
+                                break
+                        break
 
         if owner_id == 0:
             await interaction.response.send_message("Could not determine clip owner.", ephemeral=True)
