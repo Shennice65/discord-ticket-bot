@@ -106,16 +106,21 @@ class TicketBot(commands.Bot):
     
     @commands.command(name="sync")
     @commands.has_permissions(administrator=True)
-    async def sync_commands(self, ctx):
+    async def sync_commands(self, ctx, option: str = None):
         msg = await ctx.send("Syncing commands...")
         try:
-            if Config.GUILD_ID:
+            if option == "clear":
+                self.tree.clear_commands(guild=None)
+                await self.tree.sync()
+                await msg.edit(content="Cleared global commands! (Old deleted commands will now disappear)")
+            elif Config.GUILD_ID:
                 guild = discord.Object(id=Config.GUILD_ID)
                 self.tree.copy_global_to(guild=guild)
                 synced = await self.tree.sync(guild=guild)
+                await msg.edit(content=f"Synced {len(synced)} commands to guild {Config.GUILD_ID}!")
             else:
                 synced = await self.tree.sync()
-            await msg.edit(content=f"Synced {len(synced)} commands successfully!")
+                await msg.edit(content=f"Synced {len(synced)} commands globally!")
         except Exception as e:
             await msg.edit(content=f"Error: {e}")
 
