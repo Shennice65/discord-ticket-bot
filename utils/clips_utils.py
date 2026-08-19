@@ -185,3 +185,28 @@ async def delete_clip_from_service(clip_page_url: str, service_base_url: str, ad
     except Exception as e:
         print(f"Error deleting from service: {e}")
         return False
+
+
+def format_clip_display(clip_data: Dict, current_index: int, total_clips: int) -> str:
+    """Format a clip for display in Discord messages, including title, URL, and upload date."""
+    content_url = clip_data.get("clip_page_url") or clip_data.get("url", "")
+    title = clip_data.get("title", "Untitled Clip")
+    
+    date_str = ""
+    submitted_at = clip_data.get("submitted_at")
+    if submitted_at:
+        try:
+            from datetime import datetime
+            # Handle ISO format with Z or +00:00
+            if submitted_at.endswith('Z'):
+                submitted_at = submitted_at[:-1] + '+00:00'
+            dt = datetime.fromisoformat(submitted_at)
+            timestamp = int(dt.timestamp())
+            # :d for date like '08/19/2026', or :R for '2 hours ago'
+            # The user asked for "upload date", let's use <t:{timestamp}:D> (August 19, 2026) 
+            date_str = f" • Uploaded <t:{timestamp}:d>"
+        except Exception:
+            pass
+            
+    # current_index is 0-based
+    return f"**{title}**{date_str}\n{content_url}\n*Clip {current_index + 1} of {total_clips}*"

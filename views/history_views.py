@@ -4,7 +4,7 @@ import asyncio
 from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
-from utils.clips_utils import is_valid_clip_url, get_clip_source, convert_clip_via_service, validate_and_scrape_medal, check_clip_progress
+from utils.clips_utils import is_valid_clip_url, get_clip_source, convert_clip_via_service, validate_and_scrape_medal, check_clip_progress, format_clip_display
 
 class ClearHistoryView(discord.ui.View):
     def __init__(self, user_id: int, user_name: str):
@@ -210,9 +210,7 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
             self.clips_view_ref.update_buttons()
             
             clip = clips[-1]
-            content_url = clip.get("clip_page_url") or clip.get("url", "")
-            title = clip.get("title", "Untitled Clip")
-            content = f"**{title}**\n{content_url}\n*Clip {len(clips)} of {len(clips)}*"
+            content = format_clip_display(clip, len(clips) - 1, len(clips))
             await interaction.edit_original_response(content=content, embed=None, view=self.clips_view_ref)
 
 class ClipNavigationSelect(discord.ui.Select):
@@ -245,9 +243,7 @@ class ClipNavigationSelect(discord.ui.Select):
         self.clips_view_ref.update_buttons()
         
         clips = self.clips_view_ref.clips
-        content_url = clips[index].get("clip_page_url") or clips[index].get("url", "")
-        title = clips[index].get("title", "Untitled Clip")
-        content = f"**{title}**\n{content_url}\n*Clip {index + 1} of {len(clips)}*"
+        content = format_clip_display(clips[index], index, len(clips))
         
         await interaction.response.edit_message(content=content, embed=None, view=self.clips_view_ref)
 
@@ -295,9 +291,7 @@ class ConfirmDeleteClipView(discord.ui.View):
             else:
                 self.clips_view_ref.current_page = min(self.clips_view_ref.current_page, len(self.clips_view_ref.clips) - 1)
                 self.clips_view_ref.update_buttons()
-                content_url = self.clips_view_ref.clips[self.clips_view_ref.current_page].get("clip_page_url") or self.clips_view_ref.clips[self.clips_view_ref.current_page].get("url", "")
-                title = self.clips_view_ref.clips[self.clips_view_ref.current_page].get("title", "Untitled Clip")
-                content = f"**{title}**\n{content_url}\n*Clip {self.clips_view_ref.current_page + 1} of {len(self.clips_view_ref.clips)}*"
+                content = format_clip_display(self.clips_view_ref.clips[self.clips_view_ref.current_page], self.clips_view_ref.current_page, len(self.clips_view_ref.clips))
                 if self.clips_view_ref.message:
                     await self.clips_view_ref.message.edit(content=content, embed=None, view=self.clips_view_ref)
                 
@@ -423,9 +417,7 @@ class HistoryView(discord.ui.View):
             clips_view.message = msg
         else:
             clips_view = ClipsPaginationView(self.target_user, clips, is_owner)
-            content_url = clips[0].get("clip_page_url") or clips[0].get("url", "")
-            title = clips[0].get("title", "Untitled Clip")
-            content = f"**{title}**\n{content_url}\n*Clip 1 of {len(clips)}*"
+            content = format_clip_display(clips[0], 0, len(clips))
             msg = await interaction.followup.send(content=content, embed=None, view=clips_view, ephemeral=True, wait=True)
             clips_view.message = msg
 

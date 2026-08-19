@@ -74,11 +74,22 @@ class TicketBot(commands.Bot):
         
     @tasks.loop(minutes=14)
     async def ping_clips_service(self):
-        if Config.CLIPS_SERVICE_URL:
+        url = Config.CLIPS_SERVICE_URL
+        if getattr(self, 'db', None) and getattr(self.db, 'db', None) is not None:
+            try:
+                config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
+                if config_doc and config_doc.get("CLIPS_SERVICE_URL"):
+                    url = config_doc.get("CLIPS_SERVICE_URL")
+            except Exception:
+                pass
+                
+        if url:
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(Config.CLIPS_SERVICE_URL, timeout=10) as resp:
+                    async with session.get(url, timeout=60) as resp:
                         pass
+            except asyncio.TimeoutError:
+                print("Ping to clips service timed out (Render is likely waking it up).")
             except Exception as e:
                 print(f"Failed to ping clips service: {e}")
                 

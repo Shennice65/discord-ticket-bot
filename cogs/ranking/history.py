@@ -6,7 +6,7 @@ from typing import Optional
 
 from config import Config
 from utils.embeds import TicketEmbeds
-from utils.clips_utils import convert_clip_via_service, check_clip_progress
+from utils.clips_utils import convert_clip_via_service, check_clip_progress, format_clip_display
 
 # Import our modularized views
 from views.history_views import (
@@ -220,13 +220,12 @@ class History(commands.Cog):
             return
             
         clip_data = clips[clip - 1]
-        content_url = clip_data.get("clip_page_url") or clip_data.get("url", "")
-        title = clip_data.get("title", "Untitled Clip")
+        content = format_clip_display(clip_data, clip - 1, len(clips))
         stars = len(clip_data.get("stars", []))
         skulls = len(clip_data.get("skulls", []))
         
         view = ShareClipView(interaction.user.id, clip - 1, stars, skulls)
-        await interaction.response.send_message(f"**{interaction.user.mention} shared a clip:** {title}\n{content_url}", view=view)
+        await interaction.response.send_message(f"**{interaction.user.mention} shared a clip:**\n{content}", view=view)
 
 
 async def setup(bot):
