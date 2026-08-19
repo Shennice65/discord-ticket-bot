@@ -432,32 +432,53 @@ class HistoryView(discord.ui.View):
 
 
 class ShareClipView(discord.ui.View):
-    def __init__(self, owner_id: int, clip_index: int, stars: int = 0, skulls: int = 0):
+    def __init__(self, owner_id: int = 0, clip_index: int = 0, stars: int = 0, skulls: int = 0):
         super().__init__(timeout=None)
         self.owner_id = owner_id
         self.clip_index = clip_index
-        
-        self.btn_star = discord.ui.Button(label=f"⭐ {stars}", style=discord.ButtonStyle.secondary)
-        self.btn_star.callback = self.toggle_star
-        self.add_item(self.btn_star)
-        
-        self.btn_skull = discord.ui.Button(label=f"💀 {skulls}", style=discord.ButtonStyle.secondary)
-        self.btn_skull.callback = self.toggle_skull
-        self.add_item(self.btn_skull)
+        # Set initial label counts (used when first sending the message)
+        self.btn_star.label = f"⭐ {stars}"
+        self.btn_skull.label = f"💀 {skulls}"
 
-    async def toggle_star(self, interaction: discord.Interaction):
+    @discord.ui.button(label="⭐ 0", style=discord.ButtonStyle.secondary, custom_id="shareclip_star")
+    async def btn_star(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_reaction(interaction, "star")
-        
-    async def toggle_skull(self, interaction: discord.Interaction):
+
+    @discord.ui.button(label="💀 0", style=discord.ButtonStyle.secondary, custom_id="shareclip_skull")
+    async def btn_skull(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_reaction(interaction, "skull")
-        
+
     async def handle_reaction(self, interaction: discord.Interaction, reaction_type: str):
+        # Parse the owner_id and clip_index from the message if this is a
+        # reconstituted persistent view (owner_id will be 0 after restart).
+        owner_id = self.owner_id
+        clip_index = self.clip_index
+
+        if owner_id == 0:
+            # Recover from the message content.
+            # The message starts with "**<@owner_id> shared a clip:**"
+            # We need to look up clip data from the DB using the message.
+            # Fallback: parse the mention from the message content.
+            msg = interaction.message
+            if msg and msg.content:
+                import re
+                mention_match = re.search(r"<@!?(\d+)>", msg.content)
+                index_match = re.search(r"Clip (\d+) of \d+", msg.content)
+                if mention_match:
+                    owner_id = int(mention_match.group(1))
+                if index_match:
+                    clip_index = int(index_match.group(1)) - 1  # Convert to 0-indexed
+
+        if owner_id == 0:
+            await interaction.response.send_message("Could not determine clip owner.", ephemeral=True)
+            return
+
         db = interaction.client.db
-        res = await db.toggle_clip_reaction(self.owner_id, self.clip_index, interaction.user.id, reaction_type)
+        res = await db.toggle_clip_reaction(owner_id, clip_index, interaction.user.id, reaction_type)
         if not res:
             await interaction.response.send_message("Clip not found.", ephemeral=True)
             return
-            
+
         self.btn_star.label = f"⭐ {res['stars']}"
         self.btn_skull.label = f"💀 {res['skulls']}"
         await interaction.response.edit_message(view=self)

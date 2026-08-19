@@ -38,6 +38,10 @@ class TicketBot(commands.Bot):
         print("Starting setup_hook...")
         await self.db.init()
         
+        # Register persistent views so buttons on old messages still work after restart
+        from views.history_views import ShareClipView
+        self.add_view(ShareClipView())
+        
         print("Loading cogs...")
         await self.load_extension("cogs.tickets.core")
         await self.load_extension("cogs.tickets.admin")
