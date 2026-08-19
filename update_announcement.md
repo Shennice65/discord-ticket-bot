@@ -6,4 +6,3 @@
 - **Sharing:** Use `/shareclip clip: <number>` to post your video directly to the chat for everyone to see.
 - **Reactions:** When a clip is shared, you can rate it using the star and skull buttons underneath. The bot permanently saves these counts on your stats page.
 
-Try uploading your first clip and share it to see how it works!
