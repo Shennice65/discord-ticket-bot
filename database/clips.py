@@ -56,3 +56,46 @@ class ClipsMixin:
             {"$set": {"clips": clips}}
         )
         return True
+
+    async def toggle_clip_reaction(self, owner_id: int, clip_index: int, user_id: int, reaction_type: str) -> dict:
+        """Toggles a reaction and returns the new counts."""
+        doc = await self.db.player_clips.find_one({"user_id": owner_id})
+        if not doc or clip_index < 0 or clip_index >= len(doc.get("clips", [])):
+            return None
+            
+        clip = doc["clips"][clip_index]
+        stars = set(clip.get("stars", []))
+        skulls = set(clip.get("skulls", []))
+        
+        has_starred = user_id in stars
+        has_skulled = user_id in skulls
+        
+        if reaction_type == "star":
+            if has_starred:
+                stars.remove(user_id)
+                has_starred = False
+            else:
+                stars.add(user_id)
+                has_starred = True
+        elif reaction_type == "skull":
+            if has_skulled:
+                skulls.remove(user_id)
+                has_skulled = False
+            else:
+                skulls.add(user_id)
+                has_skulled = True
+                
+        await self.db.player_clips.update_one(
+            {"user_id": owner_id},
+            {"$set": {
+                f"clips.{clip_index}.stars": list(stars),
+                f"clips.{clip_index}.skulls": list(skulls)
+            }}
+        )
+        
+        return {
+            "stars": len(stars), 
+            "skulls": len(skulls), 
+            "has_starred": has_starred, 
+            "has_skulled": has_skulled
+        }

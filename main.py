@@ -1,8 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import os
 import sys
+import aiohttp
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -47,6 +48,8 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.ranking.cooldowns")
         print("Cogs loaded. Syncing commands...")
         
+        self.ping_clips_service.start()
+        
         try:
             if Config.GUILD_ID:
                 guild = discord.Object(id=Config.GUILD_ID)
@@ -68,6 +71,20 @@ class TicketBot(commands.Bot):
         print(f"Bot is in {len(self.guilds)} guilds")
         print("------")
         
+    @tasks.loop(minutes=14)
+    async def ping_clips_service(self):
+        if Config.CLIPS_SERVICE_URL:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(Config.CLIPS_SERVICE_URL, timeout=10) as resp:
+                        pass
+            except Exception as e:
+                print(f"Failed to ping clips service: {e}")
+                
+    @ping_clips_service.before_loop
+    async def before_ping_clips_service(self):
+        await self.wait_until_ready()
+
     async def on_member_remove(self, member):
         try:
             await self.db.remove_player_from_ladder(member.id)

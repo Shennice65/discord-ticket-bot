@@ -266,6 +266,36 @@ class TicketAdmin(commands.Cog):
             
         await interaction.followup.send(f"Successfully closed {closed_count} open ticket(s) for {target.mention} in the database.", ephemeral=True)
 
+    @app_commands.command(name="announce", description="Send the update_announcement.md text to the configured channel (Master Admin only)")
+    async def announce(self, interaction: discord.Interaction):
+        if interaction.user.id != Config.MASTER_ADMIN_ID:
+            await interaction.response.send_message("Only the Master Admin can use this command.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
+        channel_id = config_doc.get("ANNOUNCEMENT_CHANNLE") if config_doc else None
+        
+        if not channel_id:
+            await interaction.followup.send("ANNOUNCEMENT_CHANNLE is not set in the database.")
+            return
+            
+        channel = interaction.client.get_channel(int(channel_id))
+        if not channel:
+            await interaction.followup.send(f"Could not find channel with ID {channel_id}.")
+            return
+            
+        if not os.path.exists("update_announcement.md"):
+            await interaction.followup.send("update_announcement.md file not found!")
+            return
+            
+        with open("update_announcement.md", "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        await channel.send(content)
+        await interaction.followup.send("Announcement sent successfully from update_announcement.md!")
+
 
 async def setup(bot):
     await bot.add_cog(TicketAdmin(bot))

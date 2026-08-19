@@ -159,3 +159,29 @@ async def check_clip_progress(task_id: str, service_base_url: str) -> Dict:
                 return {"success": True, "progress_data": data["progress_data"], "error": ""}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+async def delete_clip_from_service(clip_page_url: str, service_base_url: str, admin_password: str) -> bool:
+    """Send a request to the backend service to completely delete a clip from Cloudflare R2."""
+    if not clip_page_url or not service_base_url:
+        return False
+        
+    try:
+        filename = clip_page_url.split('/')[-1]
+        api_url = f"{service_base_url.rstrip('/')}/api/delete/{filename}"
+        
+        headers = {}
+        if admin_password:
+            headers["Authorization"] = f"Bearer {admin_password}"
+            
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                api_url,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                data = await resp.json()
+                return data.get("success", False)
+    except Exception as e:
+        print(f"Error deleting from service: {e}")
+        return False
