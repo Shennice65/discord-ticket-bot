@@ -344,11 +344,14 @@ class LadderMixin:
             
             await self.player_ranks.update_one(
                 {"user_id": winner_id},
-                {"$inc": {"win_streak": 1}}
+                {"$inc": {"win_streak": 1, "wins": 1, "matches": 1}}
             )
             await self.player_ranks.update_one(
                 {"user_id": loser_id},
-                {"$set": {"win_streak": 0}}
+                {
+                    "$set": {"win_streak": 0},
+                    "$inc": {"losses": 1, "matches": 1}
+                }
             )
             
             if winner_key <= loser_key:

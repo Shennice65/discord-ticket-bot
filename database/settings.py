@@ -77,6 +77,18 @@ class SettingsMixin:
         # Delete the log so it can't be undone again
         await self.undo_logs.delete_one({"_id": log["_id"]})
         
+        # Adjust wins/losses/matches if it was a match result
+        if log.get("action_type") == "match_winner":
+            await self.player_ranks.update_one(
+                {"user_id": target_id},
+                {"$inc": {"wins": -1, "matches": -1}}
+            )
+        elif log.get("action_type") == "match_loser":
+            await self.player_ranks.update_one(
+                {"user_id": target_id},
+                {"$inc": {"losses": -1, "matches": -1}}
+            )
+            
         return True, action_desc
             
     async def get_ranking_config(self) -> dict:
