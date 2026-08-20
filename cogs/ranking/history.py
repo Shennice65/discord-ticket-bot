@@ -278,7 +278,7 @@ class ShareClipSelectView(discord.ui.View):
         
         # Send public message to the channel
         await interaction.channel.send(
-            f"**{self.target_user.display_name}'s clip**{date_str}\n{content_url}",
+            f"**{self.target_user.display_name}'s clip**{date_str} • Shared by {interaction.user.mention}\n{content_url}",
             view=view
         )
         
