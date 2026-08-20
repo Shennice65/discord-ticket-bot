@@ -38,8 +38,8 @@ class TestRankedEmbed(unittest.TestCase):
         
         self.assertEqual(embed.fields[2].name, "\u200B")
         self.assertIn("[Winrate]", embed.fields[2].value)
-        self.assertIn("75.0% *(15 matches)*", embed.fields[2].value)
-        self.assertIn("60.0% *(30 matches)*", embed.fields[2].value)
+        self.assertIn("75.0% (15 matches)", embed.fields[2].value)
+        self.assertIn("60.0% (30 matches)", embed.fields[2].value)
         
         self.assertIsNotNone(file)
         self.assertEqual(file.filename, "tier.png")

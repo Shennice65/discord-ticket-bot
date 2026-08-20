@@ -41,8 +41,8 @@ class TicketEmbeds:
         # Truncate names if excessively long
         p1_name = user.name[:15]
         p2_name = opponent_name[:15]
-        p1_rate = f"{u_rate:.1f}% *({u_matches} matches)*"
-        p2_rate = f"{o_rate:.1f}% *({o_matches} matches)*"
+        p1_rate = f"{u_rate:.1f}% ({u_matches} matches)"
+        p2_rate = f"{o_rate:.1f}% ({o_matches} matches)"
 
         # Use Discord native blockquotes inside the Field Value to create 
         # the unselectable, continuous grey vertical UI bar.
