@@ -134,7 +134,9 @@ class Tickets(commands.Cog):
             u_rank=u_rank,
             o_rank=o_rank,
             u_rate=u_rate,
-            o_rate=o_rate
+            o_rate=o_rate,
+            u_matches=u_matches,
+            o_matches=o_matches
         )
         
         send_kwargs = {
@@ -176,7 +178,9 @@ class Tickets(commands.Cog):
             u_rank=u_rank,
             o_rank=o_rank,
             u_rate=u_rate,
-            o_rate=o_rate
+            o_rate=o_rate,
+            u_matches=u_matches,
+            o_matches=o_matches
         )
         embed.add_field(
             name="Out-of-Range Match",

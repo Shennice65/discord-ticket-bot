@@ -8,7 +8,8 @@ class TicketEmbeds:
     @staticmethod
     def create_ranked_1v1_ticket_embed(user: discord.Member, opponent_name: str,
                                        u_rank: str, o_rank: str,
-                                       u_rate: float, o_rate: float) -> Tuple[discord.Embed, Optional[discord.File]]:
+                                       u_rate: float, o_rate: float,
+                                       u_matches: int, o_matches: int) -> Tuple[discord.Embed, Optional[discord.File]]:
         """Creates the sleek 3-column Ranked 1v1 lobby ticket embed."""
         # Determine the embed title based on ranks
         title = f"**{u_rank} Lobby**"
@@ -40,8 +41,8 @@ class TicketEmbeds:
         # Truncate names if excessively long
         p1_name = user.name[:15]
         p2_name = opponent_name[:15]
-        p1_rate = f"{u_rate:.1f}%"
-        p2_rate = f"{o_rate:.1f}%"
+        p1_rate = f"{u_rate:.1f}% *({u_matches} matches)*"
+        p2_rate = f"{o_rate:.1f}% *({o_matches} matches)*"
 
         # Use Discord native blockquotes inside the Field Value to create 
         # the unselectable, continuous grey vertical UI bar.

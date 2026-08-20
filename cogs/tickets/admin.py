@@ -160,8 +160,8 @@ class TicketAdmin(commands.Cog):
                                 user_history = await self.db.get_user_history(user.id, user.name)
                                 opp_history = await self.db.get_user_history(opponent_id, opponent_name) if opponent_id else []
                                 
-                                _, _, _, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
-                                _, _, _, o_rate = TicketEmbeds.calculate_ranked_stats(opponent_id, opponent_name, opp_history) if opponent_id else (0, 0, 0, 0.0)
+                                u_matches, _, _, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
+                                o_matches, _, _, o_rate = TicketEmbeds.calculate_ranked_stats(opponent_id, opponent_name, opp_history) if opponent_id else (0, 0, 0, 0.0)
                                 
                                 u_rank = await self.db.get_player_rank(user.id) or "Unranked"
                                 o_rank = await self.db.get_player_rank(opponent_id) or "Unranked" if opponent_id else "Unranked"
@@ -172,7 +172,9 @@ class TicketAdmin(commands.Cog):
                                     u_rank=u_rank,
                                     o_rank=o_rank,
                                     u_rate=u_rate,
-                                    o_rate=o_rate
+                                    o_rate=o_rate,
+                                    u_matches=u_matches,
+                                    o_matches=o_matches
                                 )
                                 
                                 if tier_file:

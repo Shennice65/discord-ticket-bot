@@ -16,7 +16,9 @@ class TestRankedEmbed(unittest.TestCase):
             u_rank="Champions 1",
             o_rank="Champions 3",
             u_rate=75.0,
-            o_rate=60.0
+            o_rate=60.0,
+            u_matches=15,
+            o_matches=30
         )
         
         self.assertEqual(embed.author.name, "wolfboss5213 VS opponent_player")
@@ -36,8 +38,8 @@ class TestRankedEmbed(unittest.TestCase):
         
         self.assertEqual(embed.fields[2].name, "\u200B")
         self.assertIn("[Winrate]", embed.fields[2].value)
-        self.assertIn("75.0%", embed.fields[2].value)
-        self.assertIn("60.0%", embed.fields[2].value)
+        self.assertIn("75.0% *(15 matches)*", embed.fields[2].value)
+        self.assertIn("60.0% *(30 matches)*", embed.fields[2].value)
         
         self.assertIsNotNone(file)
         self.assertEqual(file.filename, "tier.png")
@@ -55,7 +57,9 @@ class TestRankedEmbed(unittest.TestCase):
             u_rank="Unranked",
             o_rank="Unranked",
             u_rate=0.0,
-            o_rate=0.0
+            o_rate=0.0,
+            u_matches=0,
+            o_matches=0
         )
         
         self.assertEqual(embed.author.name, "new_player VS other_player")

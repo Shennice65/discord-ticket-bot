@@ -15,7 +15,9 @@ class TestRankedTicketCreation(unittest.TestCase):
             u_rank="Elites 2",
             o_rank="Elites 4",
             u_rate=50.0,
-            o_rate=50.0
+            o_rate=50.0,
+            u_matches=25,
+            o_matches=35
         )
         self.assertIsNotNone(embed)
         self.assertEqual(len(embed.fields), 3)
