@@ -144,7 +144,7 @@ class History(commands.Cog):
         # Send to conversion service using the Discord attachment URL
         import asyncio
         
-        result = await convert_clip_via_service(video.url, clips_service_url, title=video.filename)
+        result = await convert_clip_via_service(video.url, clips_service_url, title=video.filename, uploader_name=interaction.user.name)
         
         if not result["success"]:
             await interaction.edit_original_response(content=f"Failed to start processing: {result['error']}")

@@ -137,7 +137,7 @@ class SubmitClipModal(discord.ui.Modal, title="Submit a Clip"):
         config_doc = await db.db.config.find_one({"_id": "api_keys"})
         clips_service_url = config_doc.get("CLIPS_SERVICE_URL") if config_doc else Config.CLIPS_SERVICE_URL
         
-        result = await convert_clip_via_service(url, clips_service_url, title=scraped_title)
+        result = await convert_clip_via_service(url, clips_service_url, title=scraped_title, uploader_name=interaction.user.name)
         if not result["success"]:
             await interaction.edit_original_response(
                 content=f"Failed to start processing: {result['error']}"

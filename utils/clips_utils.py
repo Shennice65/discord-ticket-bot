@@ -94,7 +94,7 @@ async def validate_and_scrape_medal(url: str) -> Dict:
         return {"valid": False, "title": "", "thumbnail": "", "error": f"Error: {str(e)}"}
 
 
-async def convert_clip_via_service(url: str, service_base_url: str, title: str = "") -> Dict:
+async def convert_clip_via_service(url: str, service_base_url: str, title: str = "", uploader_name: str = "") -> Dict:
     """Send a URL to the clips conversion service and get back a task ID for polling.
     
     Returns dict with keys: success, task_id, error
@@ -107,6 +107,8 @@ async def convert_clip_via_service(url: str, service_base_url: str, title: str =
     payload = {"url": url}
     if title:
         payload["title"] = title
+    if uploader_name:
+        payload["uploader"] = uploader_name
         
     try:
         async with aiohttp.ClientSession() as session:
