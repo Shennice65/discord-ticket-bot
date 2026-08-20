@@ -65,11 +65,16 @@ class RankingService:
                                 if r_resp.status == 200:
                                     r_data = await r_resp.json()
                                     roblox_name = r_data.get("name")
+                                    roblox_display_name = r_data.get("displayName") or roblox_name
                                     if roblox_name:
-                                        # Cache the username and roblox_id in MongoDB
+                                        # Cache the username, display_name, and roblox_id in MongoDB
                                         await self.db.db.roblox_usernames.update_one(
                                             {"_id": user_id},
-                                            {"$set": {"username": roblox_name, "roblox_id": str(roblox_id)}},
+                                            {"$set": {
+                                                "username": roblox_name,
+                                                "display_name": roblox_display_name,
+                                                "roblox_id": str(roblox_id)
+                                            }},
                                             upsert=True
                                         )
                                         return roblox_name, str(roblox_id)
