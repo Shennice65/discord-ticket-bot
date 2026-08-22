@@ -297,6 +297,13 @@ class Tickets(commands.Cog):
             return
         
         status = ticket_data.get("status")
+        if status == "processing_failed":
+            await interaction.response.send_message(
+                "This ticket is locked because an earlier close attempt failed during processing. Please ask an admin to review it.",
+                ephemeral=True
+            )
+            return
+
         if status in ["processing", "processing_modal"]:
             processing_time = ticket_data.get("processing_since")
             now = datetime.utcnow()
@@ -312,7 +319,20 @@ class Tickets(commands.Cog):
                 stuck = True
                 
             if stuck:
-                await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
+                if status == "processing":
+                    await self.db.mark_ticket_processing_failed(
+                        interaction.channel.id,
+                        RuntimeError("Ticket processing exceeded the 60-second safety limit")
+                    )
+                    await interaction.response.send_message(
+                        "This close attempt appears stuck and has been locked for admin review to prevent duplicate results.",
+                        ephemeral=True
+                    )
+                    return
+                await self.db.tickets.update_one(
+                    {"channel_id": interaction.channel.id, "status": "processing_modal"},
+                    {"$set": {"status": "open"}, "$unset": {"processing_since": ""}}
+                )
                 ticket_data["status"] = "open"
             else:
                 await interaction.response.send_message("This ticket is currently being processed. Please wait...", ephemeral=True)
@@ -386,14 +406,10 @@ class Tickets(commands.Cog):
             await interaction.channel.delete()
     
     async def process_ranked_close(self, interaction: discord.Interaction, modal: CloseRankedModal):
-        result = await self.db.tickets.find_one_and_update(
-            {"channel_id": interaction.channel.id, "status": "open"},
-            {"$set": {"status": "processing", "processing_since": str(datetime.utcnow())}}
-        )
-        if not result:
+        ticket_data = await self.db.claim_ticket_for_processing(interaction.channel.id)
+        if not ticket_data:
             await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
-        ticket_data = result
         
         try:
             winner_id = modal.winner_id
@@ -413,8 +429,19 @@ class Tickets(commands.Cog):
                 modal.winner_name,
                 modal.note.value if modal.note.value else None
             )
-            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
             await self.db.update_ranked_cooldown(ticket_data['user_id'])
+            if not await self.db.finalize_processed_ticket(interaction.channel.id, interaction.user.id):
+                raise RuntimeError("Ticket processing state changed before completion")
+        except Exception as e:
+            await self.db.mark_ticket_processing_failed(interaction.channel.id, e)
+            await interaction.followup.send(
+                "The match could not be completed safely. The ticket has been locked for admin review to prevent the result from being applied twice.",
+                ephemeral=True
+            )
+            print(f"Error committing ranked close: {e}")
+            return
+
+        try:
             
             # Auto-assign tier roles for both players
             from utils.role_manager import update_tier_role
@@ -445,9 +472,13 @@ class Tickets(commands.Cog):
             await asyncio.sleep(5)
             await interaction.channel.delete()
         except Exception as e:
-            await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-            await interaction.followup.send(f"An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
-            print(f"Error in process_ranked_close: {e}")
+            # The database commit already succeeded. Never reopen here: doing so
+            # would allow the same match result to be applied a second time.
+            await interaction.followup.send(
+                "The match result was saved, but a Discord follow-up action failed. An admin may need to update roles, logs, or delete this channel manually.",
+                ephemeral=True
+            )
+            print(f"Error after ranked close commit: {e}")
 
     async def process_ranked_cancel(self, interaction: discord.Interaction, modal: CloseRankedCancelModal):
         result = await self.db.tickets.find_one_and_update(
@@ -519,14 +550,18 @@ class Tickets(commands.Cog):
                     return
             
             if end_rank.lower() == "unranked":
-                success, old_r = await self.db.unrank_player(user_id)
+                success, old_r = await self.db.unrank_player(user_id, movement_source="observation")
                 actual_new_rank = "Unranked"
                 if not success and old_r not in ["You are not currently ranked.", "You are already unranked."]:
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
                     await interaction.followup.send(f"Failed to unrank: {old_r}", ephemeral=True)
                     return
             else:
-                success, actual_new_rank = await self.db.force_set_player_rank(user_id, end_rank)
+                success, actual_new_rank = await self.db.force_set_player_rank(
+                    user_id,
+                    end_rank,
+                    movement_source="observation",
+                )
                 
                 if not success:
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})

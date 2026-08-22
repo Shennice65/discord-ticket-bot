@@ -26,3 +26,6 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+.uv-cache/
+.uv-python/
+.pytest-cache/

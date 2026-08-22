@@ -32,7 +32,7 @@ class SettingsMixin:
             upsert=True
         )
             
-    async def log_undo_action(self, target_id: int, action_type: str, old_rank: str, new_rank: str, observer_id: Optional[int] = None, old_streak: Optional[int] = None):
+    async def log_undo_action(self, target_id: int, action_type: str, old_rank: str, new_rank: str, observer_id: Optional[int] = None, old_streak: Optional[int] = None, source: Optional[str] = None):
         """Log an action so it can be undone later."""
         doc = {
             "target_id": target_id,
@@ -44,6 +44,8 @@ class SettingsMixin:
         }
         if old_streak is not None:
             doc["old_streak"] = old_streak
+        if source:
+            doc["source"] = source
         await self.undo_logs.insert_one(doc)
         
     async def undo_last_action(self, target_id: int) -> tuple:
@@ -60,10 +62,16 @@ class SettingsMixin:
         
         # If they were unranked before, remove them. Otherwise, force set them back.
         if not old_rank:
-            await self.remove_player_from_ladder(target_id)
+            await self.remove_player_from_ladder(target_id, movement_source="undo")
             action_desc = "removed from the leaderboard (they were unranked before)"
         else:
-            await self.force_set_player_rank(target_id, old_rank, bypass_unrank=True, is_undo=True)
+            await self.force_set_player_rank(
+                target_id,
+                old_rank,
+                bypass_unrank=True,
+                is_undo=True,
+                movement_source="undo",
+            )
             action_desc = f"restored to **{old_rank}**"
         
         # Restore win streak if it was saved

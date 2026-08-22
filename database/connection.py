@@ -69,6 +69,12 @@ class ConnectionMixin:
                 # New indexes for rapid history command execution
                 await self.tickets.create_index([("user_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])
                 await self.tickets.create_index([("opponent_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])
+                # Existing players predate movement tracking; initialize them
+                # without overwriting a real delta from a previous mutation.
+                await self.player_ranks.update_many(
+                    {"rank_change": {"$exists": False}},
+                    {"$set": {"rank_change": 0}},
+                )
             except Exception as e:
                 print(f"Index creation note: {e}")
             

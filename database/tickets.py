@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from config import Config
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne
+from pymongo import ReturnDocument
 import asyncio
 
 
@@ -51,12 +52,49 @@ class TicketsMixin:
         return ticket_id
     
     async def close_ticket(self, channel_id: int, closed_by: int):
-        await self.tickets.update_one(
-            {"channel_id": channel_id},
+        result = await self.tickets.update_one(
+            {"channel_id": channel_id, "status": {"$ne": "closed"}},
             {"$set": {
                 "status": "closed",
                 "closed_at": str(datetime.utcnow()),
                 "closed_by": closed_by
+            }, "$unset": {"processing_since": "", "processing_error": ""}}
+        )
+        return result.modified_count == 1
+
+    async def claim_ticket_for_processing(self, channel_id: int) -> Optional[Dict]:
+        """Atomically claim an open ticket so only one interaction can process it."""
+        return await self.tickets.find_one_and_update(
+            {"channel_id": channel_id, "status": "open"},
+            {"$set": {
+                "status": "processing",
+                "processing_since": str(datetime.utcnow())
+            }},
+            return_document=ReturnDocument.BEFORE
+        )
+
+    async def finalize_processed_ticket(self, channel_id: int, closed_by: int) -> bool:
+        """Close a claimed ticket without allowing stale interactions to overwrite state."""
+        result = await self.tickets.update_one(
+            {"channel_id": channel_id, "status": "processing"},
+            {
+                "$set": {
+                    "status": "closed",
+                    "closed_at": str(datetime.utcnow()),
+                    "closed_by": closed_by
+                },
+                "$unset": {"processing_since": "", "processing_error": ""}
+            }
+        )
+        return result.modified_count == 1
+
+    async def mark_ticket_processing_failed(self, channel_id: int, error: Exception) -> None:
+        """Quarantine a failed workflow instead of reopening it and replaying mutations."""
+        await self.tickets.update_one(
+            {"channel_id": channel_id, "status": "processing"},
+            {"$set": {
+                "status": "processing_failed",
+                "processing_error": str(error)[:1000]
             }}
         )
     
@@ -71,8 +109,8 @@ class TicketsMixin:
     
     async def add_ranked_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                 winner_old: str, winner_new: str, loser_old: str, loser_new: str, winner_id: int, winner: str, note: Optional[str] = None):
-        await self.ranked_results.delete_many({"ticket_id": ticket_id})
-        result_id = await self._next_id("ranked_results")
+        existing = await self.ranked_results.find_one({"ticket_id": ticket_id}, {"id": 1})
+        result_id = existing["id"] if existing else await self._next_id("ranked_results")
         result = {
             "id": result_id,
             "ticket_id": ticket_id,
@@ -89,7 +127,11 @@ class TicketsMixin:
             "note": note,
             "created_at": str(datetime.utcnow())
         }
-        await self.ranked_results.insert_one(result)
+        await self.ranked_results.replace_one(
+            {"ticket_id": ticket_id},
+            result,
+            upsert=True
+        )
     
     async def add_observation_result(self, ticket_id: int, observer_id: int, observer_name: str,
                                      starting_rank: str, ending_rank: str, note: Optional[str] = None):

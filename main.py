@@ -36,7 +36,8 @@ class TicketBot(commands.Bot):
     
     async def setup_hook(self):
         print("Starting setup_hook...")
-        await self.db.init()
+        if not await self.db.init():
+            raise RuntimeError("MongoDB initialization failed; refusing to start the bot")
         
         # Register persistent views so buttons on old messages still work after restart
         from views.history_views import ShareClipView

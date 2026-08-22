@@ -7,6 +7,65 @@ from pymongo import UpdateOne
 import asyncio
 
 
+def is_unranked_rank(rank: object) -> bool:
+    """Return whether a stored rank represents a player entering the ladder."""
+    return str(rank or "").strip().lower() in {"", "unranked"}
+
+
+def calculate_rank_changes(current_players: list, tier_lists: dict, tiers: list) -> dict[int, int]:
+    """Return real global ladder movement as old position minus new position."""
+    from utils.ladder_utils import get_sort_key
+
+    ranked_before = [
+        (player["user_id"], get_sort_key(player.get("rank", "")))
+        for player in current_players
+        if get_sort_key(player.get("rank", ""))[0] != 99
+    ]
+    ranked_before.sort(key=lambda item: item[1])
+    old_positions = {user_id: index for index, (user_id, _) in enumerate(ranked_before)}
+
+    new_order = [user_id for tier in tiers for user_id in tier_lists.get(tier, [])]
+    return {
+        user_id: old_positions[user_id] - new_index if user_id in old_positions else 0
+        for new_index, user_id in enumerate(new_order)
+    }
+
+
+def calculate_movement_metadata(
+    player: dict,
+    *,
+    event_version: int,
+    event_delta: int,
+    event_role: str,
+    movement_source: str,
+) -> tuple[list[dict], int, str]:
+    """Keep the latest event per badge source and aggregate their movement."""
+    supported_sources = {"observation", "ranked", "admin_manual"}
+    latest_by_source = {}
+    for event in player.get("rank_change_events") or []:
+        source = "admin_manual" if event.get("source") == "admin" else event.get("source")
+        if source not in supported_sources:
+            continue
+        normalized_event = {**event, "source": source}
+        previous = latest_by_source.get(source)
+        if previous is None or int(normalized_event.get("version", 0)) >= int(previous.get("version", 0)):
+            latest_by_source[source] = normalized_event
+
+    latest_by_source[movement_source] = {
+        "version": event_version,
+        "delta": event_delta,
+        "role": event_role,
+        "source": movement_source,
+    }
+    history = sorted(latest_by_source.values(), key=lambda event: int(event.get("version", 0)))
+    aggregate_delta = sum(int(event.get("delta", 0)) for event in history)
+    movement_role = (
+        "direct" if any(event.get("role") == "direct" for event in history)
+        else ("passive" if aggregate_delta else "none")
+    )
+    return history, aggregate_delta, movement_role
+
+
 class LadderMixin:
     async def get_all_player_ranks(self) -> list:
         cursor = self.player_ranks.find({})
@@ -129,22 +188,83 @@ class LadderMixin:
         )
         return result.modified_count > 0
         
-    async def _bulk_reassign_ranks(self, tier_lists: dict, tiers: list) -> None:
-        """Batch-update all player ranks in a single bulk_write call."""
+    async def _bulk_reassign_ranks(
+        self,
+        tier_lists: dict,
+        tiers: list,
+        *,
+        direct_ids: set[int] | None = None,
+        movement_source: str = "system",
+    ) -> None:
+        """Batch-update ranks and retain the latest movement from each badge source."""
+        current_players = await self.player_ranks.find({}).to_list(length=None)
+        players_by_id = {player["user_id"]: player for player in current_players}
+        rank_changes = calculate_rank_changes(current_players, tier_lists, tiers)
+        direct_ids = direct_ids or set()
+        def is_newly_ranked(user_id: int) -> bool:
+            return is_unranked_rank(players_by_id.get(user_id, {}).get("rank"))
+
+        tracks_movement = (
+            movement_source in {"ranked", "observation", "admin_manual"}
+            and any(
+                rank_changes.get(user_id, 0) > 0 or is_newly_ranked(user_id)
+                for user_id in direct_ids
+            )
+        )
+        event_version = None
+        if tracks_movement:
+            event_version_doc = await self.bot_settings.find_one_and_update(
+                {"key": "ladder_event_version"},
+                {"$inc": {"value": 1}},
+                upsert=True,
+                return_document=True,
+            )
+            event_version = event_version_doc["value"]
         ops = []
         now = str(datetime.utcnow())
         for t in tiers:
             for idx, uid in enumerate(tier_lists[t]):
                 new_rank = f"{t} {idx + 1}"
+                player = players_by_id.get(uid, {})
+                fields = {"rank": new_rank, "updated_at": now}
+                if tracks_movement:
+                    event_delta = rank_changes.get(uid, 0)
+                    event_role = "direct" if uid in direct_ids else ("passive" if event_delta else "none")
+                    history, aggregate_delta, movement_role = calculate_movement_metadata(
+                        player,
+                        event_version=event_version,
+                        event_delta=event_delta,
+                        event_role=event_role,
+                        movement_source=movement_source,
+                    )
+                    badge_source = next(
+                        (
+                            event.get("source")
+                            for event in reversed(history)
+                            if event.get("role") == "direct" and int(event.get("delta", 0)) > 0
+                        ),
+                        movement_source,
+                    )
+                    is_new = is_unranked_rank(player.get("rank"))
+                    fields.update({
+                        "rank_change": aggregate_delta,
+                        "rank_change_events": history,
+                        "movement_role": "new" if is_new else movement_role,
+                        "movement_source": badge_source,
+                        "movement_event_version": event_version,
+                    })
                 ops.append(UpdateOne(
                     {"user_id": uid},
-                    {"$set": {"rank": new_rank, "updated_at": now}},
+                    {"$set": fields},
                     upsert=True
                 ))
+        if tracks_movement:
+            # Ranked players are overwritten below; this clears unranked leftovers.
+            await self.player_ranks.update_many({}, {"$set": {"rank_change": 0}})
         if ops:
             await self.player_ranks.bulk_write(ops, ordered=False)
     
-    async def unrank_player(self, user_id: int) -> tuple:
+    async def unrank_player(self, user_id: int, movement_source: str = "self_unrank") -> tuple:
         """Self-unrank: stores original rank, timestamp, removes from ladder."""
         from utils.ladder_utils import TIERS, parse_rank
         
@@ -157,6 +277,8 @@ class LadderMixin:
                 return False, "You are already unranked."
                 
             current_rank = player["rank"]
+
+            await self.log_undo_action(user_id, "self_unrank", current_rank, "", source=movement_source)
             
             await self.player_ranks.update_one(
                 {"user_id": user_id},
@@ -182,7 +304,12 @@ class LadderMixin:
                 tier_lists[t].sort(key=lambda x: x[1])
                 tier_lists[t] = [uid for uid, _ in tier_lists[t]]
                 
-            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            await self._bulk_reassign_ranks(
+                tier_lists,
+                TIERS,
+                direct_ids={user_id},
+                movement_source=movement_source,
+            )
             return True, current_rank
         
     def _get_unrank_cooldown_days(self, player: dict) -> float:
@@ -236,7 +363,7 @@ class LadderMixin:
         else:
             return False, f"You must reach your original rank (**{original_rank}**) or higher before you can request R1s. You are currently **{current_rank}**."
             
-    async def remove_player_from_ladder(self, user_id: int, is_undo: bool = False) -> bool:
+    async def remove_player_from_ladder(self, user_id: int, is_undo: bool = False, movement_source: str = "admin_removal") -> bool:
         from utils.ladder_utils import TIERS, parse_rank
         
         async with self.ladder_lock:
@@ -248,7 +375,7 @@ class LadderMixin:
             await self.player_ranks.delete_one({"user_id": user_id})
             
             if not is_undo:
-                await self.log_undo_action(user_id, "remove_player", old_rank, "")
+                await self.log_undo_action(user_id, "remove_player", old_rank, "", source=movement_source)
             
             all_players = await self.player_ranks.find({}).to_list(length=None)
             tier_lists = {t: [] for t in TIERS}
@@ -263,10 +390,22 @@ class LadderMixin:
                 tier_lists[t].sort(key=lambda x: x[1])
                 tier_lists[t] = [uid for uid, _ in tier_lists[t]]
                 
-            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            await self._bulk_reassign_ranks(
+                tier_lists,
+                TIERS,
+                direct_ids={user_id},
+                movement_source=movement_source,
+            )
             return True
         
-    async def force_set_player_rank(self, user_id: int, target_rank: str, bypass_unrank: bool = False, is_undo: bool = False) -> tuple:
+    async def force_set_player_rank(
+        self,
+        user_id: int,
+        target_rank: str,
+        bypass_unrank: bool = False,
+        is_undo: bool = False,
+        movement_source: str = "admin_manual",
+    ) -> tuple:
         from utils.ladder_utils import TIERS, parse_rank
         
         parsed_target = parse_rank(target_rank)
@@ -320,15 +459,29 @@ class LadderMixin:
             
             if not is_undo:
                 old_rank = player.get("rank", "") if player else ""
-                await self.log_undo_action(user_id, "force_set_rank", old_rank, new_actual_rank)
+                await self.log_undo_action(
+                    user_id,
+                    "force_set_rank",
+                    old_rank,
+                    new_actual_rank,
+                    source=movement_source,
+                )
                 
-            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            await self._bulk_reassign_ranks(
+                tier_lists,
+                TIERS,
+                direct_ids={user_id},
+                movement_source=movement_source,
+            )
             return True, new_actual_rank
         
     async def process_match_result(self, winner_id: int, loser_id: int) -> tuple:
         from utils.ladder_utils import TIERS, parse_rank, get_sort_key
         
         async with self.ladder_lock:
+            # Every match replaces the previous movement display, even when
+            # the result does not cause a ladder reorder.
+            await self.player_ranks.update_many({}, {"$set": {"rank_change": 0}})
             winner_rank = await self.get_player_rank(winner_id)
             loser_rank = await self.get_player_rank(loser_id)
             
@@ -356,8 +509,23 @@ class LadderMixin:
             
             if winner_key <= loser_key:
                 # Log undo even for early return so streaks can be restored
-                await self.log_undo_action(winner_id, "match_winner", winner_rank, winner_rank, old_streak=old_winner_streak)
-                await self.log_undo_action(loser_id, "match_loser", loser_rank, loser_rank, old_streak=old_loser_streak)
+                await self.log_undo_action(winner_id, "match_winner", winner_rank, winner_rank, old_streak=old_winner_streak, source="ranked")
+                await self.log_undo_action(loser_id, "match_loser", loser_rank, loser_rank, old_streak=old_loser_streak, source="ranked")
+                all_players = await self.player_ranks.find({}).to_list(length=None)
+                unchanged_tiers = {t: [] for t in TIERS}
+                for player in all_players:
+                    parsed = parse_rank(player.get("rank", ""))
+                    if parsed and parsed[0] in unchanged_tiers:
+                        unchanged_tiers[parsed[0]].append((player["user_id"], parsed[1]))
+                for tier in TIERS:
+                    unchanged_tiers[tier].sort(key=lambda item: item[1])
+                    unchanged_tiers[tier] = [uid for uid, _ in unchanged_tiers[tier]]
+                await self._bulk_reassign_ranks(
+                    unchanged_tiers,
+                    TIERS,
+                    direct_ids={winner_id, loser_id},
+                    movement_source="ranked",
+                )
                 return winner_rank, winner_rank, loser_rank, loser_rank
                 
             all_players = await self.player_ranks.find({}).to_list(length=None)
@@ -399,11 +567,16 @@ class LadderMixin:
                     elif uid == loser_id:
                         new_loser_rank = new_rank
                     
-            await self._bulk_reassign_ranks(tier_lists, TIERS)
+            await self._bulk_reassign_ranks(
+                tier_lists,
+                TIERS,
+                direct_ids={winner_id, loser_id},
+                movement_source="ranked",
+            )
             
             # Log undo action for both winner and loser (with streak data)
-            await self.log_undo_action(winner_id, "match_winner", winner_rank, new_winner_rank, old_streak=old_winner_streak)
-            await self.log_undo_action(loser_id, "match_loser", loser_rank, new_loser_rank, old_streak=old_loser_streak)
+            await self.log_undo_action(winner_id, "match_winner", winner_rank, new_winner_rank, old_streak=old_winner_streak, source="ranked")
+            await self.log_undo_action(loser_id, "match_loser", loser_rank, new_loser_rank, old_streak=old_loser_streak, source="ranked")
             
             return winner_rank, new_winner_rank, loser_rank, new_loser_rank
             
