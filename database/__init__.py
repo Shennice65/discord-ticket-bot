@@ -14,7 +14,8 @@ from .tickets import TicketsMixin
 from .history import HistoryMixin
 from .admin import AdminMixin
 from .clips import ClipsMixin
+from .betting import BettingMixin
 
-class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin):
+class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin):
     def __init__(self):
         super().__init__()

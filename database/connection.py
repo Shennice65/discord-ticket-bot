@@ -20,6 +20,13 @@ class ConnectionMixin:
         self.bot_settings = None
         self.bot_config = None
         self.player_clips = None
+        self.web_users = None
+        self.web_login_tokens = None
+        self.web_sessions = None
+        self.wallets = None
+        self.wallet_transactions = None
+        self.betting_matches = None
+        self.challonge_participants = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -41,6 +48,13 @@ class ConnectionMixin:
             self.bot_settings = self.db.bot_settings
             self.bot_config = self.db.bot_config
             self.player_clips = self.db.player_clips
+            self.web_users = self.db.web_users
+            self.web_login_tokens = self.db.web_login_tokens
+            self.web_sessions = self.db.web_sessions
+            self.wallets = self.db.wallets
+            self.wallet_transactions = self.db.wallet_transactions
+            self.betting_matches = self.db.betting_matches
+            self.challonge_participants = self.db.challonge_participants
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -62,6 +76,20 @@ class ConnectionMixin:
                 await ensure_unique_index(self.observation_results, "id")
                 await ensure_unique_index(self.observation_results, "ticket_id")
                 await ensure_unique_index(self.db.player_clips, "user_id")
+                await ensure_unique_index(self.web_users, "discord_user_id")
+                await ensure_unique_index(self.web_login_tokens, "token_hash")
+                await ensure_unique_index(self.web_sessions, "session_hash")
+                await ensure_unique_index(self.wallets, "user_id")
+                await ensure_unique_index(self.betting_matches, "challonge_match_id")
+                await self.web_login_tokens.create_index("expires_at", expireAfterSeconds=0)
+                await self.web_sessions.create_index("expires_at", expireAfterSeconds=0)
+                await self.web_sessions.create_index([("user_id", 1), ("revoked_at", 1)])
+                await self.wallet_transactions.create_index([("user_id", 1), ("created_at", -1)])
+                await self.betting_matches.create_index([("state", 1), ("scheduled_at", 1)])
+                await self.challonge_participants.create_index(
+                    [("tournament_id", 1), ("challonge_participant_id", 1)],
+                    unique=True,
+                )
                 
                 await self.tickets.create_index("channel_id")
                 await self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])

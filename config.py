@@ -26,4 +26,5 @@ class Config:
     # environment is missing or has not reloaded this variable.
     CLIPS_SERVICE_URL = os.environ.get('CLIPS_SERVICE_URL', 'https://atlclips.site')
     CLIPS_ADMIN_PASSWORD = os.environ.get('CLIPS_ADMIN_PASSWORD', '')
-    VERSION = "1.12.5"
+    BETTING_SITE_URL = os.environ.get('BETTING_SITE_URL', CLIPS_SERVICE_URL).rstrip('/')
+    VERSION = "1.12.6"
