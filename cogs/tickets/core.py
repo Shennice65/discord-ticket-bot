@@ -26,7 +26,7 @@ class Tickets(commands.Cog):
         print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
         self.bot.add_view(OutOfRangeAcceptView())
-    
+
     async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User):
         guild = interaction.guild
         user = interaction.user
@@ -211,6 +211,9 @@ class Tickets(commands.Cog):
     async def create_observation_ticket(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
+
+        # Observation participants receive the same private, deduplicated check.
+        asyncio.create_task(check_and_alert_alt_risk(self.bot, user))
         
         try:
             existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
