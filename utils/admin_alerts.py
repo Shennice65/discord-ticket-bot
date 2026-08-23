@@ -18,6 +18,25 @@ async def send_master_admin_dm(bot, *, content: str | None = None, embed: discor
         return False
 
 
+async def send_player_review(bot, *, content: str | None = None, embed: discord.Embed | None = None) -> bool:
+    """Send a player-review message to the channel configured in the database."""
+    try:
+        config_doc = await bot.db.db.config.find_one({"_id": "api_keys"})
+        channel_id = config_doc.get("PLAYER_REVIEW") if config_doc else None
+        if not channel_id:
+            return False
+
+        channel_id = int(channel_id)
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            channel = await bot.fetch_channel(channel_id)
+
+        await channel.send(content=content, embed=embed)
+        return True
+    except (TypeError, ValueError, discord.Forbidden, discord.NotFound, discord.HTTPException):
+        return False
+
+
 async def check_and_alert_alt_risk(bot, member: discord.Member) -> None:
     """Evaluate conservative alt signals and send one deduplicated private alert."""
     try:
@@ -85,6 +104,6 @@ async def check_and_alert_alt_risk(bot, member: discord.Member) -> None:
                 inline=False,
             )
         embed.set_footer(text="Review manually — risk signals are not proof of alting.")
-        await send_master_admin_dm(bot, embed=embed)
+        await send_player_review(bot, embed=embed)
     except Exception as error:
         print(f"[ALT RISK] Failed to evaluate {member.id}: {error}", flush=True)
