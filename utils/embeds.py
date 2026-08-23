@@ -3,8 +3,23 @@ import discord
 from datetime import datetime
 from typing import Optional, Tuple
 from utils.ranking_utils import parse_rank, TIERS
+from config import Config
 
 class TicketEmbeds:
+    @staticmethod
+    def ranked_site_view() -> Optional[discord.ui.View]:
+        """Return a neutral Discord link button shown beneath ranked embeds."""
+        site_url = Config.CLIPS_SERVICE_URL.strip().rstrip("/")
+        if not site_url.startswith(("https://", "http://")):
+            return None
+        view = discord.ui.View(timeout=None)
+        view.add_item(discord.ui.Button(
+            label="View Leaderboard",
+            style=discord.ButtonStyle.link,
+            url=site_url,
+        ))
+        return view
+
     @staticmethod
     def create_ranked_1v1_ticket_embed(user: discord.Member, opponent_name: str,
                                        u_rank: str, o_rank: str,

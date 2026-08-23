@@ -177,10 +177,13 @@ class TicketAdmin(commands.Cog):
                                     o_matches=o_matches
                                 )
                                 
+                                edit_kwargs = {
+                                    "embed": new_embed,
+                                    "view": TicketEmbeds.ranked_site_view(),
+                                }
                                 if tier_file:
-                                    await message.edit(embed=new_embed, attachments=[tier_file])
-                                else:
-                                    await message.edit(embed=new_embed)
+                                    edit_kwargs["attachments"] = [tier_file]
+                                await message.edit(**edit_kwargs)
                                 
                                 updated += 1
                                 break

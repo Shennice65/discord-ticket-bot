@@ -9,6 +9,7 @@ from typing import Optional
 from config import Config
 from database import Database
 from utils.embeds import TicketEmbeds
+from utils.admin_alerts import check_and_alert_alt_risk
 
 
 from views.ticket_views import *
@@ -34,6 +35,10 @@ class Tickets(commands.Cog):
         if not opponent_member:
             await interaction.followup.send("Could not find that user in this server!", ephemeral=True)
             return
+
+        # Run private risk checks without delaying ticket creation.
+        asyncio.create_task(check_and_alert_alt_risk(self.bot, user))
+        asyncio.create_task(check_and_alert_alt_risk(self.bot, opponent_member))
             
         existing_ticket = await self.db.tickets.find_one({"user_id": user.id, "status": "open"})
         if existing_ticket:
@@ -143,6 +148,9 @@ class Tickets(commands.Cog):
             "content": f"{user.mention} {opponent_member.mention} {observer_mention}",
             "embed": embed
         }
+        site_view = TicketEmbeds.ranked_site_view()
+        if site_view:
+            send_kwargs["view"] = site_view
         if tier_file:
             send_kwargs["file"] = tier_file
 
@@ -192,6 +200,9 @@ class Tickets(commands.Cog):
             "content": f"{requester.mention} {opponent.mention} {observer_mention}",
             "embed": embed
         }
+        site_view = TicketEmbeds.ranked_site_view()
+        if site_view:
+            send_kwargs["view"] = site_view
         if tier_file:
             send_kwargs["file"] = tier_file
 

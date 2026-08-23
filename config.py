@@ -23,4 +23,4 @@ class Config:
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
     CLIPS_SERVICE_URL = os.environ.get('CLIPS_SERVICE_URL', '')
     CLIPS_ADMIN_PASSWORD = os.environ.get('CLIPS_ADMIN_PASSWORD', '')
-    VERSION = "1.12.4"
+    VERSION = "1.12.5"

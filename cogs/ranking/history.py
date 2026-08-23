@@ -7,6 +7,7 @@ from typing import Optional
 from config import Config
 from utils.embeds import TicketEmbeds
 from utils.clips_utils import convert_clip_via_service, check_clip_progress
+from utils.admin_alerts import send_master_admin_dm
 
 # Import our modularized views
 from views.history_views import (
@@ -52,24 +53,20 @@ class History(commands.Cog):
             
             # Snooper alert!
             print(f"[SECURITY LOG] {interaction.user.name} ({interaction.user.id}) tried to view Master Admin history", flush=True)
-            master_admin = interaction.client.get_user(Config.MASTER_ADMIN_ID)
-            if master_admin:
-                try:
-                    await master_admin.send(f"**SNOOP ALERT:** **{interaction.user.name}** just tried to view your history in {interaction.guild.name} but was blocked.")
-                except discord.Forbidden:
-                    pass
+            await send_master_admin_dm(
+                interaction.client,
+                content=f"**SNOOP ALERT:** **{interaction.user.name}** just tried to view your history in {interaction.guild.name} but was blocked.",
+            )
             
             return
 
         # Private logging for the Master Admin
         if interaction.user.id != Config.MASTER_ADMIN_ID:
             print(f"[HISTORY LOG] {interaction.user.name} ({interaction.user.id}) checked history of {target_user.name} ({target_user.id})", flush=True)
-            master_admin = interaction.client.get_user(Config.MASTER_ADMIN_ID)
-            if master_admin:
-                try:
-                    await master_admin.send(f"**{interaction.user.name}** just used `/stats` on **{target_user.name}** in {interaction.guild.name}.")
-                except discord.Forbidden:
-                    pass
+            await send_master_admin_dm(
+                interaction.client,
+                content=f"**{interaction.user.name}** just used `/stats` on **{target_user.name}** in {interaction.guild.name}.",
+            )
         
         is_admin = can_clear_history(interaction.user)
         
