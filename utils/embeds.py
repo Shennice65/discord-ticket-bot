@@ -7,18 +7,26 @@ from config import Config
 
 class TicketEmbeds:
     @staticmethod
-    def ranked_site_view() -> Optional[discord.ui.View]:
-        """Return a neutral Discord link button shown beneath ranked embeds."""
+    def add_ranked_site_button(view: discord.ui.View, row: Optional[int] = None) -> discord.ui.View:
+        """Add the public leaderboard link to an existing Discord view."""
         site_url = Config.CLIPS_SERVICE_URL.strip().rstrip("/")
         if not site_url.startswith(("https://", "http://")):
-            return None
-        view = discord.ui.View(timeout=None)
+            return view
         view.add_item(discord.ui.Button(
             label="View Leaderboard",
             style=discord.ButtonStyle.link,
             url=site_url,
+            row=row,
         ))
         return view
+
+    @staticmethod
+    def ranked_site_view() -> Optional[discord.ui.View]:
+        """Return a neutral Discord link button shown beneath ticket embeds."""
+        site_url = Config.CLIPS_SERVICE_URL.strip().rstrip("/")
+        if not site_url.startswith(("https://", "http://")):
+            return None
+        return TicketEmbeds.add_ranked_site_button(discord.ui.View(timeout=None))
 
     @staticmethod
     def create_ranked_1v1_ticket_embed(user: discord.Member, opponent_name: str,

@@ -21,6 +21,9 @@ class Config:
     MASTERS_ROLE_ID = int(os.environ.get('MASTERS_ROLE_ID', 0))
     NOVICE_ROLE_ID = int(os.environ.get('NOVICE_ROLE_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
-    CLIPS_SERVICE_URL = os.environ.get('CLIPS_SERVICE_URL', '')
+    # The public leaderboard is not secret. Keep the production URL as a
+    # fallback so ticket links cannot silently disappear when a deployment
+    # environment is missing or has not reloaded this variable.
+    CLIPS_SERVICE_URL = os.environ.get('CLIPS_SERVICE_URL', 'https://atlclips.site')
     CLIPS_ADMIN_PASSWORD = os.environ.get('CLIPS_ADMIN_PASSWORD', '')
     VERSION = "1.12.5"

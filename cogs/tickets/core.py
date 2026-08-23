@@ -105,7 +105,7 @@ class Tickets(commands.Cog):
             )
             print(f"Out-of-range ticket {ticket_id} pending accept")
             
-            view = OutOfRangeAcceptView(self)
+            view = TicketEmbeds.add_ranked_site_button(OutOfRangeAcceptView(self), row=1)
             await channel.send(
                 content=f"{user.mention} {opponent_member.mention}",
                 embed=embed,
@@ -286,10 +286,14 @@ class Tickets(commands.Cog):
                 "Personal Observation", user, user_stats=user_stats
             )
             
-            await channel.send(
-                content=f"{user.mention} {observer_mention}",
-                embed=embed
-            )
+            send_kwargs = {
+                "content": f"{user.mention} {observer_mention}",
+                "embed": embed,
+            }
+            site_view = TicketEmbeds.ranked_site_view()
+            if site_view:
+                send_kwargs["view"] = site_view
+            await channel.send(**send_kwargs)
             
             await interaction.edit_original_response(content=f"Ticket created! {channel.mention}", view=None)
         except Exception as e:

@@ -208,7 +208,10 @@ class TicketAdmin(commands.Cog):
                                 )
                                 
                                 new_embed.add_field(name="How It Works", value=instructions, inline=False)
-                                await message.edit(embed=new_embed)
+                                await message.edit(
+                                    embed=new_embed,
+                                    view=TicketEmbeds.ranked_site_view(),
+                                )
                                 updated += 1
                                 break
                 else:
