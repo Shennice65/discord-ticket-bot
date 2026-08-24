@@ -387,9 +387,65 @@ class BettingCog(commands.Cog):
     )
     @app_commands.checks.cooldown(3, 300, key=lambda interaction: interaction.user.id)
     async def website_login(self, interaction: discord.Interaction):
-        if Config.GUILD_ID and interaction.guild_id != Config.GUILD_ID:
+        if not Config.GUILD_ID:
+            await interaction.response.send_message(
+                "Website login is unavailable until the tournament server is configured.",
+                ephemeral=True,
+            )
+            return
+        if interaction.guild_id != Config.GUILD_ID:
             await interaction.response.send_message(
                 "This command is only available in the tournament server.",
+                ephemeral=True,
+            )
+            return
+
+        guild = self.bot.get_guild(Config.GUILD_ID)
+        if guild is None:
+            await interaction.response.send_message(
+                "Website login must be requested from the tournament server.",
+                ephemeral=True,
+            )
+            return
+
+        member = interaction.user if isinstance(interaction.user, discord.Member) and interaction.guild_id == guild.id else guild.get_member(interaction.user.id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(interaction.user.id)
+            except discord.NotFound:
+                await interaction.response.send_message(
+                    "You must be a member of the tournament server to use the website.",
+                    ephemeral=True,
+                )
+                return
+            except discord.HTTPException:
+                await interaction.response.send_message(
+                    "I could not verify your server membership right now. Please try again shortly.",
+                    ephemeral=True,
+                )
+                return
+
+        now = discord.utils.utcnow()
+        account_eligible_at = member.created_at + timedelta(days=Config.WEB_LOGIN_MIN_ACCOUNT_AGE_DAYS)
+        if account_eligible_at > now:
+            await interaction.response.send_message(
+                f"Your Discord account must be at least **{Config.WEB_LOGIN_MIN_ACCOUNT_AGE_DAYS} days old**. "
+                f"You can request access {discord.utils.format_dt(account_eligible_at, style='R')}.",
+                ephemeral=True,
+            )
+            return
+
+        if member.joined_at is None:
+            await interaction.response.send_message(
+                "I could not verify when you joined the tournament server. Please contact an administrator.",
+                ephemeral=True,
+            )
+            return
+        membership_eligible_at = member.joined_at + timedelta(days=Config.WEB_LOGIN_MIN_MEMBERSHIP_DAYS)
+        if membership_eligible_at > now:
+            await interaction.response.send_message(
+                f"You must be in the tournament server for at least **{Config.WEB_LOGIN_MIN_MEMBERSHIP_DAYS} days**. "
+                f"You can request access {discord.utils.format_dt(membership_eligible_at, style='R')}.",
                 ephemeral=True,
             )
             return
