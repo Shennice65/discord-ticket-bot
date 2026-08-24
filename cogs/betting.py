@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
+from urllib.request import urlopen
 
 import discord
+import certifi
 from discord import app_commands
 from discord.ext import commands, tasks
 from PIL import Image, ImageDraw, ImageFont
@@ -20,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class BettingCog(commands.Cog):
+    BANNER_ASSET_CACHE: dict[str, bytes] = {}
     TEAM_LOGO_PATHS = {
         "cataclysm": "cataclysm.png",
         "merleura": "merleura.png",
@@ -79,15 +83,32 @@ class BettingCog(commands.Cog):
         return embed
 
     @classmethod
-    def _team_logo_path(cls, team_name: str) -> Path | None:
+    def _team_logo_filename(cls, team_name: str) -> str | None:
         key = "".join(character for character in team_name.lower() if character.isalnum())
         filename = cls.TEAM_LOGO_PATHS.get(key)
         if filename is None and key.startswith("toaster"):
             filename = cls.TEAM_LOGO_PATHS["toaster"]
+        return filename
+
+    @classmethod
+    def _team_logo_path(cls, team_name: str) -> Path | None:
+        filename = cls._team_logo_filename(team_name)
         if not filename:
             return None
         path = Path(__file__).resolve().parents[1] / "clips" / "frontend" / "public" / "teams" / filename
         return path if path.is_file() else None
+
+    @classmethod
+    def _banner_image_source(cls, local_path: Path | None, public_url: str):
+        if local_path and local_path.is_file():
+            return Image.open(local_path)
+        content = cls.BANNER_ASSET_CACHE.get(public_url)
+        if content is None:
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            with urlopen(public_url, timeout=5, context=ssl_context) as response:
+                content = response.read()
+            cls.BANNER_ASSET_CACHE[public_url] = content
+        return Image.open(BytesIO(content))
 
     @staticmethod
     def _banner_font(size: int):
@@ -103,7 +124,7 @@ class BettingCog(commands.Cog):
         return ImageFont.load_default()
 
     @classmethod
-    def _matchup_banner(cls, event: dict) -> discord.File | None:
+    def _matchup_banner(cls, event: dict, site_url: str) -> discord.File | None:
         if event.get("event_type") != "betting_opened":
             return None
         payload = event.get("payload") or {}
@@ -113,14 +134,19 @@ class BettingCog(commands.Cog):
             draw = ImageDraw.Draw(canvas)
 
             atl_logo_path = Path(__file__).resolve().parents[1] / "clips" / "frontend" / "public" / "atl_logo.png"
-            if atl_logo_path.is_file():
-                with Image.open(atl_logo_path) as source:
+            try:
+                with cls._banner_image_source(
+                    atl_logo_path if atl_logo_path.is_file() else None,
+                    f"{site_url.rstrip('/')}/atl_logo.png",
+                ) as source:
                     atl_logo = source.convert("RGBA")
                     alpha_box = atl_logo.getchannel("A").getbbox()
                     if alpha_box:
                         atl_logo = atl_logo.crop(alpha_box)
                     atl_logo.thumbnail((78, 78), Image.Resampling.LANCZOS)
                     canvas.paste(atl_logo, (24 + (78 - atl_logo.width) // 2, 18 + (78 - atl_logo.height) // 2), atl_logo)
+            except Exception:
+                logger.warning("Could not load ATL logo for matchup banner", exc_info=True)
 
             context = ": ".join(str(value) for value in (payload.get("group"), payload.get("round")) if value)
             draw.text((114, 25), "ATL Season 8", fill="#62b5f5", font=cls._banner_font(18), anchor="la")
@@ -143,15 +169,23 @@ class BettingCog(commands.Cog):
             for team_name, left, right, logo_x, accent in team_layouts:
                 draw.rounded_rectangle((left, 137, right, 292), radius=4, fill="#292929", outline="#777b80", width=2)
                 logo_path = cls._team_logo_path(team_name)
-                if logo_path:
-                    with Image.open(logo_path) as source:
-                        logo = source.convert("RGBA")
-                        alpha_box = logo.getchannel("A").getbbox()
-                        if alpha_box:
-                            logo = logo.crop(alpha_box)
-                        logo.thumbnail((105, 105), Image.Resampling.LANCZOS)
-                        canvas.paste(logo, (logo_x - logo.width // 2, 161 + (105 - logo.height) // 2), logo)
-                else:
+                logo_filename = cls._team_logo_filename(team_name)
+                if logo_filename:
+                    try:
+                        with cls._banner_image_source(
+                            logo_path,
+                            f"{site_url.rstrip('/')}/teams/{logo_filename}",
+                        ) as source:
+                            logo = source.convert("RGBA")
+                            alpha_box = logo.getchannel("A").getbbox()
+                            if alpha_box:
+                                logo = logo.crop(alpha_box)
+                            logo.thumbnail((105, 105), Image.Resampling.LANCZOS)
+                            canvas.paste(logo, (logo_x - logo.width // 2, 161 + (105 - logo.height) // 2), logo)
+                    except Exception:
+                        logger.warning("Could not load %s logo for matchup banner", team_name, exc_info=True)
+                        logo_filename = None
+                if not logo_filename:
                     draw.ellipse((logo_x - 50, 164, logo_x + 50, 264), fill=accent)
                     draw.text((logo_x, 214), team_name[:2].upper(), fill="#ffffff", font=cls._banner_font(32), anchor="mm")
 
@@ -303,7 +337,7 @@ class BettingCog(commands.Cog):
                 raise RuntimeError("Configured betting notification channel is not messageable")
             site_url = str(config.get("BETTING_SITE_URL") or Config.BETTING_SITE_URL).rstrip("/")
             embeds = self._notification_embeds(event, site_url)
-            matchup_banner = self._matchup_banner(event)
+            matchup_banner = self._matchup_banner(event, site_url)
             if matchup_banner:
                 embeds[0].set_image(url="attachment://matchup.png")
             role_id = config.get("BETTING_NOTIFICATION_ROLE_ID") or Config.BETTING_NOTIFICATION_ROLE_ID
