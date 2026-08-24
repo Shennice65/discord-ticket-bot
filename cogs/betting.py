@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+from PIL import Image, ImageDraw, ImageFont
 from pymongo import ReturnDocument
 
 from config import Config
@@ -17,6 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 class BettingCog(commands.Cog):
+    TEAM_LOGO_PATHS = {
+        "cataclysm": "cataclysm.png",
+        "merleura": "merleura.png",
+        "nexus": "nexus.png",
+        "senpai": "senpai.png",
+        "toaster": "toaster.png",
+        "toaster22436": "toaster.png",
+        "xblaze": "x-blaze.png",
+    }
+
     def __init__(self, bot):
         self.bot = bot
         self.challonge = ChallongeService(bot.db)
@@ -35,11 +48,11 @@ class BettingCog(commands.Cog):
         matchup = f"**{team1}** vs **{team2}**"
         event_type = event.get("event_type")
         styles = {
-            "betting_opened": ("🪙 Betting is open", discord.Color.green(), f"{matchup}\nChoose a team before predictions lock."),
-            "betting_locked": ("🔒 Betting is locked", discord.Color.orange(), f"{matchup}\nNo more wagers can be placed."),
-            "match_live": ("🔴 Match is live", discord.Color.red(), f"{matchup}\nThe market is locked while the teams play."),
-            "result_confirmed": ("🏆 Result confirmed", discord.Color.blue(), f"{matchup}\n**Final: {payload.get('score1', 0)}–{payload.get('score2', 0)}**"),
-            "match_restored": ("↩️ Match result withdrawn", discord.Color.orange(), f"{matchup}\nThe previous result was restored by an organizer. Existing wagers are active again; wait for the corrected result."),
+            "betting_opened": ("⚔️ A new matchup is ready", discord.Color.blurple(), f"**{team1}** steps up against **{team2}**.\nWho do you think takes it? Make your pick and follow the live predictions."),
+            "betting_locked": ("🔒 Predictions are in", discord.Color.orange(), f"{matchup}\nThe picks are sealed. Now it is time to see which team delivers."),
+            "match_live": ("🔴 The match is live", discord.Color.red(), f"{matchup}\nThey are playing now—good luck to everyone who made a pick!"),
+            "result_confirmed": ("🏆 The result is in", discord.Color.blue(), f"{matchup}\n**Final: {payload.get('score1', 0)}–{payload.get('score2', 0)}**"),
+            "match_restored": ("↩️ Result under review", discord.Color.orange(), f"{matchup}\nAn organizer withdrew the previous result. Your original prediction is still saved while we wait for the correction."),
         }
         title, color, description = styles.get(event_type, ("Tournament update", discord.Color.blurple(), matchup))
         if event_type == "result_confirmed":
@@ -48,7 +61,7 @@ class BettingCog(commands.Cog):
             else:
                 description += "\nResult: **Draw**"
             if payload.get("refunded"):
-                description += "\nAll active wagers were refunded."
+                description += "\nAll prediction coins were returned."
             elif payload.get("payout_count"):
                 description += f"\nPaid **{payload['payout_count']}** winning predictor(s)."
         match_url = f"{site_url.rstrip('/')}/matches/{event.get('match_id')}"
@@ -59,11 +72,117 @@ class BettingCog(commands.Cog):
         closes_at = discord.utils.parse_time(payload.get("betting_closes_at")) if payload.get("betting_closes_at") else None
         scheduled_at = discord.utils.parse_time(payload.get("scheduled_at")) if payload.get("scheduled_at") else None
         if event_type == "betting_opened" and closes_at:
-            embed.add_field(name="Betting locks", value=discord.utils.format_dt(closes_at, style="R"), inline=True)
+            embed.add_field(name="Make your pick by", value=discord.utils.format_dt(closes_at, style="R"), inline=True)
         if scheduled_at:
             embed.add_field(name="Match time", value=discord.utils.format_dt(scheduled_at, style="F"), inline=True)
-        embed.add_field(name="Tournament site", value=f"[Open match]({match_url})", inline=False)
+        embed.add_field(name="Ready to choose?", value=f"[View the matchup and make your pick →]({match_url})", inline=False)
         return embed
+
+    @classmethod
+    def _team_logo_path(cls, team_name: str) -> Path | None:
+        key = "".join(character for character in team_name.lower() if character.isalnum())
+        filename = cls.TEAM_LOGO_PATHS.get(key)
+        if filename is None and key.startswith("toaster"):
+            filename = cls.TEAM_LOGO_PATHS["toaster"]
+        if not filename:
+            return None
+        path = Path(__file__).resolve().parents[1] / "clips" / "frontend" / "public" / "teams" / filename
+        return path if path.is_file() else None
+
+    @staticmethod
+    def _banner_font(size: int):
+        for font_path in (
+            "DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "C:/Windows/Fonts/arialbd.ttf",
+        ):
+            try:
+                return ImageFont.truetype(font_path, size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
+    @classmethod
+    def _matchup_banner(cls, event: dict) -> discord.File | None:
+        if event.get("event_type") != "betting_opened":
+            return None
+        payload = event.get("payload") or {}
+        teams = (payload.get("team1") or "TBD", payload.get("team2") or "TBD")
+        try:
+            canvas = Image.new("RGB", (900, 340), "#1e1e1e")
+            draw = ImageDraw.Draw(canvas)
+
+            atl_logo_path = Path(__file__).resolve().parents[1] / "clips" / "frontend" / "public" / "atl_logo.png"
+            if atl_logo_path.is_file():
+                with Image.open(atl_logo_path) as source:
+                    atl_logo = source.convert("RGBA")
+                    alpha_box = atl_logo.getchannel("A").getbbox()
+                    if alpha_box:
+                        atl_logo = atl_logo.crop(alpha_box)
+                    atl_logo.thumbnail((78, 78), Image.Resampling.LANCZOS)
+                    canvas.paste(atl_logo, (24 + (78 - atl_logo.width) // 2, 18 + (78 - atl_logo.height) // 2), atl_logo)
+
+            context = ": ".join(str(value) for value in (payload.get("group"), payload.get("round")) if value)
+            draw.text((114, 25), "ATL Season 8", fill="#62b5f5", font=cls._banner_font(18), anchor="la")
+            draw.text((114, 51), context or "Tournament matchup", fill="#ffffff", font=cls._banner_font(15), anchor="la")
+
+            scheduled_at = discord.utils.parse_time(payload.get("scheduled_at")) if payload.get("scheduled_at") else None
+            if scheduled_at:
+                vietnam_time = scheduled_at.astimezone(timezone(timedelta(hours=7)))
+                date_label = vietnam_time.strftime("%A, %B %d").replace(" 0", " ")
+                time_label = vietnam_time.strftime("%I:%M %p").lstrip("0") + " GMT+7"
+            else:
+                date_label, time_label = "Schedule pending", "Time TBA"
+            draw.text((870, 24), date_label, fill="#ffffff", font=cls._banner_font(15), anchor="ra")
+            draw.text((870, 47), time_label, fill="#ffffff", font=cls._banner_font(15), anchor="ra")
+
+            team_layouts = (
+                (teams[0], 38, 382, 278, "#62b5f5"),
+                (teams[1], 518, 862, 622, "#ff6b91"),
+            )
+            for team_name, left, right, logo_x, accent in team_layouts:
+                draw.rounded_rectangle((left, 137, right, 292), radius=4, fill="#292929", outline="#777b80", width=2)
+                logo_path = cls._team_logo_path(team_name)
+                if logo_path:
+                    with Image.open(logo_path) as source:
+                        logo = source.convert("RGBA")
+                        alpha_box = logo.getchannel("A").getbbox()
+                        if alpha_box:
+                            logo = logo.crop(alpha_box)
+                        logo.thumbnail((105, 105), Image.Resampling.LANCZOS)
+                        canvas.paste(logo, (logo_x - logo.width // 2, 161 + (105 - logo.height) // 2), logo)
+                else:
+                    draw.ellipse((logo_x - 50, 164, logo_x + 50, 264), fill=accent)
+                    draw.text((logo_x, 214), team_name[:2].upper(), fill="#ffffff", font=cls._banner_font(32), anchor="mm")
+
+                if left < 450:
+                    text_x = logo_x - 76
+                    text_anchor = "ra"
+                else:
+                    text_x = logo_x + 76
+                    text_anchor = "la"
+                font_size = 24
+                font = cls._banner_font(font_size)
+                while font_size > 15 and draw.textbbox((0, 0), team_name, font=font)[2] > 145:
+                    font_size -= 2
+                    font = cls._banner_font(font_size)
+                draw.text((text_x, 214), team_name, fill="#ffffff", font=font, anchor=text_anchor)
+
+            draw.text((450, 191), "OPEN", fill="#a9d9ff", font=cls._banner_font(12), anchor="mm")
+            draw.text((450, 224), "VS.", fill="#ffffff", font=cls._banner_font(28), anchor="mm")
+
+            output = BytesIO()
+            canvas.save(output, format="PNG", optimize=True)
+            output.seek(0)
+            return discord.File(output, filename="matchup.png")
+        except Exception:
+            logger.exception("Could not build matchup notification banner")
+            return None
+
+    @classmethod
+    def _notification_embeds(cls, event: dict, site_url: str) -> list[discord.Embed]:
+        primary = cls._notification_embed(event, site_url)
+        return [primary]
 
     @staticmethod
     def _iso_datetime(value) -> str | None:
@@ -183,14 +302,20 @@ class BettingCog(commands.Cog):
             if not hasattr(channel, "send"):
                 raise RuntimeError("Configured betting notification channel is not messageable")
             site_url = str(config.get("BETTING_SITE_URL") or Config.BETTING_SITE_URL).rstrip("/")
-            embed = self._notification_embed(event, site_url)
+            embeds = self._notification_embeds(event, site_url)
+            matchup_banner = self._matchup_banner(event)
+            if matchup_banner:
+                embeds[0].set_image(url="attachment://matchup.png")
             role_id = config.get("BETTING_NOTIFICATION_ROLE_ID") or Config.BETTING_NOTIFICATION_ROLE_ID
             mention = f"<@&{int(role_id)}>" if role_id and event.get("event_type") == "betting_opened" else None
-            message = await channel.send(
+            send_options = dict(
                 content=mention,
-                embed=embed,
+                embeds=embeds,
                 allowed_mentions=discord.AllowedMentions(roles=bool(mention), users=False, everyone=False),
             )
+            if matchup_banner:
+                send_options["file"] = matchup_banner
+            message = await channel.send(**send_options)
             await self.bot.db.betting_notifications.update_one(
                 {"_id": event["_id"], "status": "processing"},
                 {"$set": {"status": "sent", "sent_at": datetime.now(timezone.utc), "discord_message_id": message.id}},
