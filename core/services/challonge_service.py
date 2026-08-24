@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
 from pymongo import UpdateOne
 
 
 CHALLONGE_BASE_URL = "https://api.challonge.com/v2.1"
+DEFAULT_BETTING_TIMEZONE = "Asia/Ho_Chi_Minh"
+DEFAULT_MATCH_HOUR = 20
+DEFAULT_LOCK_MINUTES = 5
+GROUP_WEEKDAYS = {"Group A": 5, "Group B": 6}  # Monday=0
 
 
 class ChallongeError(RuntimeError):
@@ -55,6 +61,29 @@ def _parse_timestamp(value: Any) -> datetime | None:
     if result.tzinfo is None:
         result = result.replace(tzinfo=timezone.utc)
     return result
+
+
+def next_weekday_at(after: datetime, *, weekday: int, hour: int, timezone_name: str) -> datetime:
+    """Return the next local weekday/hour strictly after the supplied instant."""
+    try:
+        local_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as error:
+        if timezone_name in {"Asia/Ho_Chi_Minh", "Asia/Saigon"}:
+            # Vietnam is UTC+7 year-round. This keeps Windows development
+            # environments working even when the optional IANA tzdata package
+            # is absent; production Linux still uses ZoneInfo normally.
+            local_timezone = timezone(timedelta(hours=7), name="ICT")
+        else:
+            raise ChallongeError(f"Unknown BETTING_TIMEZONE: {timezone_name}") from error
+    if after.tzinfo is None:
+        after = after.replace(tzinfo=timezone.utc)
+    local_after = after.astimezone(local_timezone)
+    days_ahead = (weekday - local_after.weekday()) % 7
+    candidate_date = local_after.date() + timedelta(days=days_ahead)
+    candidate = datetime.combine(candidate_date, time(hour=hour), tzinfo=local_timezone)
+    if candidate <= local_after:
+        candidate += timedelta(days=7)
+    return candidate.astimezone(timezone.utc)
 
 
 def normalize_snapshot(snapshot: ChallongeSnapshot) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -294,6 +323,10 @@ class ChallongeService:
         if match_operations:
             await self.database.betting_matches.bulk_write(match_operations, ordered=False)
 
+        settled_matches = await self._settle_completed_matches(match_rows, now=now)
+
+        scheduled_matches = await self.apply_default_weekend_schedule(tournament_id, now=now)
+
         current_match_ids = [row["challonge_match_id"] for row in match_rows]
         if current_match_ids:
             await self.database.betting_matches.update_many(
@@ -317,7 +350,189 @@ class ChallongeService:
             "playable_matches": sum(1 for row in match_rows if row["player1_id"] and row["player2_id"]),
             "open_matches": sum(1 for row in match_rows if row["challonge_state"] == "open"),
             "completed_matches": sum(1 for row in match_rows if row["challonge_state"] == "complete"),
+            "scheduled_matches": scheduled_matches,
+            "settled_matches": settled_matches,
         }
+
+    async def _settle_completed_matches(self, match_rows: list[dict[str, Any]], *, now: datetime) -> int:
+        """Settle each Challonge-confirmed result once in a Mongo transaction."""
+        completed = [row for row in match_rows if row["challonge_state"] == "complete"]
+        settled_count = 0
+        for row in completed:
+            async with await self.database.client.start_session() as session:
+                async with session.start_transaction():
+                    match = await self.database.betting_matches.find_one(
+                        {
+                            "challonge_match_id": row["challonge_match_id"],
+                            "settlement_status": {"$ne": "settled"},
+                        },
+                        session=session,
+                    )
+                    if not match:
+                        continue
+                    stable_match_id = str(match.get("challonge_match_id") or match.get("_id"))
+                    wagers = await self.database.betting_wagers.find(
+                        {"match_id": stable_match_id, "status": "active"},
+                        session=session,
+                    ).to_list(length=10000)
+                    winner_id = str(row.get("winner_id") or "")
+                    valid_winner = winner_id in {
+                        str(match.get("player1_id")),
+                        str(match.get("player2_id")),
+                    }
+                    winning_wagers = [wager for wager in wagers if str(wager.get("team_id")) == winner_id]
+
+                    # A draw/void or an empty winning side cannot produce fair
+                    # parimutuel odds, so every active stake is returned.
+                    if not valid_winner or (wagers and not winning_wagers):
+                        for wager in wagers:
+                            stake = int(wager.get("stake", 0))
+                            if stake:
+                                await self.database.wallets.update_one(
+                                    {"user_id": wager["user_id"]},
+                                    {"$inc": {"balance": stake}, "$set": {"updated_at": now}},
+                                    session=session,
+                                )
+                                await self.database.wallet_transactions.insert_one(
+                                    {
+                                        "_id": str(uuid.uuid4()),
+                                        "user_id": wager["user_id"],
+                                        "match_id": stable_match_id,
+                                        "type": "wager_refund",
+                                        "amount": stake,
+                                        "created_at": now,
+                                    },
+                                    session=session,
+                                )
+                            await self.database.betting_wagers.update_one(
+                                {"_id": wager["_id"]},
+                                {"$set": {"status": "refunded", "payout": stake, "settled_at": now}},
+                                session=session,
+                            )
+                    else:
+                        total_pool = sum(int(wager.get("stake", 0)) for wager in wagers)
+                        winners = winning_wagers
+                        winning_pool = sum(int(wager.get("stake", 0)) for wager in winners)
+                        payouts: dict[str, int] = {}
+                        if total_pool and winning_pool:
+                            remainders = []
+                            paid = 0
+                            for wager in winners:
+                                base, remainder = divmod(total_pool * int(wager["stake"]), winning_pool)
+                                payouts[str(wager["_id"])] = base
+                                paid += base
+                                remainders.append((remainder, str(wager["_id"])))
+                            remainders.sort(key=lambda item: (-item[0], item[1]))
+                            for _, wager_id in remainders[: total_pool - paid]:
+                                payouts[wager_id] += 1
+
+                        for wager in wagers:
+                            payout = payouts.get(str(wager["_id"]), 0)
+                            status = "won" if payout else "lost"
+                            if payout:
+                                await self.database.wallets.update_one(
+                                    {"user_id": wager["user_id"]},
+                                    {"$inc": {"balance": payout}, "$set": {"updated_at": now}},
+                                    session=session,
+                                )
+                                await self.database.wallet_transactions.insert_one(
+                                    {
+                                        "_id": str(uuid.uuid4()),
+                                        "user_id": wager["user_id"],
+                                        "match_id": stable_match_id,
+                                        "type": "wager_payout",
+                                        "amount": payout,
+                                        "created_at": now,
+                                    },
+                                    session=session,
+                                )
+                            await self.database.betting_wagers.update_one(
+                                {"_id": wager["_id"]},
+                                {"$set": {"status": status, "payout": payout, "settled_at": now}},
+                                session=session,
+                            )
+
+                    result = await self.database.betting_matches.update_one(
+                        {"_id": match["_id"], "settlement_status": {"$ne": "settled"}},
+                        {
+                            "$set": {
+                                "state": "completed",
+                                "winner_id": row.get("winner_id"),
+                                "scores": row.get("scores"),
+                                "settlement_status": "settled",
+                                "settled_at": now,
+                                "updated_at": now,
+                            }
+                        },
+                        session=session,
+                    )
+                    if result.modified_count:
+                        settled_count += 1
+        return settled_count
+
+    async def apply_default_weekend_schedule(self, tournament_id: str, *, now: datetime | None = None) -> int:
+        """Schedule one Group A match Saturday and one Group B match Sunday each week."""
+        config = await self.database.db.config.find_one({"_id": "api_keys"}) or {}
+        timezone_name = str(config.get("BETTING_TIMEZONE") or DEFAULT_BETTING_TIMEZONE)
+        try:
+            match_hour = int(config.get("BETTING_MATCH_HOUR", DEFAULT_MATCH_HOUR))
+            lock_minutes = int(config.get("BETTING_LOCK_MINUTES", DEFAULT_LOCK_MINUTES))
+        except (TypeError, ValueError) as error:
+            raise ChallongeError("BETTING_MATCH_HOUR and BETTING_LOCK_MINUTES must be numbers.") from error
+        if not 0 <= match_hour <= 23:
+            raise ChallongeError("BETTING_MATCH_HOUR must be between 0 and 23.")
+        if not 0 <= lock_minutes <= 1440:
+            raise ChallongeError("BETTING_LOCK_MINUTES must be between 0 and 1440.")
+
+        now = now or datetime.now(timezone.utc)
+        scheduled_count = 0
+        for group_name, weekday in GROUP_WEEKDAYS.items():
+            cursor = self.database.betting_matches.find(
+                {
+                    "tournament_id": tournament_id,
+                    "group": group_name,
+                    "state": {"$in": ["upcoming", "open", "locked"]},
+                    "challonge_state": {"$ne": "complete"},
+                    "player1_id": {"$nin": [None, ""]},
+                    "player2_id": {"$nin": [None, ""]},
+                }
+            ).sort([("round", 1), ("identifier", 1), ("challonge_match_id", 1)])
+            matches = await cursor.to_list(length=200)
+            existing_times = [match.get("scheduled_at") for match in matches if match.get("scheduled_at")]
+            anchor = now
+            if existing_times:
+                latest = max(
+                    value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+                    for value in existing_times
+                )
+                if latest >= anchor:
+                    anchor = latest + timedelta(seconds=1)
+
+            for match in matches:
+                if match.get("scheduled_at"):
+                    continue
+                scheduled_at = next_weekday_at(
+                    anchor,
+                    weekday=weekday,
+                    hour=match_hour,
+                    timezone_name=timezone_name,
+                )
+                betting_closes_at = scheduled_at - timedelta(minutes=lock_minutes)
+                result = await self.database.betting_matches.update_one(
+                    {"_id": match["_id"], "scheduled_at": {"$in": [None]}},
+                    {
+                        "$set": {
+                            "scheduled_at": scheduled_at,
+                            "betting_closes_at": betting_closes_at,
+                            "schedule_source": "default_weekend",
+                            "updated_at": now,
+                        }
+                    },
+                )
+                if result.modified_count:
+                    scheduled_count += 1
+                    anchor = scheduled_at + timedelta(seconds=1)
+        return scheduled_count
 
     @staticmethod
     def snapshot_status(snapshot: ChallongeSnapshot) -> dict[str, Any]:

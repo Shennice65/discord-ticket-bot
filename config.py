@@ -27,4 +27,6 @@ class Config:
     CLIPS_SERVICE_URL = os.environ.get('CLIPS_SERVICE_URL', 'https://atlclips.site')
     CLIPS_ADMIN_PASSWORD = os.environ.get('CLIPS_ADMIN_PASSWORD', '')
     BETTING_SITE_URL = os.environ.get('BETTING_SITE_URL', CLIPS_SERVICE_URL).rstrip('/')
-    VERSION = "1.12.6"
+    BETTING_NOTIFICATION_CHANNEL_ID = os.environ.get('BETTING_NOTIFICATION_CHANNEL_ID', '')
+    BETTING_NOTIFICATION_ROLE_ID = os.environ.get('BETTING_NOTIFICATION_ROLE_ID', '')
+    VERSION = "1.13.2"

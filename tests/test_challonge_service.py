@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import types
+from datetime import datetime, timezone
 
 # The website test environment does not install the bot-only aiohttp package.
 # These tests exercise pure normalization and Mongo persistence, not transport.
@@ -9,6 +10,7 @@ sys.modules.setdefault("aiohttp", types.SimpleNamespace(ClientError=Exception))
 from core.services.challonge_service import (
     ChallongeService,
     ChallongeSnapshot,
+    next_weekday_at,
     normalize_snapshot,
 )
 
@@ -105,7 +107,13 @@ def test_sync_preserves_local_market_control_and_missing_schedule():
     snapshot = sample_snapshot()
     snapshot.matches[1]["attributes"].pop("timestamps", None)
     database = FakeDatabase()
-    result = asyncio.run(ChallongeService(database).sync_snapshot(snapshot))
+    service = ChallongeService(database)
+
+    async def skip_default_schedule(*args, **kwargs):
+        return 0
+
+    service.apply_default_weekend_schedule = skip_default_schedule
+    result = asyncio.run(service.sync_snapshot(snapshot))
 
     assert result["matches"] == 2
     open_match_update = database.betting_matches.operations[0]._doc
@@ -115,3 +123,12 @@ def test_sync_preserves_local_market_control_and_missing_schedule():
     unscheduled_update = database.betting_matches.operations[1]._doc
     assert "scheduled_at" not in unscheduled_update["$set"]
     assert database.db.config.updates[0][1]["$set"]["CHALLONGE_TOURNAMENT_ID"] == "9001"
+
+
+def test_vietnam_weekend_slots_are_saturday_and_sunday_at_8pm():
+    friday = datetime(2026, 8, 21, 10, 0, tzinfo=timezone.utc)
+    saturday = next_weekday_at(friday, weekday=5, hour=20, timezone_name="Asia/Ho_Chi_Minh")
+    sunday = next_weekday_at(friday, weekday=6, hour=20, timezone_name="Asia/Ho_Chi_Minh")
+
+    assert saturday.isoformat() == "2026-08-22T13:00:00+00:00"
+    assert sunday.isoformat() == "2026-08-23T13:00:00+00:00"
