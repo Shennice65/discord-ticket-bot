@@ -86,24 +86,41 @@ class ActivityCheck(commands.Cog):
                                 reacted_users.add(user.id)
                 
                 pending = self.active_check["pending_users"]
-                unranked = [uid for uid in pending if uid not in reacted_users]
-                safe = [uid for uid in pending if uid in reacted_users]
+                unranked_ids = [uid for uid in pending if uid not in reacted_users]
                 
-                for user_id in unranked:
-                    from utils.ladder_utils import TIERS, parse_rank
+                tier_order = ["Legends", "Masters", "Novice"]
+                
+                unranked_info = []
+                for user_id in unranked_ids:
+                    from utils.ladder_utils import parse_rank
                     async with self.db.ladder_lock:
                         player = await self.db.player_ranks.find_one({"user_id": user_id})
                         if player and player.get("rank"):
                             rank = player["rank"]
                             parsed = parse_rank(rank)
                             if parsed and parsed[0] in ["Novice", "Masters", "Legends"]:
+                                unranked_info.append((user_id, rank))
                                 await self.db.remove_player_from_ladder(user_id)
                                 print(f"Activity check: Unranked {user_id} (was {rank})")
                 
+                unranked_info.sort(key=lambda x: tier_order.index(parse_rank(x[1])[0]) if parse_rank(x[1]) and parse_rank(x[1])[0] in tier_order else 99)
+                
+                result_lines = []
+                current_tier = None
+                for user_id, rank in unranked_info:
+                    parsed = parse_rank(rank)
+                    tier = parsed[0] if parsed else "Unknown"
+                    if tier != current_tier:
+                        current_tier = tier
+                        result_lines.append(f"\n**{tier}**")
+                    result_lines.append(f"<@{user_id}> - {rank}")
+                
+                result_text = "\n".join(result_lines) if result_lines else "No one was unranked."
+                
                 await channel.send(
                     f"**Activity Check Complete**\n\n"
-                    f"✅ Reacted: {len(safe)} players\n"
-                    f"❌ Unranked: {len(unranked)} players\n"
+                    f"**Unranked for inactivity:**\n"
+                    f"{result_text}"
                 )
                 
             except Exception as e:
@@ -145,7 +162,10 @@ class ActivityCheck(commands.Cog):
             await interaction.followup.send("No players in Novice, Masters, or Legends tiers found.", ephemeral=True)
             return
         
-        channel = interaction.channel
+        channel = self.bot.get_channel(Config.RANK_PANEL_CHANNEL_ID)
+        if not channel:
+            await interaction.followup.send("Rank panel channel not found!", ephemeral=True)
+            return
         
         rank_role_ids = []
         if hasattr(Config, 'NOVICE_ROLE_ID') and Config.NOVICE_ROLE_ID:

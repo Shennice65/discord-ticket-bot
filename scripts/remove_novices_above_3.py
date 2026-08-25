@@ -5,7 +5,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import Database
-from ladder_utils import parse_rank
+from utils.ladder_utils import parse_rank
 
 async def remove_specified_novices():
     db = Database()
