@@ -132,8 +132,8 @@ class ActivityCheck(commands.Cog):
             rank_role_ids.append(Config.NOVICE_ROLE_ID)
         if hasattr(Config, 'MASTERS_ROLE_ID') and Config.MASTERS_ROLE_ID:
             rank_role_ids.append(Config.MASTERS_ROLE_ID)
-        if hasattr(Config, 'LEGENDS_ROLE_ID') and Config.LEGENDS_ROLE_ID:
-            rank_role_ids.append(Config.LEGENDS_ROLE_ID)
+        if hasattr(Config, 'LEGEND_ROLE_ID') and Config.LEGEND_ROLE_ID:
+            rank_role_ids.append(Config.LEGEND_ROLE_ID)
 
         mentions = " ".join([f"<@&{rid}>" for rid in rank_role_ids])
         
