@@ -77,7 +77,7 @@ class ActivityCheck(commands.Cog):
                 safe = [uid for uid in pending if uid in reacted_users]
                 
                 for user_id in unranked:
-                    from ladder_utils import TIERS, parse_rank
+                    from utils.ladder_utils import TIERS, parse_rank
                     async with self.db.ladder_lock:
                         player = await self.db.player_ranks.find_one({"user_id": user_id})
                         if player and player.get("rank"):
@@ -116,7 +116,7 @@ class ActivityCheck(commands.Cog):
         target_users = []
         for player in all_players:
             rank = player.get("rank", "")
-            from ladder_utils import parse_rank
+            from utils.ladder_utils import parse_rank
             parsed = parse_rank(rank)
             if parsed and parsed[0] in ["Novice", "Masters", "Legends"]:
                 target_users.append(player["user_id"])
