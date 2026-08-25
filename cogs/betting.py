@@ -487,7 +487,7 @@ class BettingCog(commands.Cog):
         raise error
 
     async def _require_owner(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == Config.MASTER_ADMIN_ID:
+        if interaction.user.id in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             return True
         await interaction.response.send_message("This command is restricted to the bot owner.", ephemeral=True)
         return False

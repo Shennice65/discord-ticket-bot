@@ -54,7 +54,7 @@ class TicketAdmin(commands.Cog):
     
     @app_commands.command(name="cleanghosttickets", description="Close orphan DB tickets whose channels no longer exist")
     async def clean_ghost_tickets(self, interaction: discord.Interaction):
-        if not interaction.permissions.administrator and interaction.user.id != Config.MASTER_ADMIN_ID:
+        if not interaction.permissions.administrator and interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         
@@ -113,7 +113,7 @@ class TicketAdmin(commands.Cog):
     
     @app_commands.command(name="refreshtickets", description="Re-edit embeds in all open ticket channels with updated instructions")
     async def refresh_tickets(self, interaction: discord.Interaction):
-        if not interaction.permissions.administrator and interaction.user.id != Config.MASTER_ADMIN_ID:
+        if not interaction.permissions.administrator and interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
         
@@ -276,7 +276,7 @@ class TicketAdmin(commands.Cog):
 
     @app_commands.command(name="announce", description="Send the update_announcement.md text to the configured channel (Master Admin only)")
     async def announce(self, interaction: discord.Interaction):
-        if interaction.user.id != Config.MASTER_ADMIN_ID:
+        if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.response.send_message("Only the Master Admin can use this command.", ephemeral=True)
             return
             

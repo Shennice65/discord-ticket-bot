@@ -22,6 +22,7 @@ class Config:
     NOVICE_ROLE_ID = int(os.environ.get('NOVICE_ROLE_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
     CO_OWNER_ROLE_ID = int(os.environ.get('CO_OWNER_ROLE_ID', 0))
+    SHEN_ID = int(os.environ.get('SHEN_ID', 0))
     MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'discord_bot_db')
     # The public leaderboard is not secret. Keep the production URL as a
     # fallback so ticket links cannot silently disappear when a deployment

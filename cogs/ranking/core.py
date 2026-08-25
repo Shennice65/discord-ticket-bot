@@ -76,7 +76,7 @@ class Ranking(commands.Cog):
 
     @app_commands.command(name="setupranking", description="Setup the live ranking leaderboard button in this channel")
     async def setupranking(self, interaction: discord.Interaction):
-        if not interaction.permissions.administrator and interaction.user.id != Config.MASTER_ADMIN_ID:
+        if not interaction.permissions.administrator and interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
             

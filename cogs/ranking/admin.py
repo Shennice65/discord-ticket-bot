@@ -21,7 +21,7 @@ class RankingAdmin(commands.Cog):
 
     @app_commands.command(name="togglelb3s", description="Toggle between Roblox avatar headshots and Discord pfps for leaderboard top 3.")
     async def toggle_lb3s(self, interaction: discord.Interaction):
-        if interaction.user.id != Config.MASTER_ADMIN_ID:
+        if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
             

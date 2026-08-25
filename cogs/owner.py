@@ -10,7 +10,7 @@ class OwnerCog(commands.Cog):
     @app_commands.command(name="chat", description="Send a message to a specific channel (Owner and Co-Owner only)")
     @app_commands.describe(message="The message to send")
     async def chat(self, interaction: discord.Interaction, message: str):
-        is_master = interaction.user.id == Config.MASTER_ADMIN_ID
+        is_master = interaction.user.id in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]
         
         co_owner_role = None
         if hasattr(Config, 'CO_OWNER_ROLE_ID') and Config.CO_OWNER_ROLE_ID:

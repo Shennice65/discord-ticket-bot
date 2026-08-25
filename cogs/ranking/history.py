@@ -17,7 +17,7 @@ from views.history_views import (
 )
 
 def can_clear_history(user: discord.Member | discord.User) -> bool:
-    if user.id == Config.MASTER_ADMIN_ID:
+    if user.id in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
         return True
     if isinstance(user, discord.Member):
         return user.guild_permissions.administrator
@@ -48,7 +48,7 @@ class History(commands.Cog):
         
         target_user = user or interaction.user
         
-        if target_user.id == Config.MASTER_ADMIN_ID and interaction.user.id != Config.MASTER_ADMIN_ID:
+        if target_user.id in [Config.MASTER_ADMIN_ID, Config.SHEN_ID] and interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.followup.send("you can not view this person history", ephemeral=True)
             
             # Snooper alert!
@@ -61,7 +61,7 @@ class History(commands.Cog):
             return
 
         # Private logging for the Master Admin
-        if interaction.user.id != Config.MASTER_ADMIN_ID:
+        if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             print(f"[HISTORY LOG] {interaction.user.name} ({interaction.user.id}) checked history of {target_user.name} ({target_user.id})", flush=True)
             await send_master_admin_dm(
                 interaction.client,
