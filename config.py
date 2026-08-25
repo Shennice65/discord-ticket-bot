@@ -21,6 +21,7 @@ class Config:
     MASTERS_ROLE_ID = int(os.environ.get('MASTERS_ROLE_ID', 0))
     NOVICE_ROLE_ID = int(os.environ.get('NOVICE_ROLE_ID', 0))
     MONGO_URI = os.environ.get('MONGO_URI') or os.getenv('MONGO_URI')
+    MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'discord_bot_db')
     # The public leaderboard is not secret. Keep the production URL as a
     # fallback so ticket links cannot silently disappear when a deployment
     # environment is missing or has not reloaded this variable.
@@ -31,4 +32,4 @@ class Config:
     BETTING_NOTIFICATION_ROLE_ID = os.environ.get('BETTING_NOTIFICATION_ROLE_ID', '')
     WEB_LOGIN_MIN_ACCOUNT_AGE_DAYS = int(os.environ.get('WEB_LOGIN_MIN_ACCOUNT_AGE_DAYS', '30'))
     WEB_LOGIN_MIN_MEMBERSHIP_DAYS = int(os.environ.get('WEB_LOGIN_MIN_MEMBERSHIP_DAYS', '7'))
-    VERSION = "1.13.2"
+    VERSION = "1.13.3"

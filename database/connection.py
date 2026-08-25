@@ -41,7 +41,7 @@ class ConnectionMixin:
                 
             import certifi
             self.client = AsyncIOMotorClient(self.uri, tlsCAFile=certifi.where())
-            self.db = self.client.discord_bot_db
+            self.db = self.client[Config.MONGO_DB_NAME]
             
             self.tickets = self.db.tickets
             self.ranked_results = self.db.ranked_results
