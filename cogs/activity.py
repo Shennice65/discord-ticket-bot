@@ -162,7 +162,7 @@ class ActivityCheck(commands.Cog):
             await interaction.followup.send("No players in Novice, Masters, or Legends tiers found.", ephemeral=True)
             return
         
-        channel = self.bot.get_channel(Config.RANK_PANEL_CHANNEL_ID)
+        channel = self.bot.get_channel(Config.RANKING_PANEL_CHANNEL_ID)
         if not channel:
             await interaction.followup.send("Rank panel channel not found!", ephemeral=True)
             return
