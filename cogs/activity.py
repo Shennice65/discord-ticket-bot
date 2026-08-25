@@ -11,9 +11,19 @@ from database import Database
 class ActivityCheck(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database()
+        self.db = None
         self.active_check = None
         self.check_reminders.start()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        tickets_cog = self.bot.get_cog('Tickets')
+        if tickets_cog:
+            self.db = tickets_cog.db
+        else:
+            ranking_cog = self.bot.get_cog('Ranking')
+            if ranking_cog:
+                self.db = ranking_cog.db
     
     def cog_unload(self):
         self.check_reminders.cancel()
@@ -22,7 +32,9 @@ class ActivityCheck(commands.Cog):
     async def check_reminders(self):
         if not self.active_check:
             return
-        
+
+        if not self.db or not self.db.player_ranks:
+            return
         now = datetime.utcnow()
         deadline = self.active_check["deadline"]
         
@@ -45,7 +57,7 @@ class ActivityCheck(commands.Cog):
             if user:
                 try:
                     await user.send(
-                        f"**Activity Check Reminder**\n\n"
+                        f"**Activity Check**\n\n"
                         f"You have not reacted to the activity check message yet!\n"
                         f"If you do not react by <t:{deadline_ts}:F>, "
                         f"you will be **unranked**.\n\n"
@@ -111,6 +123,13 @@ class ActivityCheck(commands.Cog):
             return
         
         await interaction.response.defer(ephemeral=True)
+        
+        if not self.db.player_ranks:
+            await self.db.init()
+
+        if not self.db.player_ranks:
+            await interaction.followup.send("Database not ready yet, please try again.", ephemeral=True)
+            return
         
         all_players = await self.db.get_all_player_ranks()
         
