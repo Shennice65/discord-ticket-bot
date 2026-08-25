@@ -127,7 +127,15 @@ class ActivityCheck(commands.Cog):
         
         channel = interaction.channel
         
-        mentions = " ".join([f"<@{uid}>" for uid in target_users])
+        rank_role_ids = []
+        if hasattr(Config, 'NOVICE_ROLE_ID') and Config.NOVICE_ROLE_ID:
+            rank_role_ids.append(Config.NOVICE_ROLE_ID)
+        if hasattr(Config, 'MASTERS_ROLE_ID') and Config.MASTERS_ROLE_ID:
+            rank_role_ids.append(Config.MASTERS_ROLE_ID)
+        if hasattr(Config, 'LEGENDS_ROLE_ID') and Config.LEGENDS_ROLE_ID:
+            rank_role_ids.append(Config.LEGENDS_ROLE_ID)
+
+        mentions = " ".join([f"<@&{rid}>" for rid in rank_role_ids])
         
         deadline = datetime.utcnow() + timedelta(hours=48)
         
