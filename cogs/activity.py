@@ -13,7 +13,6 @@ class ActivityCheck(commands.Cog):
         self.bot = bot
         self.db = Database()
         self.active_check = None
-        bot.loop.create_task(self.db.init())
         self.check_reminders.start()
     
     def cog_unload(self):
@@ -39,14 +38,16 @@ class ActivityCheck(commands.Cog):
         
         self.active_check["last_reminder"] = str(now)
         
+        deadline_ts = self.active_check.get("deadline_timestamp", 0)
+        
         for user_id in self.active_check["pending_users"]:
             user = self.bot.get_user(user_id)
             if user:
                 try:
                     await user.send(
-                        f"**Activity Check**\n\n"
+                        f"**Activity Check Reminder**\n\n"
                         f"You have not reacted to the activity check message yet!\n"
-                        f"If you do not react by **{deadline.strftime('%Y-%m-%d %H:%M UTC')}**, "
+                        f"If you do not react by <t:{deadline_ts}:F>, "
                         f"you will be **unranked**.\n\n"
                         f"Please react with ✅ to the activity check message in the server."
                     )
@@ -138,14 +139,15 @@ class ActivityCheck(commands.Cog):
         mentions = " ".join([f"<@&{rid}>" for rid in rank_role_ids])
         
         deadline = datetime.utcnow() + timedelta(hours=48)
+        deadline_timestamp = int(deadline.timestamp())
         
         embed = discord.Embed(
             title="Activity Check",
             description=(
                 f"**All Novice, Masters, and Legends players must react to this message!**\n\n"
                 f"React with ✅ to confirm you are active.\n\n"
-                f"**Deadline:** {deadline.strftime('%Y-%m-%d %H:%M UTC')}\n"
-                f"If you do not react by the deadline, you will be **unranked**.\n\n"
+                f"**Deadline:** <t:{deadline_timestamp}:F>\n"
+                f"If you do not react by <t:{deadline_timestamp}:F>, you will be **unranked**.\n\n"
                 f"You will receive a reminder every 12 hours until you react."
             ),
             color=discord.Color.orange()
@@ -158,6 +160,7 @@ class ActivityCheck(commands.Cog):
             "message_id": message.id,
             "channel_id": channel.id,
             "deadline": deadline,
+            "deadline_timestamp": deadline_timestamp,
             "pending_users": target_users,
             "last_reminder": None
         }
