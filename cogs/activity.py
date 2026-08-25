@@ -33,7 +33,7 @@ class ActivityCheck(commands.Cog):
         if not self.active_check:
             return
 
-        if not self.db or not self.db.player_ranks:
+        if self.db is None or self.db.player_ranks is None:
             return
         now = datetime.utcnow()
         deadline = self.active_check["deadline"]
@@ -124,10 +124,10 @@ class ActivityCheck(commands.Cog):
         
         await interaction.response.defer(ephemeral=True)
         
-        if not self.db.player_ranks:
+        if self.db is None or self.db.player_ranks is None:
             await self.db.init()
 
-        if not self.db.player_ranks:
+        if self.db is None or self.db.player_ranks is None:
             await interaction.followup.send("Database not ready yet, please try again.", ephemeral=True)
             return
         
