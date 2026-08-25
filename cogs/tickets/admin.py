@@ -283,10 +283,10 @@ class TicketAdmin(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         config_doc = await self.db.db.config.find_one({"_id": "api_keys"})
-        channel_id = config_doc.get("ANNOUNCEMENT_CHANNLE") if config_doc else None
+        channel_id = config_doc.get("ANNOUNCEMENT_CHANNEL") if config_doc else None
         
         if not channel_id:
-            await interaction.followup.send("ANNOUNCEMENT_CHANNLE is not set in the database.")
+            await interaction.followup.send("ANNOUNCEMENT_CHANNEL is not set in the database.")
             return
             
         channel = interaction.client.get_channel(int(channel_id))
