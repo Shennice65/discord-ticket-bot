@@ -53,6 +53,7 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.ranking.cooldowns")
         await self.load_extension("cogs.owner")
         await self.load_extension("cogs.betting")
+        await self.load_extension("cogs.activity")
         print("Cogs loaded. Syncing commands...")
         
         self.ping_clips_service.start()
