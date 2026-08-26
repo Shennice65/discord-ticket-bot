@@ -51,8 +51,27 @@ class ActivityCheck(commands.Cog):
         self.active_check["last_reminder"] = str(now)
         
         deadline_ts = self.active_check.get("deadline_timestamp", 0)
+
+        reacted_users = set()
+        channel_id = self.active_check.get("channel_id")
+        message_id = self.active_check.get("message_id")
+        channel = self.bot.get_channel(channel_id)
+
+        if channel and message_id:
+            try:
+                message = await channel.fetch_message(message_id)
+                for reaction in message.reactions:
+                    if str(reaction.emoji) == "✅":
+                        async for user in reaction.users():
+                            if not user.bot:
+                                reacted_users.add(user.id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                print(f"Activity check reminder reaction lookup failed: {e}")
         
         for user_id in self.active_check["pending_users"]:
+            if user_id in reacted_users:
+                continue
+
             user = self.bot.get_user(user_id)
             if user:
                 try:
