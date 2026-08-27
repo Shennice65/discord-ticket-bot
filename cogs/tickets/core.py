@@ -578,12 +578,18 @@ class Tickets(commands.Cog):
                 success, actual_new_rank = await self.db.force_set_player_rank(
                     user_id,
                     end_rank,
+                    # An observation result is an authoritative rank assignment.
+                    # It must be able to put an unranked player back on the ladder.
+                    bypass_unrank=True,
                     movement_source="observation",
                 )
                 
                 if not success:
                     await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-                    await interaction.followup.send("Failed to update rank. Please ensure the rank is formatted correctly.", ephemeral=True)
+                    await interaction.followup.send(
+                        f"Failed to update rank: {actual_new_rank}",
+                        ephemeral=True,
+                    )
                     return
             
             # Auto-assign tier role for observed player
