@@ -57,7 +57,7 @@ class ClipsMixin:
         )
         return True
 
-    async def toggle_clip_reaction(self, owner_id: int, clip_index: int, user_id: int, reaction_type: str) -> dict:
+    async def toggle_clip_reaction(self, owner_id: int, clip_index: int, user_id: int, reaction_type: str, allow_remove: bool = True) -> dict:
         """Toggles a reaction and returns the new counts."""
         doc = await self.db.player_clips.find_one({"user_id": owner_id})
         if not doc or clip_index < 0 or clip_index >= len(doc.get("clips", [])):
@@ -72,15 +72,17 @@ class ClipsMixin:
         
         if reaction_type == "star":
             if has_starred:
-                stars.remove(user_id)
-                has_starred = False
+                if allow_remove:
+                    stars.remove(user_id)
+                    has_starred = False
             else:
                 stars.add(user_id)
                 has_starred = True
         elif reaction_type == "skull":
             if has_skulled:
-                skulls.remove(user_id)
-                has_skulled = False
+                if allow_remove:
+                    skulls.remove(user_id)
+                    has_skulled = False
             else:
                 skulls.add(user_id)
                 has_skulled = True
@@ -97,5 +99,7 @@ class ClipsMixin:
             "stars": len(stars), 
             "skulls": len(skulls), 
             "has_starred": has_starred, 
-            "has_skulled": has_skulled
+            "has_skulled": has_skulled,
+            "already_reacted": (reaction_type == "star" and user_id in clip.get("stars", []))
+            or (reaction_type == "skull" and user_id in clip.get("skulls", [])),
         }

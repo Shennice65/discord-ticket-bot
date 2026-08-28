@@ -362,9 +362,12 @@ class ClipsPaginationView(discord.ui.View):
         
     async def handle_reaction(self, interaction: discord.Interaction, reaction_type: str, button: discord.ui.Button):
         db = interaction.client.db
-        res = await db.toggle_clip_reaction(self.target_user.id, self.current_page, interaction.user.id, reaction_type)
+        res = await db.toggle_clip_reaction(self.target_user.id, self.current_page, interaction.user.id, reaction_type, allow_remove=False)
         if not res:
             await interaction.response.send_message("Clip not found.", ephemeral=True)
+            return
+        if res.get("already_reacted"):
+            await interaction.response.send_message("You already reacted to this clip.", ephemeral=True)
             return
             
         self.clips = await db.get_user_clips(self.target_user.id)
@@ -476,9 +479,12 @@ class ShareClipView(discord.ui.View):
             return
 
         db = interaction.client.db
-        res = await db.toggle_clip_reaction(owner_id, clip_index, interaction.user.id, reaction_type)
+        res = await db.toggle_clip_reaction(owner_id, clip_index, interaction.user.id, reaction_type, allow_remove=False)
         if not res:
             await interaction.response.send_message("Clip not found.", ephemeral=True)
+            return
+        if res.get("already_reacted"):
+            await interaction.response.send_message("You already reacted to this clip.", ephemeral=True)
             return
 
         self.btn_star.label = f"⭐ {res['stars']}"
