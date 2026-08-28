@@ -29,3 +29,4 @@ Thumbs.db
 .uv-cache/
 .uv-python/
 .pytest-cache/
+.agents/

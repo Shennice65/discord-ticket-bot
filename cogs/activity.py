@@ -102,6 +102,16 @@ class ActivityCheck(commands.Cog):
     
     def cog_unload(self):
         self.check_reminders.cancel()
+
+    @staticmethod
+    def can_manage_activity(interaction: discord.Interaction) -> bool:
+        is_configured_owner = interaction.user.id in {Config.MASTER_ADMIN_ID, Config.SHEN_ID}
+        is_server_admin = bool(
+            interaction.guild
+            and isinstance(interaction.user, discord.Member)
+            and interaction.user.guild_permissions.administrator
+        )
+        return is_configured_owner or is_server_admin
     
     @tasks.loop(minutes=5)
     async def check_reminders(self):
@@ -295,8 +305,8 @@ class ActivityCheck(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(message_link="Full Discord link to the old activity-check message")
     async def recover_activity_check(self, interaction: discord.Interaction, message_link: str):
-        if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
-            await interaction.response.send_message("Only Owners and Co-Owners can recover an activity check.", ephemeral=True)
+        if not self.can_manage_activity(interaction):
+            await interaction.response.send_message("Only server administrators can recover an activity check.", ephemeral=True)
             return
         match = re.fullmatch(r"https?://(?:\w+\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)/?", message_link.strip())
         if not match:
@@ -359,8 +369,8 @@ class ActivityCheck(commands.Cog):
     @app_commands.command(name="startactivitycheck", description="Start a 48-hour activity check for every ranked player")
     @app_commands.default_permissions(administrator=True)
     async def start_activity_check(self, interaction: discord.Interaction):
-        if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
-            await interaction.response.send_message("Only Owners and Co-Owners can start an activity check.", ephemeral=True)
+        if not self.can_manage_activity(interaction):
+            await interaction.response.send_message("Only server administrators can start an activity check.", ephemeral=True)
             return
         
         if self.active_check:
@@ -434,8 +444,8 @@ class ActivityCheck(commands.Cog):
     @app_commands.command(name="cancelactivitycheck", description="Cancel the current activity check")
     @app_commands.default_permissions(administrator=True)
     async def cancel_activity_check(self, interaction: discord.Interaction):
-        if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
-            await interaction.response.send_message("Only Owners and Co-Owners can cancel an activity check.", ephemeral=True)
+        if not self.can_manage_activity(interaction):
+            await interaction.response.send_message("Only server administrators can cancel an activity check.", ephemeral=True)
             return
         
         if not self.active_check:
