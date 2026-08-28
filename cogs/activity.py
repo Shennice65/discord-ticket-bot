@@ -302,7 +302,6 @@ class ActivityCheck(commands.Cog):
         return f"Recovery complete. **{len(unranked)}** players were unranked; **{len(skipped)}** were skipped because their rank changed after the preview.\n{preview or 'No players were unranked.'}{suffix}"
 
     @app_commands.command(name="recoveractivitycheck", description="Preview and recover an old activity check from its message link")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(message_link="Full Discord link to the old activity-check message")
     async def recover_activity_check(self, interaction: discord.Interaction, message_link: str):
         if not self.can_manage_activity(interaction):
@@ -367,7 +366,6 @@ class ActivityCheck(commands.Cog):
         await interaction.followup.send(content, view=view, ephemeral=True)
     
     @app_commands.command(name="startactivitycheck", description="Start a 48-hour activity check for every ranked player")
-    @app_commands.default_permissions(administrator=True)
     async def start_activity_check(self, interaction: discord.Interaction):
         if not self.can_manage_activity(interaction):
             await interaction.response.send_message("Only server administrators can start an activity check.", ephemeral=True)
@@ -442,7 +440,6 @@ class ActivityCheck(commands.Cog):
         )
     
     @app_commands.command(name="cancelactivitycheck", description="Cancel the current activity check")
-    @app_commands.default_permissions(administrator=True)
     async def cancel_activity_check(self, interaction: discord.Interaction):
         if not self.can_manage_activity(interaction):
             await interaction.response.send_message("Only server administrators can cancel an activity check.", ephemeral=True)
