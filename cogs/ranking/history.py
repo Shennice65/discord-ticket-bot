@@ -1,8 +1,10 @@
 print("[DEBUG HISTORY.PY] Loading history module - CLIPS VERSION", flush=True)
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from typing import Optional
+from datetime import datetime, timedelta, timezone
+from pymongo import ReturnDocument
 
 from config import Config
 from utils.embeds import TicketEmbeds
@@ -40,6 +42,69 @@ class History(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = bot.db
+
+    async def cog_load(self):
+        self.clip_review_worker.start()
+
+    async def cog_unload(self):
+        self.clip_review_worker.cancel()
+
+    @tasks.loop(seconds=10)
+    async def clip_review_worker(self):
+        now = datetime.now(timezone.utc)
+        collection = self.bot.db.db.clip_review_notifications
+        try:
+            await collection.update_many(
+                {"status": "processing", "claimed_at": {"$lte": now - timedelta(minutes=5)}},
+                {"$set": {"status": "pending", "next_attempt_at": now}},
+            )
+            event = await collection.find_one_and_update(
+                {"status": "pending", "next_attempt_at": {"$lte": now}},
+                {"$set": {"status": "processing", "claimed_at": now}, "$inc": {"attempts": 1}},
+                sort=[("created_at", 1)],
+                return_document=ReturnDocument.AFTER,
+            )
+        except Exception as error:
+            print(f"[CLIP REVIEW] Could not claim notification: {error}", flush=True)
+            return
+        if not event:
+            return
+
+        payload = event.get("payload") or {}
+        uploader = payload.get("uploader") or "ATL member"
+        discord_user_id = payload.get("discord_user_id")
+        uploader_text = f"{uploader} (`{discord_user_id}`)" if discord_user_id else uploader
+        embed = discord.Embed(
+            title="New clip waiting for review",
+            description=(
+                f"**{payload.get('title') or 'Untitled clip'}** was submitted privately by {uploader_text}.\n\n"
+                f"[Review submission]({payload.get('review_url')}) · [Watch clip]({payload.get('clip_url')})"
+            ),
+            color=discord.Color.from_rgb(184, 230, 74),
+            timestamp=event.get("created_at") or now,
+        )
+        if payload.get("thumbnail_url"):
+            embed.set_thumbnail(url=payload["thumbnail_url"])
+        embed.set_footer(text="Open Admin Clips to publish or delete this submission.")
+
+        try:
+            sent = await send_master_admin_dm(self.bot, embed=embed)
+            if not sent:
+                raise RuntimeError("Master admin DM could not be delivered")
+            await collection.update_one(
+                {"_id": event["_id"], "status": "processing"},
+                {"$set": {"status": "sent", "sent_at": datetime.now(timezone.utc)}},
+            )
+        except Exception as error:
+            delay = min(300, 15 * (2 ** min(int(event.get("attempts", 1)) - 1, 4)))
+            await collection.update_one(
+                {"_id": event["_id"], "status": "processing"},
+                {"$set": {"status": "pending", "next_attempt_at": now + timedelta(seconds=delay), "last_error": type(error).__name__}},
+            )
+
+    @clip_review_worker.before_loop
+    async def before_clip_review_worker(self):
+        await self.bot.wait_until_ready()
     
     @app_commands.command(name="stats", description="View a user's ranked and observation history")
     @app_commands.describe(user="The user to check history for")
