@@ -362,6 +362,17 @@ class BettingCog(commands.Cog):
                 embeds=embeds,
                 allowed_mentions=discord.AllowedMentions(roles=bool(mention), users=False, everyone=False),
             )
+            if event.get("event_type") == "betting_opened":
+                match_url = f"{site_url}/matches/{event.get('match_id')}"
+                pick_view = discord.ui.View(timeout=None)
+                pick_view.add_item(
+                    discord.ui.Button(
+                        label="Choose your pick",
+                        style=discord.ButtonStyle.link,
+                        url=match_url,
+                    )
+                )
+                send_options["view"] = pick_view
             if matchup_banner:
                 send_options["file"] = matchup_banner
             message = await channel.send(**send_options)
