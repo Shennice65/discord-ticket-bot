@@ -264,6 +264,15 @@ class History(commands.Cog):
         if not success:
             await interaction.edit_original_response(content="Failed to save clip. You may be at the limit.")
             return
+
+        clip_url = result.get("clip_url", "")
+        await send_master_admin_dm(
+            interaction.client,
+            content=(
+                f"New `/uploadclip` submission from **{interaction.user}** (`{interaction.user.id}`): "
+                f"**{result.get('title', video.filename)}**\n{clip_url or video.url}"
+            ),
+        )
             
         await interaction.edit_original_response(content=f"Successfully uploaded and saved **{video.filename}**! View it in your `/stats`.")
 

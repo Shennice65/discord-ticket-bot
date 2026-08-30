@@ -26,6 +26,9 @@ class BettingCog(commands.Cog):
     BANNER_ASSET_CACHE: dict[str, bytes] = {}
     TEAM_LOGO_PATHS = {
         "cataclysm": "cataclysm.png",
+        "cherrybomb": "cherrybomb.png",
+        "cherryblossom": "cherrybomb.png",
+        "cherryblosom": "cherrybomb.png",
         "merleura": "merleura.png",
         "nexus": "nexus.png",
         "senpai": "senpai.png",
@@ -51,6 +54,19 @@ class BettingCog(commands.Cog):
         team2 = payload.get("team2") or "TBD"
         matchup = f"**{team1}** vs **{team2}**"
         event_type = event.get("event_type")
+        match_url = f"{site_url.rstrip('/')}/matches/{event.get('match_id')}"
+        if event_type == "betting_opened":
+            phrases = (
+                "Who takes this matchup?",
+                "The teams are set. Who are you backing?",
+                "Pick your winner before the match begins.",
+            )
+            phrase = phrases[sum(ord(character) for character in str(event.get("match_id") or "")) % len(phrases)]
+            return discord.Embed(
+                description=f"{phrase}\n[Choose your pick →]({match_url})",
+                color=discord.Color.blurple(),
+                url=match_url,
+            )
         styles = {
             "betting_opened": ("⚔️ A new matchup is ready", discord.Color.blurple(), f"**{team1}** steps up against **{team2}**.\nWho do you think takes it? Make your pick and follow the live predictions."),
             "betting_locked": ("🔒 Predictions are in", discord.Color.orange(), f"{matchup}\nThe picks are sealed. Now it is time to see which team delivers."),
@@ -68,7 +84,6 @@ class BettingCog(commands.Cog):
                 description += "\nAll prediction coins were returned."
             elif payload.get("payout_count"):
                 description += f"\nPaid **{payload['payout_count']}** winning predictor(s)."
-        match_url = f"{site_url.rstrip('/')}/matches/{event.get('match_id')}"
         embed = discord.Embed(title=title, description=description, color=color, url=match_url)
         context = " · ".join(str(value) for value in (payload.get("group"), payload.get("round")) if value)
         if context:
