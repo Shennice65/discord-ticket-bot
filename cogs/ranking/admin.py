@@ -98,6 +98,45 @@ class RankingAdmin(commands.Cog):
                 await ticket_service.check_and_notify_rank_change(user.id, actual_rank)
         else:
             await interaction.followup.send(f"Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
+
+    @app_commands.command(name="unrank", description="Unrank a player and remove their tier role")
+    @app_commands.describe(user="The player to unrank")
+    async def unrank(self, interaction: discord.Interaction, user: discord.User):
+        if not is_admin_or_observer(interaction):
+            await interaction.response.send_message("Only Admins or Observers can use this command!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        success, previous_rank = await self.db.unrank_player(user.id, movement_source="admin_manual")
+        if not success:
+            await interaction.followup.send(f"{user.mention} is not currently ranked on the leaderboard.", ephemeral=True)
+            return
+
+        from utils.role_manager import update_tier_role
+        await update_tier_role(interaction.guild, user.id, "")
+
+        await interaction.followup.send(
+            f"Successfully unranked {user.mention} from **{previous_rank}**. The ladder has been compressed.",
+            ephemeral=True,
+        )
+
+        log_channel = interaction.guild.get_channel(Config.RANK_LOG_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(
+                title="🔴 Player Unranked",
+                color=discord.Color.red(),
+                timestamp=datetime.utcnow(),
+            )
+            embed.add_field(name="Target", value=f"{user.mention}\n`{user.name}`", inline=True)
+            embed.add_field(name="Previous Rank", value=f"**{previous_rank}**", inline=True)
+            embed.add_field(name="Unranked By", value=f"{interaction.user.mention}\n`{interaction.user.name}`", inline=True)
+            embed.set_footer(text=f"User ID: {user.id}")
+            await log_channel.send(embed=embed)
+
+        ticket_service = interaction.client.container.get('TicketService')
+        if ticket_service:
+            await ticket_service.check_and_notify_rank_change(user.id, "Unranked")
             
     @app_commands.command(name="setstreak", description="Manually set a player's win streak")
     @app_commands.describe(user="The player to modify", streak="The new streak number")

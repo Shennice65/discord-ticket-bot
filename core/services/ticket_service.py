@@ -60,8 +60,9 @@ class TicketService:
         return True, ""
 
     async def check_and_notify_rank_change(self, user_id: int, new_rank: str) -> None:
+        is_unranked = not new_rank or new_rank.lower() == "unranked"
         cursor = self.db.tickets.find({
-            "status": "open", 
+            "status": {"$in": ["open", "pending_accept"]} if is_unranked else "open",
             "ticket_type": "Ranked 1v1", 
             "$or": [{"user_id": user_id}, {"opponent_id": user_id}]
         })
@@ -69,6 +70,18 @@ class TicketService:
         
         for ticket in open_tickets:
             channel = self.bot.get_channel(ticket['channel_id'])
+
+            if is_unranked:
+                closed = await self.db.close_ticket(ticket['channel_id'], user_id)
+                if not closed or not channel:
+                    continue
+
+                await channel.send(
+                    f"This ranked ticket has been automatically cancelled because <@{user_id}> is now **Unranked**."
+                )
+                await channel.delete(reason="Player unranked")
+                continue
+
             if not channel:
                 continue
                 
