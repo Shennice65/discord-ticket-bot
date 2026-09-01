@@ -19,7 +19,7 @@ from core.services.ticket_service import TicketService
 
 class BotCommandTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        blocked_user_ids = await self._client.db.get_setting("blocked_user_ids", [])
+        blocked_user_ids = await self.client.db.get_setting("blocked_user_ids", [])
         if interaction.user.id not in blocked_user_ids:
             return True
 
