@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import asyncio
 import os
 import sys
@@ -15,6 +16,19 @@ from core.container import Container
 from core.services.ranking_service import RankingService
 from core.services.ticket_service import TicketService
 
+
+class BotCommandTree(app_commands.CommandTree):
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        blocked_user_ids = await self._client.db.get_setting("blocked_user_ids", [])
+        if interaction.user.id not in blocked_user_ids:
+            return True
+
+        await interaction.response.send_message(
+            "next time dont mess with the big boss fool",
+            ephemeral=True,
+        )
+        return False
+
 class TicketBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -24,7 +38,8 @@ class TicketBot(commands.Bot):
         super().__init__(
             command_prefix="!",
             intents=intents,
-            help_command=None
+            help_command=None,
+            tree_cls=BotCommandTree,
         )
         
         self.db = Database()

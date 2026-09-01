@@ -7,6 +7,42 @@ class OwnerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @staticmethod
+    def is_owner(user_id: int) -> bool:
+        return user_id in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]
+
+    @app_commands.command(name="block", description="Block a user from using bot commands")
+    @app_commands.describe(user="The user to block")
+    async def block(self, interaction: discord.Interaction, user: discord.User):
+        if not self.is_owner(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        blocked_user_ids = await self.bot.db.get_setting("blocked_user_ids", [])
+        if user.id in blocked_user_ids:
+            await interaction.response.send_message(f"{user.mention} is already blocked.", ephemeral=True)
+            return
+
+        blocked_user_ids.append(user.id)
+        await self.bot.db.set_setting("blocked_user_ids", blocked_user_ids)
+        await interaction.response.send_message(f"Blocked {user.mention} from using bot commands.", ephemeral=True)
+
+    @app_commands.command(name="unblock", description="Allow a blocked user to use bot commands again")
+    @app_commands.describe(user="The user to unblock")
+    async def unblock(self, interaction: discord.Interaction, user: discord.User):
+        if not self.is_owner(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        blocked_user_ids = await self.bot.db.get_setting("blocked_user_ids", [])
+        if user.id not in blocked_user_ids:
+            await interaction.response.send_message(f"{user.mention} is not blocked.", ephemeral=True)
+            return
+
+        blocked_user_ids.remove(user.id)
+        await self.bot.db.set_setting("blocked_user_ids", blocked_user_ids)
+        await interaction.response.send_message(f"Unblocked {user.mention}.", ephemeral=True)
+
     @app_commands.command(name="chat", description="Send a message in the current channel (Owner and Co-Owner only)")
     @app_commands.describe(message="The message to send")
     async def chat(self, interaction: discord.Interaction, message: str):
