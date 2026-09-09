@@ -124,11 +124,8 @@ class Tickets(commands.Cog):
         )
         print(f"Ticket {ticket_id} saved")
         
-        user_history = await self.db.get_user_history(user.id, user.name)
-        opp_history = await self.db.get_user_history(opponent.id, opponent.name)
-        
-        u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(user.id, user.name, user_history)
-        o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
+        u_matches, u_wins, u_losses, u_rate = await self.db.get_user_ranked_stats(user.id, user.name)
+        o_matches, o_wins, o_losses, o_rate = await self.db.get_user_ranked_stats(opponent.id, opponent.name)
         
         u_rank = await self.db.get_player_rank(user.id) or "Unranked"
         o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"
@@ -171,11 +168,8 @@ class Tickets(commands.Cog):
         
         observer_mention = get_observer_mention(channel.guild)
         
-        user_history = await self.db.get_user_history(requester.id, requester.name)
-        opp_history = await self.db.get_user_history(opponent.id, opponent.name)
-        
-        u_matches, u_wins, u_losses, u_rate = TicketEmbeds.calculate_ranked_stats(requester.id, requester.name, user_history)
-        o_matches, o_wins, o_losses, o_rate = TicketEmbeds.calculate_ranked_stats(opponent.id, opponent.name, opp_history)
+        u_matches, u_wins, u_losses, u_rate = await self.db.get_user_ranked_stats(requester.id, requester.name)
+        o_matches, o_wins, o_losses, o_rate = await self.db.get_user_ranked_stats(opponent.id, opponent.name)
         
         u_rank = await self.db.get_player_rank(requester.id) or "Unranked"
         o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"

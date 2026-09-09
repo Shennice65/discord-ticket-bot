@@ -92,6 +92,11 @@ class LadderMixin:
         return player
         
     async def get_global_rank_index(self, user_id: int) -> int:
+        indexes = await self.get_global_rank_indexes([user_id])
+        return indexes.get(user_id, -1)
+
+    async def get_global_rank_indexes(self, user_ids: Optional[List[int]] = None) -> Dict[int, int]:
+        """Build the global ladder order once and return requested positions."""
         from utils.ladder_utils import get_sort_key
         all_players = await self.player_ranks.find({}).to_list(length=None)
         
@@ -104,11 +109,10 @@ class LadderMixin:
                 
         valid_players.sort(key=lambda x: x[1])
         
-        for idx, (uid, _) in enumerate(valid_players):
-            if uid == user_id:
-                return idx
-                
-        return -1 # Not found / unranked
+        positions = {uid: idx for idx, (uid, _) in enumerate(valid_players)}
+        if user_ids is None:
+            return positions
+        return {user_id: positions.get(user_id, -1) for user_id in user_ids}
 
     async def update_player_rank(self, user_id: int, rank: str):
         await self.player_ranks.update_one(

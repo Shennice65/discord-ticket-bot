@@ -14,8 +14,9 @@ class TicketService:
         if not can_r1:
             return False, r1_reason, False
             
-        idx_user = await self.db.get_global_rank_index(user_id)
-        idx_opp = await self.db.get_global_rank_index(opponent_id)
+        indexes = await self.db.get_global_rank_indexes([user_id, opponent_id])
+        idx_user = indexes.get(user_id, -1)
+        idx_opp = indexes.get(opponent_id, -1)
         
         if idx_user == -1:
             return False, "You cannot request a ranked 1v1 while you are unranked!", False

@@ -115,7 +115,46 @@ class HistoryMixin:
             "ranked": ranked,
             "observations": obs
         }
-    
+
+    async def get_user_ranked_stats(self, user_id: int, user_name: str = "") -> tuple[int, int, int, float]:
+        """Return ranked totals without materializing the user's full history."""
+        pipeline = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [{"user_id": user_id}, {"opponent_id": user_id}],
+            }},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result",
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}},
+            {"$group": {
+                "_id": None,
+                "matches": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [
+                    {"$or": [
+                        {"$eq": ["$result.winner_id", user_id]},
+                        {"$eq": [
+                            {"$toLower": {"$ifNull": ["$result.winner", ""]}},
+                            user_name.lower(),
+                        ]},
+                    ]},
+                    1,
+                    0,
+                ]}},
+            }},
+        ]
+        rows = await self.tickets.aggregate(pipeline).to_list(length=1)
+        if not rows:
+            return 0, 0, 0, 0.0
+        matches = int(rows[0].get("matches", 0))
+        wins = int(rows[0].get("wins", 0))
+        losses = matches - wins
+        return matches, wins, losses, (wins / matches) * 100 if matches else 0.0
+
     async def get_user_observation_count(self, user_id: int) -> int:
         """Returns the total number of closed Personal Observation tickets for a user."""
         count = await self.tickets.count_documents({
@@ -124,47 +163,6 @@ class HistoryMixin:
             "user_id": user_id
         })
         return count
-    
-    async def get_h2h(self, player1_id: int, player2_id: int, limit: int = 10) -> Dict:
-        """Get head-to-head stats between two players from ranked results."""
-        pipeline = [
-            {"$match": {
-                "status": "closed",
-                "ticket_type": "Ranked 1v1",
-                "$or": [
-                    {"user_id": player1_id, "opponent_id": player2_id},
-                    {"user_id": player2_id, "opponent_id": player1_id}
-                ]
-            }},
-            {"$sort": {"closed_at": -1}},
-            {"$lookup": {
-                "from": "ranked_results",
-                "localField": "id",
-                "foreignField": "ticket_id",
-                "as": "result"
-            }},
-            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
-        ]
-        
-        cursor = self.tickets.aggregate(pipeline)
-        matches = await cursor.to_list(length=None)
-        
-        p1_wins = 0
-        p2_wins = 0
-        
-        for match in matches:
-            winner_id = match["result"].get("winner_id")
-            if winner_id == player1_id:
-                p1_wins += 1
-            elif winner_id == player2_id:
-                p2_wins += 1
-        
-        return {
-            "total": len(matches),
-            "p1_wins": p1_wins,
-            "p2_wins": p2_wins,
-            "recent_matches": [{**doc, **doc.pop("result")} for doc in matches[:limit]]
-        }
 
     async def get_top_winrates(self, min_matches: int = 3, limit: int = 10) -> List[Dict]:
         """Get the top players by win rate who have at least min_matches."""
