@@ -1,4 +1,5 @@
 import discord
+from pymongo import ReturnDocument
 from discord.ext import commands, tasks
 from discord import app_commands
 import asyncio
@@ -166,6 +167,15 @@ class OutOfRangeAcceptView(discord.ui.View):
         if not ticket:
             return
 
+        claimed = await cog.db.tickets.find_one_and_update(
+            {"_id": ticket["_id"], "status": "pending_accept"},
+            {"$set": {"status": "accepting"}},
+            return_document=ReturnDocument.BEFORE,
+        )
+        if not claimed:
+            await interaction.response.send_message("This challenge has expired or is already being processed.", ephemeral=True)
+            return
+
         await interaction.response.edit_message(
             content=f"<@{ticket['opponent_id']}> **accepted** the out-of-range challenge!",
             view=None
@@ -182,6 +192,15 @@ class OutOfRangeAcceptView(discord.ui.View):
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         cog, ticket = await self._get_ticket_and_verify(interaction)
         if not ticket:
+            return
+
+        claimed = await cog.db.tickets.find_one_and_update(
+            {"_id": ticket["_id"], "status": "pending_accept"},
+            {"$set": {"status": "expiring"}},
+            return_document=ReturnDocument.BEFORE,
+        )
+        if not claimed:
+            await interaction.response.send_message("This challenge has expired or is already being processed.", ephemeral=True)
             return
 
         await interaction.response.edit_message(

@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 from datetime import datetime
+from pymongo import ReturnDocument
 
 from utils.ticket_utils import get_observer_mention
 
@@ -63,19 +64,25 @@ class TicketTasks(commands.Cog):
                 val = ticket['created_at']
                 created = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
                 if (now_naive - created).total_seconds() > 86400:  # 24 hours
+                    expiring_ticket = await self.db.tickets.find_one_and_update(
+                        {"_id": ticket["_id"], "status": "pending_accept"},
+                        {"$set": {"status": "expiring", "expiration_started_at": now_naive}},
+                        return_document=ReturnDocument.BEFORE,
+                    )
+                    if not expiring_ticket:
+                        continue
                     channel = self.bot.get_channel(ticket['channel_id'])
                     if channel:
                         try:
                             await channel.send("The out-of-range challenge has expired. This channel will be deleted in 10 seconds.")
                             await asyncio.sleep(10)
                             await channel.delete()
-                        except discord.errors.NotFound:
+                        except (discord.errors.NotFound, discord.errors.Forbidden, discord.errors.HTTPException):
                             pass
                     
-                    # reset cooldown for requester
-                    await self.db.reset_ranked_cooldown_only(ticket['user_id'])
-                    # remove from DB
-                    await self.db.tickets.delete_one({"_id": ticket['_id']})
+                    deleted = await self.db.tickets.delete_one({"_id": ticket['_id'], "status": "expiring"})
+                    if deleted.deleted_count:
+                        await self.db.reset_ranked_cooldown_only(ticket['user_id'])
             except (ValueError, TypeError, KeyError) as e:
                 print(f"Pending cleanup error: {e}")
 

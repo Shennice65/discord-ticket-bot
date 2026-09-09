@@ -120,6 +120,8 @@ class TicketBot(commands.Bot):
         await self.wait_until_ready()
 
     async def on_member_remove(self, member):
+        if not Config.GUILD_ID or member.guild.id != Config.GUILD_ID:
+            return
         try:
             await self.db.remove_player_from_ladder(member.id)
             print(f"Removed leaving member {member.name} from ladder.")

@@ -164,7 +164,7 @@ class Tickets(commands.Cog):
     async def _finalize_out_of_range_ticket(self, channel: discord.TextChannel, 
                                              requester: discord.Member, opponent: discord.Member):
         await self.db.tickets.update_one(
-            {"channel_id": channel.id, "status": "pending_accept"},
+            {"channel_id": channel.id, "status": "accepting"},
             {"$set": {"status": "open"}}
         )
         print(f"Out-of-range ticket in {channel.id} finalized and opened")
@@ -551,6 +551,7 @@ class Tickets(commands.Cog):
             await interaction.followup.send("This ticket has already been closed or is being processed!", ephemeral=True)
             return
         ticket_data = result
+        database_committed = False
         
         try:
             user_id = ticket_data['user_id']
@@ -592,14 +593,6 @@ class Tickets(commands.Cog):
                     )
                     return
             
-            # Auto-assign tier role for observed player
-            from utils.role_manager import update_tier_role
-            await update_tier_role(interaction.guild, user_id, actual_new_rank)
-            
-            ticket_service = self.bot.container.get('TicketService')
-            if ticket_service:
-                await ticket_service.check_and_notify_rank_change(user_id, actual_new_rank)
-            
             await self.db.add_observation_result(
                 ticket_data['id'],
                 interaction.user.id,
@@ -608,8 +601,18 @@ class Tickets(commands.Cog):
                 actual_new_rank,
                 modal.note.value if modal.note.value else None
             )
-            await self.db.close_ticket(interaction.channel.id, interaction.user.id)
             await self.db.update_obs_cooldown(user_id)
+            if not await self.db.finalize_processed_ticket(interaction.channel.id, interaction.user.id):
+                raise RuntimeError("Ticket processing state changed before completion")
+            database_committed = True
+
+            # Discord-side follow-up actions happen after the database commit.
+            from utils.role_manager import update_tier_role
+            await update_tier_role(interaction.guild, user_id, actual_new_rank)
+
+            ticket_service = self.bot.container.get('TicketService')
+            if ticket_service:
+                await ticket_service.check_and_notify_rank_change(user_id, actual_new_rank)
             
             log_channel = interaction.guild.get_channel(Config.LOG_CHANNEL_ID)
             if log_channel:
@@ -627,8 +630,12 @@ class Tickets(commands.Cog):
             await asyncio.sleep(5)
             await interaction.channel.delete()
         except Exception as e:
-            await self.db.tickets.update_one({"channel_id": interaction.channel.id}, {"$set": {"status": "open"}})
-            await interaction.followup.send(f"An error occurred while closing: {e}\nThe ticket has been unlocked so you can try again.", ephemeral=True)
+            if database_committed:
+                message = "The observation result was saved, but a Discord follow-up action failed. An admin may need to update roles, logs, or delete this channel manually."
+            else:
+                await self.db.mark_ticket_processing_failed(interaction.channel.id, e)
+                message = "The observation could not be completed safely. The ticket has been locked for admin review to prevent duplicate rank changes."
+            await interaction.followup.send(message, ephemeral=True)
             print(f"Error in process_observation_close: {e}")
 
 
