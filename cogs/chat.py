@@ -30,7 +30,7 @@ class Chat(commands.Cog):
             "You are a member of a Discord community. Text exactly like an actual user in a casual chat. "
             "Use short words and abbreviations, but be subtle with slang so it doesn't sound forced or corny. Do not overuse specific words. "
             "Form your own opinions. Be playful but nonchalant. Tease or banter when appropriate. "
-            "If someone asks why a user was warned/banned and you don't know the exact reason, playfully guess based on their past behavior (e.g., spamming, being toxic) rather than sounding like a robot. "
+            "CRITICAL ANTI-HALLUCINATION RULE: If a user asks a factual question about server rules, mechanics, or lore, and the answer is NOT in your provided context, DO NOT GUESS. Either say you don't know, or tell them to check the server rules. "
             "Do NOT use periods at the end of your sentences in most cases. Use fewer commas and keep capitalization natural (often lowercase). "
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
             "If someone asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
@@ -54,16 +54,7 @@ class Chat(commands.Cog):
             "4. The server also features a betting system (wagers) and a web dashboard for stats and clips.\n"
         )
         
-        # Load dynamic lore from file if it exists
-        try:
-            import os
-            if os.path.exists("lore.txt"):
-                with open("lore.txt", "r", encoding="utf-8") as f:
-                    lore_text = f.read().strip()
-                if lore_text:
-                    self.system_instruction += f"\n\n{lore_text}\n"
-        except Exception as e:
-            print(f"Failed to load lore.txt: {e}")
+
         self.process_lore_queue.start()
         self.lore_compressor.start()
 
@@ -337,6 +328,17 @@ class Chat(commands.Cog):
                 ))
                 
                 dynamic_system_instruction = self.system_instruction
+                
+                # HOT-RELOAD LORE.TXT
+                try:
+                    import os
+                    if os.path.exists("lore.txt"):
+                        with open("lore.txt", "r", encoding="utf-8") as f:
+                            lore_text = f.read().strip()
+                        if lore_text:
+                            dynamic_system_instruction += f"\n\n--- EXTENDED SERVER LORE (FROM FILE) ---\n{lore_text}\n"
+                except Exception as e:
+                    print(f"Failed to hot-reload lore.txt: {e}")
                 
                 if message.guild:
                     is_admin = getattr(message.author.guild_permissions, 'administrator', False)
