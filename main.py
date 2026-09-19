@@ -129,6 +129,22 @@ class TicketBot(commands.Bot):
         except Exception as e:
             print(f"Error removing member {member.id} from ladder: {e}")
     
+    @commands.command(name="reload")
+    @commands.has_permissions(administrator=True)
+    async def reload_cog(self, ctx, extension: str):
+        try:
+            await self.reload_extension(extension)
+            await ctx.send(f"Successfully reloaded `{extension}`")
+        except Exception as e:
+            await ctx.send(f"Failed to reload `{extension}`: {e}")
+
+    @commands.command(name="restart")
+    @commands.has_permissions(administrator=True)
+    async def restart_bot(self, ctx):
+        await ctx.send("Restarting bot...")
+        import sys
+        sys.exit(0)
+
     @commands.command(name="sync")
     @commands.has_permissions(administrator=True)
     async def sync_commands(self, ctx, option: str = None):
