@@ -187,6 +187,33 @@ class Chat(commands.Cog):
                 
                 # Add recalled context to system instructions
                 dynamic_system_instruction = self.system_instruction
+                
+                # --- NEW REAL-TIME DISCORD CONTEXT ---
+                if message.guild:
+                    is_admin = getattr(message.author.guild_permissions, 'administrator', False)
+                    roles = [r.name for r in getattr(message.author, 'roles', []) if r.name != "@everyone"]
+                    role_str = ", ".join(roles) if roles else "None"
+                    
+                    # Fetch up to 10 admins (bot or human) to save processing
+                    admins = [m.display_name for m in message.guild.members if getattr(m.guild_permissions, 'administrator', False) and not m.bot][:10]
+                    admin_str = ", ".join(admins) if admins else "Unknown"
+                    
+                    real_time_context = (
+                        f"\n\n--- REAL-TIME SERVER STATE ---\n"
+                        f"Server Name: {message.guild.name}\n"
+                        f"Current Channel: #{message.channel.name if hasattr(message.channel, 'name') else 'Unknown'}\n"
+                        f"Server Admins: {admin_str}\n"
+                        f"USER TALKING TO YOU: {message.author.display_name}\n"
+                        f"THEIR ROLES: {role_str}\n"
+                    )
+                    
+                    if is_admin:
+                        real_time_context += "STATUS: THIS USER IS A SERVER ADMINISTRATOR! They can ban/kick you. Acknowledge this context if they bring it up.\n"
+                    else:
+                        real_time_context += "STATUS: Regular member. They do NOT have admin permissions.\n"
+                        
+                    dynamic_system_instruction += real_time_context
+
                 if recalled_context:
                     dynamic_system_instruction += "\n\n" + recalled_context
                 
@@ -212,8 +239,10 @@ class Chat(commands.Cog):
                     else:
                         raise api_err
                 
-                # Clean up the AI's response text
+                # Clean up the AI's response text and fix awkward gaps between sentences
                 reply_text = response.text.replace('</p>', '').replace('<p>', '').replace('```html', '').replace('```', '').strip()
+                import re
+                reply_text = re.sub(r'\n+', '\n', reply_text)
                 
                 # Update history (store only the text part of the user's prompt to save tokens)
                 text_only_part = types.Part.from_text(text=user_text) if user_text else types.Part.from_text(text="[Image attachment]")
