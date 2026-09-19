@@ -31,6 +31,7 @@ class ConnectionMixin:
         self.betting_admin_audit = None
         self.betting_notifications = None
         self.clip_review_notifications = None
+        self.chat_memory = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -63,6 +64,7 @@ class ConnectionMixin:
             self.betting_admin_audit = self.db.betting_admin_audit
             self.betting_notifications = self.db.betting_notifications
             self.clip_review_notifications = self.db.clip_review_notifications
+            self.chat_memory = self.db.chat_memory
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -127,6 +129,7 @@ class ConnectionMixin:
                 ("betting_admin_audit.match_id_created_at", self.betting_admin_audit.create_index([("match_id", 1), ("created_at", -1)])),
                 ("betting_notifications.delivery", self.betting_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
                 ("clip_review_notifications.delivery", self.clip_review_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
+                ("chat_memory.channel_timestamp", self.chat_memory.create_index([("channel_id", 1), ("timestamp", -1)])),
                 ("tickets.channel_id", self.tickets.create_index("channel_id")),
                 ("tickets.status_type_user", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])),
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),

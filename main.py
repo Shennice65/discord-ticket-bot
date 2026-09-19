@@ -59,6 +59,7 @@ class TicketBot(commands.Bot):
         self.add_view(ShareClipView())
         
         print("Loading cogs...")
+        await self.load_extension("cogs.chat")
         await self.load_extension("cogs.tickets.core")
         await self.load_extension("cogs.tickets.admin")
         await self.load_extension("cogs.tickets.tasks")
