@@ -42,7 +42,8 @@ class ObserverSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        # Deferring without ephemeral=True means we intend to edit the original message
+        await interaction.response.defer()
 
         observer_id = int(self.values[0])
         member = interaction.guild.get_member(observer_id)
@@ -75,7 +76,7 @@ class ObserverSelect(discord.ui.Select):
             last_active_timestamp=last_active,
         )
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.edit_original_response(embed=embed, view=self.view)
 
 class ObserverSelectView(discord.ui.View):
     def __init__(self, observers: list):
