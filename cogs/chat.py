@@ -89,9 +89,9 @@ class Chat(commands.Cog):
                 # 2. Retrieve relevant context from database
                 recalled_context = ""
                 if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
-                    # Fetch last 500 messages in this channel to search in memory
-                    cursor = self.bot.db.chat_memory.find({"channel_id": message.channel.id}).sort("timestamp", -1).limit(500)
-                    past_exchanges = await cursor.to_list(length=500)
+                    # Fetch last 100 messages to search in memory (reduced from 500 for lightning speed)
+                    cursor = self.bot.db.chat_memory.find({"channel_id": message.channel.id}).sort("timestamp", -1).limit(100)
+                    past_exchanges = await cursor.to_list(length=100)
                     
                     scored_exchanges = []
                     for exchange in past_exchanges:
@@ -140,14 +140,27 @@ class Chat(commands.Cog):
                 if recalled_context:
                     dynamic_system_instruction += "\n\n" + recalled_context
                 
-                # Call Gemini API
-                response = self.client.models.generate_content(
-                    model='gemini-3.7-flash',
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=dynamic_system_instruction,
+                # Call Gemini API with the ultra-fast flash-lite model
+                try:
+                    response = self.client.models.generate_content(
+                        model='gemini-3.5-flash-lite',
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=dynamic_system_instruction,
+                        )
                     )
-                )
+                except Exception as api_err:
+                    if '503' in str(api_err):
+                        print("3.5-flash-lite is overloaded (503). Falling back to 3.7-flash...")
+                        response = self.client.models.generate_content(
+                            model='gemini-3.7-flash',
+                            contents=contents,
+                            config=types.GenerateContentConfig(
+                                system_instruction=dynamic_system_instruction,
+                            )
+                        )
+                    else:
+                        raise api_err
                 
                 reply_text = response.text
                 
