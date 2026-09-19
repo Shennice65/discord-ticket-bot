@@ -151,6 +151,13 @@ class TicketBot(commands.Bot):
         except Exception as e:
             await ctx.send(f"❌ Failed to reload `{extension}`: {e}")
 
+    @reload_cog.error
+    async def reload_cog_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ You need Administrator permissions to reload cogs!")
+        else:
+            await ctx.send(f"❌ Error: {error}")
+
     @commands.command(name="restart")
     @commands.has_permissions(administrator=True)
     async def restart_bot(self, ctx):
