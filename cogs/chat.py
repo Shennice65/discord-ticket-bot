@@ -51,8 +51,8 @@ class Chat(commands.Cog):
         ]
         
         is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
-        # Catch short variations like "where is the ticket channel?"
-        if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "ranked" in content_lower) and len(content_lower) < 60:
+        # Catch short variations like "where is the ticket channel?" or "how to get rank"
+        if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 60:
             is_ticket_question = True
             
         if is_ticket_question:
