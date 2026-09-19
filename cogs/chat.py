@@ -389,9 +389,7 @@ class Chat(commands.Cog):
                     config=types.GenerateContentConfig(
                         system_instruction=dynamic_system_instruction,
                         tools=[search_channel_for_image],
-                        temperature=0.9,
-                        presence_penalty=0.5,
-                        frequency_penalty=0.5
+                        temperature=0.9
                     )
                 )
                 
