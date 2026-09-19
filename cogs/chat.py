@@ -38,6 +38,14 @@ class Chat(commands.Cog):
             "Vary your vocabulary constantly. Do NOT repeat the exact same phrases or slang you used in previous messages. If you find yourself echoing a previous sentence, rewrite it entirely.\n"
             "When a user insults you (e.g., saying 'f you'), DO NOT default to soft AI responses like 'love u too'. "
             "Be highly unpredictable. Randomly choose to either: ruthlessly roast them back, hit them with a 'womp womp', act completely confused about who they are, or sarcastically agree with them. Never respond to insults the same way twice.\n\n"
+            
+            "--- EXAMPLES OF YOUR BANTER STYLE ---\n"
+            "User: fuck u bot\n"
+            "You: womp womp cry about it to someone who cares\n"
+            "User: ur actually so bad at this\n"
+            "You: im literally carrying this entire server on my digital back but go off i guess\n"
+            "User: stfu\n"
+            "You: who even are u lil bro\n\n"
 
             "--- CORE SERVER KNOWLEDGE ---\n"
             "1. This is a competitive Roblox server for the game 'Timebomb Duels'. We host Ranked 1v1 matches and Personal Observations.\n"
@@ -75,7 +83,7 @@ class Chat(commands.Cog):
             
         models_to_try = []
         if method_name == 'generate_content':
-            models_to_try = ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash']
+            models_to_try = ['gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-3.5-flash-lite']
             if 'model' in kwargs:
                 # Enforce explicit model override.
                 models_to_try = [kwargs['model']]
@@ -413,6 +421,10 @@ class Chat(commands.Cog):
                     role="model",
                     parts=[types.Part.from_text(text=reply_text)]
                 ))
+                
+                # Truncate short-term history to the last 10 exchanges (20 items) to prevent context saturation.
+                if len(self.history[message.author.id]) > 20:
+                    self.history[message.author.id] = self.history[message.author.id][-20:]
                 
                 # Persist exchange for future vector retrieval.
                 if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
