@@ -5,8 +5,80 @@ import re
 from typing import List, Optional
 from datetime import datetime
 
+import asyncio
+import aiohttp
+
 from database import Database
 from config import Config
+from utils.embeds import TicketEmbeds
+
+async def _get_roblox_avatar_url(roblox_id: str) -> str:
+    """Fetch the Roblox avatar thumbnail. Same pattern as ranking_service.py."""
+    url = f"https://thumbnails.roblox.com/v1/users/avatar?userIds={roblox_id}&size=352x352&format=Png&isCircular=false"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("data") and len(data["data"]) > 0:
+                        return data["data"][0].get("imageUrl", "")
+    except Exception as e:
+        print(f"Error fetching Roblox avatar for {roblox_id}: {e}")
+    return ""
+
+class ObserverSelect(discord.ui.Select):
+    def __init__(self, observers: list):
+        options = []
+        for obs in observers[:25]:
+            options.append(discord.SelectOption(
+                label=obs.display_name[:100],
+                value=str(obs.id),
+                description=f"@{obs.name}"[:100],
+            ))
+        super().__init__(
+            placeholder="Select an observer to view stats...",
+            options=options,
+            custom_id="observer_stats_select",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        observer_id = int(self.values[0])
+        member = interaction.guild.get_member(observer_id)
+        if not member:
+            await interaction.followup.send("Observer not found in server.", ephemeral=True)
+            return
+
+        db = interaction.client.db
+        ranking_service = interaction.client.container.get('RankingService')
+
+        # Gather stats concurrently
+        current_rank, total_obs = await asyncio.gather(
+            db.get_player_rank(observer_id),
+            db.get_observer_total_observations(observer_id),
+        )
+
+        # Roblox avatar
+        roblox_avatar_url = ""
+        roblox_data = await ranking_service.get_roblox_data(observer_id)
+        if roblox_data:
+            _, roblox_id = roblox_data
+            roblox_avatar_url = await _get_roblox_avatar_url(roblox_id)
+
+        embed = TicketEmbeds.observer_stats_embed(
+            member=member,
+            roblox_avatar_url=roblox_avatar_url,
+            current_rank=current_rank or "Unranked",
+            total_observations=total_obs,
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+class ObserverSelectView(discord.ui.View):
+    def __init__(self, observers: list):
+        super().__init__(timeout=120)
+        self.add_item(ObserverSelect(observers))
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
 
@@ -120,10 +192,10 @@ class LeaderboardLauncherView(discord.ui.View):
             await interaction.response.send_message("No observers found.", ephemeral=True)
             return
             
-        bullet_list = "\n".join([f"• {observer.mention}" for observer in observers])
+        view = ObserverSelectView(observers)
         embed = discord.Embed(
             title="👀 Server Observers",
-            description=bullet_list,
+            description="Select an observer below to view their stats.",
             color=discord.Color(0x2b2d31)
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
