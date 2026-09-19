@@ -74,7 +74,7 @@ class Chat(commands.Cog):
             
         models_to_try = []
         if method_name == 'generate_content':
-            models_to_try = ['gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-3.5-flash-lite']
+            models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-3.5-flash-lite']
             if 'model' in kwargs:
                 # Enforce explicit model override.
                 models_to_try = [kwargs['model']]
@@ -93,12 +93,11 @@ class Chat(commands.Cog):
                     return await method(**kwargs)
                 except Exception as e:
                     error_str = str(e)
-                    if ("429" in error_str and "quota" in error_str.lower()) or "503" in error_str or "401" in error_str or "403" in error_str:
-                        print(f"Error {model_name} on key index {self.current_client_index}. Rotating key...")
-                        self.current_client_index = (self.current_client_index + 1) % len(self.clients)
-                        attempts += 1
-                        continue
-                    raise e
+                    print(f"Error {model_name} on key index {self.current_client_index}: {error_str}")
+                    # If it's a quota issue, 503, 401, 403, 404, or 400, rotate to next key or next model
+                    self.current_client_index = (self.current_client_index + 1) % len(self.clients)
+                    attempts += 1
+                    continue
             print(f"All keys exhausted/overloaded for {model_name}, falling back to next model...")
             
         raise Exception(f"All API keys and fallback models exhausted their quotas for {method_name}!")
