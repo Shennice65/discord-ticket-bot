@@ -214,3 +214,11 @@ class HistoryMixin:
         
         cursor = self.tickets.aggregate(pipeline)
         return await cursor.to_list(length=None)
+
+    async def get_observer_total_observations(self, observer_id: int) -> int:
+        """Count all tickets (ranked + observation) this observer has refereed."""
+        ranked_count, obs_count = await asyncio.gather(
+            self.ranked_results.count_documents({"observer_id": observer_id}),
+            self.observation_results.count_documents({"observer_id": observer_id}),
+        )
+        return ranked_count + obs_count
