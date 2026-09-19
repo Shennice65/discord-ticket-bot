@@ -1,0 +1,10 @@
+// To inject this into the bot's memory, you can either:
+// 1. Send it directly as a message in the Discord channel.
+// 2. Use the !sync_lore command if you build an admin command for it.
+
+- The current highest ranked player in the server is [Name].
+- The most common game we play is [Game Name].
+- [Inside Joke 1]
+- [Inside Joke 2]
+- The betting system uses a virtual wallet. You can check your wallet on the web dashboard.
+- [Any other dynamic rules or current drama you want the bot to know about]
