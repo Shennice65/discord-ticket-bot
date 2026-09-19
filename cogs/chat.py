@@ -8,6 +8,7 @@ import math
 import asyncio
 from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
+from discord import app_commands
 
 class Chat(commands.Cog):
     def __init__(self, bot):
@@ -42,6 +43,18 @@ class Chat(commands.Cog):
     def cog_unload(self):
         self.process_lore_queue.cancel()
         self.lore_compressor.cancel()
+
+    @app_commands.command(name="ai_opt_out", description="Toggle whether the AI responds to your chat messages.")
+    async def ai_opt_out(self, interaction: discord.Interaction):
+        opt_out_ids = await self.bot.db.get_setting("ai_opt_out_ids", [])
+        if interaction.user.id in opt_out_ids:
+            opt_out_ids.remove(interaction.user.id)
+            await self.bot.db.set_setting("ai_opt_out_ids", opt_out_ids)
+            await interaction.response.send_message("You have opted back in. The AI will now respond to your messages.", ephemeral=True)
+        else:
+            opt_out_ids.append(interaction.user.id)
+            await self.bot.db.set_setting("ai_opt_out_ids", opt_out_ids)
+            await interaction.response.send_message("You have opted out. The AI will no longer respond to your messages.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -84,6 +97,11 @@ class Chat(commands.Cog):
                     })
                 except:
                     pass
+            return
+            
+        # Check if the user opted out
+        opt_out_ids = await getattr(self.bot, 'db', None).get_setting("ai_opt_out_ids", []) if getattr(self.bot, 'db', None) else []
+        if message.author.id in opt_out_ids:
             return
             
         # Check permissions and enforce rate limits for non-admins (3 messages per 5 minutes)
