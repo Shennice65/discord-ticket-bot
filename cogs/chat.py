@@ -95,8 +95,16 @@ class Chat(commands.Cog):
         is_dm = isinstance(message.channel, discord.DMChannel)
         
         if not bot_mentioned and not is_dm:
-            # Check if the channel is private (hidden from @everyone)
-            is_public = message.channel.permissions_for(message.guild.default_role).read_messages
+            # Check if the channel is private (hidden from the member role or @everyone)
+            member_role_id = Config.MEMBER_ROLE_ID
+            if not member_role_id and getattr(self.bot, 'db', None):
+                member_role_id = await self.bot.db.get_setting("MEMBER_ROLE_ID", 0)
+                
+            if member_role_id:
+                member_role = message.guild.get_role(int(member_role_id))
+                is_public = message.channel.permissions_for(member_role).read_messages if member_role else False
+            else:
+                is_public = message.channel.permissions_for(message.guild.default_role).read_messages
             
             # If it's a private human conversation (like staff-chat), ignore it completely!
             if not is_public and not is_bot:

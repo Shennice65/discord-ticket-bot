@@ -35,4 +35,5 @@ class Config:
     BETTING_NOTIFICATION_ROLE_ID = os.environ.get('BETTING_NOTIFICATION_ROLE_ID', '')
     WEB_LOGIN_MIN_ACCOUNT_AGE_DAYS = int(os.environ.get('WEB_LOGIN_MIN_ACCOUNT_AGE_DAYS', '30'))
     WEB_LOGIN_MIN_MEMBERSHIP_DAYS = int(os.environ.get('WEB_LOGIN_MIN_MEMBERSHIP_DAYS', '7'))
+    MEMBER_ROLE_ID = int(os.environ.get('MEMBER_ROLE_ID', 0))
     VERSION = "1.13.3"
