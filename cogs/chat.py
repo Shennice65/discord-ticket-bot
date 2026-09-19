@@ -70,7 +70,7 @@ class Chat(commands.Cog):
                 if user_text:
                     try:
                         emb_response = self.client.models.embed_content(
-                            model='text-embedding-004',
+                            model='gemini-embedding-2',
                             contents=user_text
                         )
                         if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
@@ -215,8 +215,13 @@ class Chat(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def sync_lore(self, ctx, amount: int = 1000):
         """Fetches historical messages and saves them as lore in the bot's memory."""
+        try:
+            await ctx.message.delete()
+        except:
+            pass # Ignore if we don't have delete permissions
+            
         if not getattr(self.bot, 'db', None) or getattr(self.bot.db, 'chat_memory', None) is None:
-            await ctx.send("Database not connected!")
+            await ctx.author.send("Database not connected!")
             return
             
         if not self.client:
@@ -230,10 +235,10 @@ class Chat(commands.Cog):
                 pass
                 
         if not self.client:
-            await ctx.send("Gemini API not connected!")
+            await ctx.author.send("Gemini API not connected!")
             return
             
-        msg = await ctx.send(f"Fetching last {amount} messages to sync lore... This might take a couple minutes to avoid hitting Google's rate limits.")
+        msg = await ctx.author.send(f"Fetching last {amount} messages from <#{ctx.channel.id}> to sync lore... This might take a couple minutes to avoid hitting Google's rate limits.")
         
         valid_messages = []
         
@@ -269,7 +274,7 @@ class Chat(commands.Cog):
             
             try:
                 emb_response = self.client.models.embed_content(
-                    model='text-embedding-004',
+                    model='gemini-embedding-2',
                     contents=contents
                 )
                 
@@ -291,10 +296,10 @@ class Chat(commands.Cog):
                 await asyncio.sleep(5)
             except Exception as e:
                 print(f"Lore sync batch error: {e}")
-                await ctx.send(f"Error during sync batch: {e}")
+                await ctx.author.send(f"Error during sync batch: {e}")
                 break
                 
-        await ctx.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
+        await ctx.author.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
 
 async def setup(bot):
     await bot.add_cog(Chat(bot))
