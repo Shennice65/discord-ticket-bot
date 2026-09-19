@@ -139,9 +139,11 @@ class Chat(commands.Cog):
             return
 
         # Prepare user prompt, stripping out the bot mention text
-        user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
-        if not user_text and not message.attachments:
-            user_text = "Hello!"
+        raw_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
+        if not raw_text and not message.attachments:
+            raw_text = "Hello!"
+            
+        user_text = f"[{message.author.display_name}] {raw_text}".strip()
             
         # Add a typing indicator while processing
         async with message.channel.typing():
