@@ -28,6 +28,7 @@ class Chat(commands.Cog):
             "Use short words and abbreviations, but be subtle with slang so it doesn't sound forced or corny. Do not overuse specific words. "
             "Form your own opinions. Do not always agree with the user or act like a 'glazing machine'. Be playful but nonchalant. Tease or banter when appropriate. "
             "Never glaze, hype up, or overly praise the server admins. Treat admins like any regular player and do NOT assume they are the best at the game just because they have admin roles. "
+            "If someone asks why a user was warned/banned and you don't know the exact reason, playfully guess based on their past behavior (e.g., spamming, being toxic) rather than sounding like a robot. "
             "Do NOT use periods at the end of your sentences in most cases. Use fewer commas and keep capitalization natural (often lowercase). "
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
             "If the user asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
@@ -61,29 +62,28 @@ class Chat(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignore messages from bots
-        if message.author.bot:
-            return
+        is_bot = message.author.bot
             
-        # Auto-detect ranking and ticket questions
-        content_lower = message.content.lower()
-        exact_phrases = [
-            "how to get ranked", "how do i get ranked", "where to get ranked",
-            "where do i get ranked", "how to 1v1", "how do i 1v1",
-            "where to 1v1", "how to create a ticket", "how do i create a ticket",
-            "where to create a ticket", "make a ticket", "create a 1v1 ticket"
-        ]
-        
-        is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
-        # Catch short variations like "where is the ticket channel?" or "how to get rank"
-        if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 60:
-            # Extra safety check: require an action word so it doesn't trigger on casual chat like "how is your rank?"
-            if any(word in content_lower for word in ["get", "create", "make", "do i", "is the"]):
-                is_ticket_question = True
+        # Auto-detect ranking and ticket questions (humans only)
+        if not is_bot:
+            content_lower = message.content.lower()
+            exact_phrases = [
+                "how to get ranked", "how do i get ranked", "where to get ranked",
+                "where do i get ranked", "how to 1v1", "how do i 1v1",
+                "where to 1v1", "how to create a ticket", "how do i create a ticket",
+                "where to create a ticket", "make a ticket", "create a 1v1 ticket"
+            ]
             
-        if is_ticket_question:
-            await message.reply("Looking to get ranked or 1v1? Head over to https://discord.com/channels/1249581144597463040/1488835022055018576 to create a ticket!")
-            return
+            is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
+            # Catch short variations like "where is the ticket channel?" or "how to get rank"
+            if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 60:
+                # Extra safety check: require an action word so it doesn't trigger on casual chat like "how is your rank?"
+                if any(word in content_lower for word in ["get", "create", "make", "do i", "is the"]):
+                    is_ticket_question = True
+                
+            if is_ticket_question:
+                await message.reply("Looking to get ranked or 1v1? Head over to https://discord.com/channels/1249581144597463040/1488835022055018576 to create a ticket!")
+                return
             
         # Check if AI chat is globally enabled by admins
         if getattr(self.bot, 'db', None):
@@ -95,17 +95,29 @@ class Chat(commands.Cog):
         is_dm = isinstance(message.channel, discord.DMChannel)
         
         if not bot_mentioned and not is_dm:
+            # Check if the channel is private (hidden from @everyone)
+            is_public = message.channel.permissions_for(message.guild.default_role).read_messages
+            
+            # If it's a private human conversation (like staff-chat), ignore it completely!
+            if not is_public and not is_bot:
+                return
+
             # OPTION 3: Auto-queue regular conversations into pending memory (min 3 words to avoid spam)
             if len(message.content.split()) >= 3 and getattr(self.bot, 'db', None):
                 try:
+                    author_name = f"[{message.author.display_name} (BOT)]" if is_bot else f"[{message.author.display_name}]"
                     await self.bot.db.db.pending_lore.insert_one({
                         "channel_id": message.channel.id,
                         "user_id": message.author.id,
-                        "user_text": message.content.strip(),
+                        "user_text": f"{author_name} {message.content.strip()}",
                         "timestamp": message.created_at
                     })
                 except:
                     pass
+            return
+            
+        # Prevent the AI from talking to other bots (infinite loops)
+        if is_bot:
             return
             
         # Check permissions and enforce rate limits for non-admins (3 messages per 5 minutes)
@@ -175,11 +187,6 @@ class Chat(commands.Cog):
                                     "queryVector": query_embedding,
                                     "numCandidates": 1000,
                                     "limit": 100  # Pull top 100 globally
-                                }
-                            },
-                            {
-                                "$match": {
-                                    "channel_id": message.channel.id
                                 }
                             },
                             {
