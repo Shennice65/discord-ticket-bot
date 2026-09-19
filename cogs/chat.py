@@ -54,10 +54,13 @@ class Chat(commands.Cog):
     def _api_call_with_fallback(self, method_name, **kwargs):
         """Calls a Gemini API method with fallback and key rotation."""
         if not getattr(self, 'clients', None):
-            if self.client:
-                method = getattr(self.client.models, method_name)
-                return method(**kwargs)
-            raise ValueError("No API keys configured.")
+            if getattr(self, 'client', None):
+                # We have a client (probably loaded from DB), but self.clients is empty.
+                # Populate self.clients so it uses the normal rotation loop!
+                self.clients = [self.client]
+                self.current_client_index = 0
+            else:
+                raise ValueError("No API keys configured.")
             
         models_to_try = []
         if method_name == 'generate_content':
