@@ -388,11 +388,18 @@ class Chat(commands.Cog):
                     """Gets the URL of an image posted in a specific Discord channel. Can optionally filter by a keyword in the message or the username of the sender."""
                     try:
                         target_channel = None
-                        channel_name_clean = channel_name.strip('#')
-                        for c in message.guild.text_channels:
-                            if c.name.lower() == channel_name_clean.lower():
-                                target_channel = c
-                                break
+                        channel_name_clean = channel_name.strip('#<>')
+                        
+                        # First try to parse as a channel mention ID
+                        if channel_name_clean.isdigit():
+                            target_channel = message.guild.get_channel(int(channel_name_clean))
+                            
+                        # If not found by ID, search by name (exact or substring)
+                        if not target_channel:
+                            for c in message.guild.text_channels:
+                                if c.name.lower() == channel_name_clean.lower() or channel_name_clean.lower() in c.name.lower():
+                                    target_channel = c
+                                    break
                         
                         if not target_channel:
                             return f"Error: Could not find a text channel named '{channel_name}' in this server."
