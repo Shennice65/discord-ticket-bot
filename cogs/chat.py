@@ -6,7 +6,7 @@ from config import Config
 from collections import defaultdict, deque
 import math
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
 
 class Chat(commands.Cog):
@@ -28,9 +28,11 @@ class Chat(commands.Cog):
             "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown."
         )
         self.process_lore_queue.start()
+        self.lore_compressor.start()
 
     def cog_unload(self):
         self.process_lore_queue.cancel()
+        self.lore_compressor.cancel()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -89,7 +91,8 @@ class Chat(commands.Cog):
                     try:
                         emb_response = self.client.models.embed_content(
                             model='gemini-embedding-2',
-                            contents=user_text
+                            contents=user_text,
+                            config=types.EmbedContentConfig(output_dimensionality=256)
                         )
                         if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
                             # Convert to a standard Python list so MongoDB can serialize it
@@ -143,20 +146,26 @@ class Chat(commands.Cog):
                 if user_text:
                     parts.append(types.Part.from_text(text=user_text))
                     
-                # Process any image attachments
-                for attachment in message.attachments:
-                    if attachment.content_type and attachment.content_type.startswith('image/'):
-                        image_bytes = await attachment.read()
-                        parts.append(types.Part.from_bytes(data=image_bytes, mime_type=attachment.content_type))
-                        
+                # Download and attach images to the AI prompt
+                if message.attachments:
+                    import aiohttp
+                    async with aiohttp.ClientSession() as session:
+                        for att in message.attachments:
+                            if att.content_type and att.content_type.startswith('image/'):
+                                async with session.get(att.url) as resp:
+                                    if resp.status == 200:
+                                        image_data = await resp.read()
+                                        parts.append(
+                                            types.Part.from_bytes(data=image_data, mime_type=att.content_type)
+                                        )
+                
                 if not parts:
-                    return
-
-                current_content = types.Content(
+                    return # Neither text nor image was provided
+                    
+                contents.append(types.Content(
                     role="user",
                     parts=parts
-                )
-                contents.append(current_content)
+                ))
                 
                 # Add recalled context to system instructions
                 dynamic_system_instruction = self.system_instruction
@@ -293,7 +302,8 @@ class Chat(commands.Cog):
             try:
                 emb_response = self.client.models.embed_content(
                     model='gemini-embedding-2',
-                    contents=contents
+                    contents=contents,
+                    config=types.EmbedContentConfig(output_dimensionality=256)
                 )
                 
                 if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
@@ -342,7 +352,8 @@ class Chat(commands.Cog):
             
             emb_response = self.client.models.embed_content(
                 model='gemini-embedding-2',
-                contents=contents
+                contents=contents,
+                config=types.EmbedContentConfig(output_dimensionality=256)
             )
             
             if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
@@ -366,6 +377,92 @@ class Chat(commands.Cog):
                 
         except Exception as e:
             print(f"Background lore queue error: {e}")
+
+    @tasks.loop(hours=1.0)
+    async def lore_compressor(self):
+        """Background task that compresses messages older than 7 days into single summaries."""
+        if not self.client or not getattr(self.bot, 'db', None):
+            return
+            
+        try:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
+            
+            while True:
+                # Find all unsummarized messages older than 7 days (limit 100 per chunk)
+                cursor = self.bot.db.chat_memory.find({
+                    "timestamp": {"$lt": cutoff_date},
+                    "is_summary": {"$ne": True}
+                }).limit(100)
+                
+                old_messages = await cursor.to_list(length=100)
+                if not old_messages:
+                    break # All caught up!
+                    
+                # Group by channel_id
+                from collections import defaultdict
+                channel_groups = defaultdict(list)
+                for msg in old_messages:
+                    channel_groups[msg.get("channel_id")].append(msg)
+                    
+                for channel_id, msgs in channel_groups.items():
+                    if not channel_id:
+                        continue
+                        
+                    # Format for Gemini
+                    chat_log = ""
+                    for m in msgs:
+                        user_text = m.get("user_text", "")
+                        bot_reply = m.get("bot_reply", "")
+                        chat_log += f"User: {user_text}\n"
+                        if bot_reply and bot_reply != "[Historical Community Lore]":
+                            chat_log += f"Bot: {bot_reply}\n"
+                    
+                    prompt = (
+                        "Summarize the key events, facts, inside jokes, and general vibe from this chat log "
+                        "into one highly condensed paragraph. Do not use formatting or markdown. "
+                        "Focus only on things worth remembering.\n\n"
+                        f"CHAT LOG:\n{chat_log}"
+                    )
+                    
+                    # Generate summary using the fast text model
+                    summary_response = self.client.models.generate_content(
+                        model='gemini-3.7-flash',
+                        contents=prompt
+                    )
+                    summary_text = summary_response.text.strip()
+                    
+                    # Embed summary
+                    emb_response = self.client.models.embed_content(
+                        model='gemini-embedding-2',
+                        contents=summary_text,
+                        config=types.EmbedContentConfig(output_dimensionality=256)
+                    )
+                    
+                    if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
+                        embedding_vector = list(emb_response.embeddings[0].values)
+                        
+                        # Insert the compressed summary
+                        summary_doc = {
+                            "channel_id": channel_id,
+                            "user_id": 0,
+                            "user_text": "[WEEKLY LORE COMPRESSION]",
+                            "bot_reply": summary_text,
+                            "timestamp": datetime.now(timezone.utc),
+                            "embedding": embedding_vector,
+                            "is_summary": True
+                        }
+                        await self.bot.db.chat_memory.insert_one(summary_doc)
+                        
+                        # Delete the old raw messages we just compressed
+                        msg_ids = [m["_id"] for m in msgs if "_id" in m]
+                        if msg_ids:
+                            await self.bot.db.chat_memory.delete_many({"_id": {"$in": msg_ids}})
+                            
+                    # Sleep a bit to respect rate limits
+                    await asyncio.sleep(5)
+                    
+        except Exception as e:
+            print(f"Lore compressor error: {e}")
 
 async def setup(bot):
     await bot.add_cog(Chat(bot))

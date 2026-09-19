@@ -130,6 +130,7 @@ class ConnectionMixin:
                 ("betting_notifications.delivery", self.betting_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
                 ("clip_review_notifications.delivery", self.clip_review_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
                 ("chat_memory.channel_timestamp", self.chat_memory.create_index([("channel_id", 1), ("timestamp", -1)])),
+                ("chat_memory.timestamp", self.chat_memory.create_index("timestamp")),
                 ("tickets.channel_id", self.tickets.create_index("channel_id")),
                 ("tickets.status_type_user", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])),
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),
