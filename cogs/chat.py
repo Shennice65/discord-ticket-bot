@@ -197,8 +197,13 @@ class Chat(commands.Cog):
                 if getattr(self.bot, 'db', None) and getattr(self.bot.db, 'db', None) is not None:
                     config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"})
                     if config_doc and config_doc.get("GEMINI_API_KEY"):
-                        self.api_key = config_doc.get("GEMINI_API_KEY")
-                        self.client = genai.Client(api_key=self.api_key)
+                        raw_keys = config_doc.get("GEMINI_API_KEY", "")
+                        api_keys = [k.strip() for k in raw_keys.split(',')] if raw_keys else []
+                        if api_keys:
+                            self.clients = [genai.Client(api_key=key) for key in api_keys if key]
+                            if self.clients:
+                                self.client = self.clients[0]
+                                self.current_client_index = 0
             except Exception as e:
                 print(f"Error fetching API key from DB: {e}")
                 
@@ -423,8 +428,13 @@ class Chat(commands.Cog):
             try:
                 config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"})
                 if config_doc and config_doc.get("GEMINI_API_KEY"):
-                    self.api_key = config_doc.get("GEMINI_API_KEY")
-                    self.client = genai.Client(api_key=self.api_key)
+                    raw_keys = config_doc.get("GEMINI_API_KEY", "")
+                    api_keys = [k.strip() for k in raw_keys.split(',')] if raw_keys else []
+                    if api_keys:
+                        self.clients = [genai.Client(api_key=key) for key in api_keys if key]
+                        if self.clients:
+                            self.client = self.clients[0]
+                            self.current_client_index = 0
             except:
                 pass
                 
