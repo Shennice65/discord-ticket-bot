@@ -362,7 +362,17 @@ class Chat(commands.Cog):
                 import traceback
                 print(f"Gemini API Error: {e}")
                 traceback.print_exc()
-                await message.reply(f"Oops, something went wrong while talking to my brain.\n**Admin Error Log:** `{type(e).__name__}: {e}`")
+                await message.reply("Oops, something went wrong while talking to my brain.")
+                try:
+                    admin_user = await self.bot.fetch_user(Config.MASTER_ADMIN_ID)
+                    if admin_user:
+                        await admin_user.send(
+                            f"⚠️ **Gemini API Error in #{getattr(message.channel, 'name', 'Direct Message')}**\n"
+                            f"**Triggered by:** {message.author.display_name} (`{message.author.id}`)\n"
+                            f"**Error Log:**\n```text\n{type(e).__name__}: {e}\n```"
+                        )
+                except Exception as dm_err:
+                    print(f"Could not send DM to admin: {dm_err}")
 
     @commands.command(name="sync_lore")
     @commands.has_permissions(administrator=True)
