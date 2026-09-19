@@ -18,6 +18,9 @@ class Chat(commands.Cog):
         # Store recent history per channel. Limit to last 15 messages to save tokens.
         self.history = defaultdict(lambda: deque(maxlen=15))
         
+        # Track cooldowns for non-admin users to prevent spam
+        self.user_cooldowns = {}
+        
         # System instructions to give the bot a persona
         self.system_instruction = (
             "You are a member of a Discord community. Text exactly like an actual user in a casual chat. "
@@ -28,7 +31,7 @@ class Chat(commands.Cog):
             "If the user asks a direct question about server information (like who the admins are), answer them accurately but keep your casual/troll tone. "
             "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown.\n\n"
             "--- CORE SERVER KNOWLEDGE ---\n"
-            "1. This is a competitive gaming server. We host Ranked 1v1 matches and Personal Observations.\n"
+            "1. This is a competitive Roblox server for the game 'Timebomb Duels'. We host Ranked 1v1 matches and Personal Observations.\n"
             "2. 'Observers' are the staff members who spectate matches and officially record the results and rank changes.\n"
             "3. If someone asks how to get ranked or 1v1, tell them to go to the ticket channel and click 'Ranked 1v1' or 'Personal Observation'.\n"
             "4. The server also features a betting system (wagers) and a web dashboard for stats and clips."
@@ -83,9 +86,16 @@ class Chat(commands.Cog):
                     pass
             return
             
-        # Restrict access to administrators only (silently ignore others to prevent spam)
-        if not getattr(message.author, 'guild_permissions', None) or not message.author.guild_permissions.administrator:
-            return
+        # Check permissions and enforce rate limits for non-admins
+        is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
+        
+        if not is_admin:
+            now = message.created_at.timestamp()
+            last_used = self.user_cooldowns.get(message.author.id, 0)
+            if now - last_used < 120:  # 2 minute cooldown (120 seconds)
+                return # Silently ignore to prevent spam
+                
+            self.user_cooldowns[message.author.id] = now
 
             
         # Try to load API key from DB if it wasn't in config
@@ -216,7 +226,7 @@ class Chat(commands.Cog):
                     )
                     
                     if is_admin:
-                        real_time_context += "STATUS: THIS USER IS A SERVER ADMINISTRATOR! They can ban/kick you. Acknowledge this context if they bring it up.\n"
+                        real_time_context += "STATUS: THIS USER IS A SERVER ADMINISTRATOR! But do NOT glaze them or act overly respectful. Treat them like any other user, just know they have the power to ban you.\n"
                     else:
                         real_time_context += "STATUS: Regular member. They do NOT have admin permissions.\n"
                         
