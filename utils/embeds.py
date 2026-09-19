@@ -453,16 +453,20 @@ class TicketEmbeds:
         thumbnail_url = roblox_avatar_url or member.display_avatar.url
         embed.set_thumbnail(url=thumbnail_url)
 
-        embed.add_field(name="Observer", value=member.mention, inline=False)
         embed.add_field(
-            name="Current Rank",
-            value=f"**{current_rank or 'Unranked'}**",
-            inline=True,
+            name="\u200B",
+            value=f"> [Observer]\n> {member.mention}",
+            inline=True
         )
         embed.add_field(
-            name="Total Observations",
-            value=f"**{total_observations}**",
-            inline=True,
+            name="\u200B",
+            value=f"> [Rank]\n> **{current_rank or 'Unranked'}**",
+            inline=True
+        )
+        embed.add_field(
+            name="\u200B",
+            value=f"> [Total Obs]\n> **{total_observations}**",
+            inline=True
         )
 
         status_value = member.status.value if hasattr(member, "status") else "offline"
@@ -470,20 +474,23 @@ class TicketEmbeds:
             status_display = "🟢 Available"
         else:
             status_display = "⚫ Offline"
-        embed.add_field(name="Status", value=status_display, inline=True)
+            
+        embed.add_field(
+            name="\u200B",
+            value=f"> [Status]\n> **{status_display}**",
+            inline=True
+        )
 
         if last_active_timestamp:
-            embed.add_field(
-                name="Last Active",
-                value=f"<t:{int(last_active_timestamp)}:R>",
-                inline=False
-            )
+            last_active_str = f"<t:{int(last_active_timestamp)}:R>"
         else:
-            embed.add_field(
-                name="Last Active",
-                value="*Never*",
-                inline=False
-            )
+            last_active_str = "*Never*"
+            
+        embed.add_field(
+            name="\u200B",
+            value=f"> [Last Active]\n> **{last_active_str}**",
+            inline=True
+        )
 
         embed.set_footer(text=f"User ID: {member.id}")
         return embed

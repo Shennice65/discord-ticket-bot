@@ -95,11 +95,11 @@ def test_observer_stats_embed_fields():
     )
 
     assert embed.title == "Observer Stats"
-    field_names = [f.name for f in embed.fields]
-    assert "Observer" in field_names
-    assert "Current Rank" in field_names
-    assert "Total Observations" in field_names
-    assert "Status" in field_names
+    field_values = [f.value for f in embed.fields]
+    assert any("[Observer]" in v for v in field_values)
+    assert any("[Rank]" in v for v in field_values)
+    assert any("[Total Obs]" in v for v in field_values)
+    assert any("[Status]" in v for v in field_values)
 
 def test_observer_stats_embed_offline():
     """Status shows Offline when member is offline."""
@@ -122,8 +122,8 @@ def test_observer_stats_embed_offline():
         total_observations=0,
     )
 
-    status_field = next(f for f in embed.fields if f.name == "Status")
-    assert "Offline" in status_field.value
+    status_value = next(f.value for f in embed.fields if "[Status]" in f.value)
+    assert "Offline" in status_value
 
 def test_observer_stats_embed_no_roblox_avatar():
     """When no Roblox avatar, falls back to Discord avatar for thumbnail."""
