@@ -433,3 +433,43 @@ class TicketEmbeds:
         embed.set_author(name=f"{user.display_name}'s Clips", icon_url=user.display_avatar.url)
         embed.set_footer(text=f"User ID: {user.id}")
         return embed
+
+    @staticmethod
+    def observer_stats_embed(
+        member: discord.Member,
+        roblox_avatar_url: str,
+        current_rank: str,
+        total_observations: int,
+    ) -> discord.Embed:
+        """Build the observer stats embed shown when selecting an observer."""
+        embed = discord.Embed(
+            title="Observer Stats",
+            color=discord.Color(0x2b2d31),
+            timestamp=datetime.utcnow(),
+        )
+
+        # Roblox avatar as thumbnail, fall back to Discord avatar
+        thumbnail_url = roblox_avatar_url or member.display_avatar.url
+        embed.set_thumbnail(url=thumbnail_url)
+
+        embed.add_field(name="Observer", value=member.mention, inline=False)
+        embed.add_field(
+            name="Current Rank",
+            value=f"**{current_rank or 'Unranked'}**",
+            inline=True,
+        )
+        embed.add_field(
+            name="Total Observations",
+            value=f"**{total_observations}**",
+            inline=True,
+        )
+
+        status_value = member.status.value if hasattr(member, "status") else "offline"
+        if status_value in ("online", "idle", "dnd"):
+            status_display = "🟢 Available"
+        else:
+            status_display = "⚫ Offline"
+        embed.add_field(name="Status", value=status_display, inline=True)
+
+        embed.set_footer(text=f"User ID: {member.id}")
+        return embed
