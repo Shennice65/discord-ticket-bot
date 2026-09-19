@@ -5,6 +5,7 @@ from google.genai import types
 from config import Config
 from collections import defaultdict, deque
 import math
+import asyncio
 from datetime import datetime, timezone
 
 def cosine_similarity(v1, v2):
@@ -174,16 +175,18 @@ class Chat(commands.Cog):
                     parts=[types.Part.from_text(text=reply_text)]
                 ))
                 
-                # 3. Save exchange to MongoDB for long-term memory
+                # 3. Save exchange to MongoDB for long-term memory (in the background so it doesn't block the reply)
                 if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
-                    await self.bot.db.chat_memory.insert_one({
-                        "channel_id": message.channel.id,
-                        "user_id": message.author.id,
-                        "user_text": user_text,
-                        "bot_reply": reply_text,
-                        "embedding": query_embedding,
-                        "timestamp": datetime.now(timezone.utc)
-                    })
+                    asyncio.create_task(
+                        self.bot.db.chat_memory.insert_one({
+                            "channel_id": message.channel.id,
+                            "user_id": message.author.id,
+                            "user_text": user_text,
+                            "bot_reply": reply_text,
+                            "embedding": query_embedding,
+                            "timestamp": datetime.now(timezone.utc)
+                        })
+                    )
                 
                 # Send the reply in chunks if it's over the 2000 character limit
                 chunk_size = 1990
