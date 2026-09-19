@@ -86,14 +86,14 @@ class Chat(commands.Cog):
                     pass
             return
             
-        # Check permissions and enforce rate limits for non-admins (3 messages per 2 minutes)
+        # Check permissions and enforce rate limits for non-admins (3 messages per 5 minutes)
         is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
         
         if not is_admin:
             now = message.created_at.timestamp()
             timestamps = self.user_cooldowns.get(message.author.id, [])
-            # Filter timestamps to only keep ones within the last 120 seconds
-            timestamps = [t for t in timestamps if now - t < 120]
+            # Filter timestamps to only keep ones within the last 300 seconds (5 minutes)
+            timestamps = [t for t in timestamps if now - t < 300]
             
             if len(timestamps) >= 3:
                 return # Silently ignore to prevent spam
