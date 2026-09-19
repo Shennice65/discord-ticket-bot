@@ -51,44 +51,44 @@ class Chat(commands.Cog):
         self.process_lore_queue.cancel()
         self.lore_compressor.cancel()
 
-    def _generate_with_fallback(self, contents, system_instruction):
+    def _api_call_with_fallback(self, method_name, **kwargs):
+        """Calls a Gemini API method with fallback and key rotation."""
         if not getattr(self, 'clients', None):
-            # Fallback for when no keys are configured
             if self.client:
-                return self.client.models.generate_content(
-                    model='gemini-3.5-flash-lite',
-                    contents=contents,
-                    config=types.GenerateContentConfig(system_instruction=system_instruction)
-                )
+                method = getattr(self.client.models, method_name)
+                return method(**kwargs)
             raise ValueError("No API keys configured.")
             
-        models_to_try = ['gemini-3.5-flash-lite', 'gemini-3.7-flash']
-        
+        models_to_try = []
+        if method_name == 'generate_content':
+            models_to_try = ['gemini-3.5-flash-lite', 'gemini-3.7-flash']
+            if 'model' in kwargs:
+                # If they explicitly wanted a specific model, just try that one model
+                models_to_try = [kwargs['model']]
+        elif method_name == 'embed_content':
+            models_to_try = ['gemini-embedding-2']
+            if 'model' in kwargs:
+                models_to_try = [kwargs['model']]
+            
         for model_name in models_to_try:
+            kwargs['model'] = model_name
             attempts = 0
             while attempts < len(self.clients):
                 client = self.clients[self.current_client_index]
+                method = getattr(client.models, method_name)
                 try:
-                    return client.models.generate_content(
-                        model=model_name,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                        )
-                    )
+                    return method(**kwargs)
                 except Exception as e:
                     error_str = str(e)
-                    # Check for 429 quota exhausted, 503 overloaded, or 401/403 auth errors
                     if ("429" in error_str and "quota" in error_str.lower()) or "503" in error_str or "401" in error_str or "403" in error_str:
                         print(f"Error {model_name} on key index {self.current_client_index}. Rotating key...")
                         self.current_client_index = (self.current_client_index + 1) % len(self.clients)
                         attempts += 1
                         continue
-                    # If it's a different error, raise it immediately
                     raise e
             print(f"All keys exhausted/overloaded for {model_name}, falling back to next model...")
             
-        raise Exception("All API keys and fallback models exhausted their quotas!")
+        raise Exception(f"All API keys and fallback models exhausted their quotas for {method_name}!")
 
     @app_commands.command(name="toggleaichat", description="[Admin] Toggle the AI chat feature on or off globally.")
     @app_commands.default_permissions(administrator=True)
@@ -215,7 +215,8 @@ class Chat(commands.Cog):
                 query_embedding = None
                 if user_text:
                     try:
-                        emb_response = self.client.models.embed_content(
+                        emb_response = self._api_call_with_fallback(
+                            'embed_content',
                             model='gemini-embedding-2',
                             contents=user_text,
                             config=types.EmbedContentConfig(output_dimensionality=256)
@@ -339,7 +340,11 @@ class Chat(commands.Cog):
                 dynamic_system_instruction += recent_messages_context
                 
                 # Call Gemini API with fallback support (rotates keys and models)
-                response = self._generate_with_fallback(contents, dynamic_system_instruction)
+                response = self._api_call_with_fallback(
+                    'generate_content', 
+                    contents=contents, 
+                    config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction)
+                )
                 
                 # Clean up the AI's response text and fix awkward gaps between sentences
                 reply_text = response.text.replace('</p>', '').replace('<p>', '').replace('```html', '').replace('```', '').strip()
@@ -459,7 +464,8 @@ class Chat(commands.Cog):
             contents = [m["user_text"] for m in batch]
             
             try:
-                emb_response = self.client.models.embed_content(
+                emb_response = self._api_call_with_fallback(
+                    'embed_content',
                     model='gemini-embedding-2',
                     contents=contents,
                     config=types.EmbedContentConfig(output_dimensionality=256)
@@ -509,7 +515,8 @@ class Chat(commands.Cog):
                 
             contents = [p["user_text"] for p in pending_list]
             
-            emb_response = self.client.models.embed_content(
+            emb_response = self._api_call_with_fallback(
+                'embed_content',
                 model='gemini-embedding-2',
                 contents=contents,
                 config=types.EmbedContentConfig(output_dimensionality=256)
@@ -584,14 +591,16 @@ class Chat(commands.Cog):
                     )
                     
                     # Generate summary using the fast text model
-                    summary_response = self.client.models.generate_content(
+                    summary_response = self._api_call_with_fallback(
+                        'generate_content',
                         model='gemini-3.7-flash',
                         contents=prompt
                     )
                     summary_text = summary_response.text.strip()
                     
                     # Embed summary
-                    emb_response = self.client.models.embed_content(
+                    emb_response = self._api_call_with_fallback(
+                        'embed_content',
                         model='gemini-embedding-2',
                         contents=summary_text,
                         config=types.EmbedContentConfig(output_dimensionality=256)
