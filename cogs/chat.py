@@ -44,17 +44,19 @@ class Chat(commands.Cog):
         self.process_lore_queue.cancel()
         self.lore_compressor.cancel()
 
-    @app_commands.command(name="ai_opt_out", description="Toggle whether the AI responds to your chat messages.")
-    async def ai_opt_out(self, interaction: discord.Interaction):
-        opt_out_ids = await self.bot.db.get_setting("ai_opt_out_ids", [])
-        if interaction.user.id in opt_out_ids:
-            opt_out_ids.remove(interaction.user.id)
-            await self.bot.db.set_setting("ai_opt_out_ids", opt_out_ids)
-            await interaction.response.send_message("You have opted back in. The AI will now respond to your messages.", ephemeral=True)
-        else:
-            opt_out_ids.append(interaction.user.id)
-            await self.bot.db.set_setting("ai_opt_out_ids", opt_out_ids)
-            await interaction.response.send_message("You have opted out. The AI will no longer respond to your messages.", ephemeral=True)
+    @app_commands.command(name="toggleaichat", description="[Admin] Toggle the AI chat feature on or off globally.")
+    @app_commands.default_permissions(administrator=True)
+    async def toggle_ai_chat(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("You must be an administrator to use this command.", ephemeral=True)
+            return
+            
+        current_status = await self.bot.db.get_setting("ai_chat_enabled", True)
+        new_status = not current_status
+        await self.bot.db.set_setting("ai_chat_enabled", new_status)
+        
+        status_text = "ENABLED" if new_status else "DISABLED"
+        await interaction.response.send_message(f"AI Chat has been **{status_text}** globally.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -82,6 +84,12 @@ class Chat(commands.Cog):
             await message.reply("Looking to get ranked or 1v1? Head over to https://discord.com/channels/1249581144597463040/1488835022055018576 to create a ticket!")
             return
             
+        # Check if AI chat is globally enabled by admins
+        if getattr(self.bot, 'db', None):
+            ai_enabled = await self.bot.db.get_setting("ai_chat_enabled", True)
+            if not ai_enabled:
+                return
+                
         bot_mentioned = self.bot.user in message.mentions
         is_dm = isinstance(message.channel, discord.DMChannel)
         
@@ -97,11 +105,6 @@ class Chat(commands.Cog):
                     })
                 except:
                     pass
-            return
-            
-        # Check if the user opted out
-        opt_out_ids = await getattr(self.bot, 'db', None).get_setting("ai_opt_out_ids", []) if getattr(self.bot, 'db', None) else []
-        if message.author.id in opt_out_ids:
             return
             
         # Check permissions and enforce rate limits for non-admins (3 messages per 5 minutes)
