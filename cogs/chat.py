@@ -41,9 +41,18 @@ class Chat(commands.Cog):
             "2. 'Observers' are the staff members who spectate matches and officially record the results and rank changes.\n"
             "3. If someone asks how to get ranked or 1v1, tell them to go to the ticket channel and click 'Ranked 1v1' or 'Personal Observation'.\n"
             "4. The server also features a betting system (wagers) and a web dashboard for stats and clips.\n"
-            "5. If someone asks about teams or rosters, use the team list above to answer accurately.\n"
-            "6. If someone asks who the best players are, say dororo, bobblonne, shots, and tador."
         )
+        
+        # Load dynamic lore from file if it exists
+        try:
+            import os
+            if os.path.exists("lore.txt"):
+                with open("lore.txt", "r", encoding="utf-8") as f:
+                    lore_text = f.read().strip()
+                if lore_text:
+                    self.system_instruction += f"\n\n{lore_text}\n"
+        except Exception as e:
+            print(f"Failed to load lore.txt: {e}")
         self.process_lore_queue.start()
         self.lore_compressor.start()
 
@@ -174,7 +183,7 @@ class Chat(commands.Cog):
         if is_bot:
             return
             
-        # Enforce rate limits (3/300s window) for standard users.
+        # Enforce rate limits (5/300s window) for standard users.
         is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
         
         if not is_admin:
@@ -183,7 +192,7 @@ class Chat(commands.Cog):
             # Prune expired rate limit timestamps.
             timestamps = [t for t in timestamps if now - t < 300]
             
-            if len(timestamps) >= 3:
+            if len(timestamps) >= 5:
                 return # Rate limit exceeded.
                 
             timestamps.append(now)
@@ -314,7 +323,7 @@ class Chat(commands.Cog):
                     )
                     
                     if is_admin:
-                        real_time_context += "STATUS: THIS USER IS A SERVER ADMINISTRATOR! But do NOT glaze them or act overly respectful. Treat them like any other user, just know they have the power to ban you.\n"
+                        real_time_context += "STATUS: THIS USER IS A SERVER ADMINISTRATOR.\n"
                     else:
                         real_time_context += "STATUS: Regular member. They do NOT have admin permissions.\n"
                         
