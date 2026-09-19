@@ -19,13 +19,13 @@ class Chat(commands.Cog):
         
         self.client = self.clients[0] if self.clients else None
         
-        # Store recent history per channel. Limit to last 15 messages to save tokens.
+        # Cache recent channel history (max 15 messages) for context window management.
         self.history = defaultdict(lambda: deque(maxlen=15))
         
-        # Track cooldowns for non-admin users to prevent spam
+        # User rate limit tracking (non-admin).
         self.user_cooldowns = {}
         
-# System instructions to give the bot a persona
+# Bot persona and domain knowledge constraints.
         self.system_instruction = (
             "You are a member of a Discord community. Text exactly like an actual user in a casual chat. "
             "Use short words and abbreviations, but be subtle with slang so it doesn't sound forced or corny. Do not overuse specific words. "
@@ -55,8 +55,7 @@ class Chat(commands.Cog):
         """Calls a Gemini API method with fallback and key rotation asynchronously."""
         if not getattr(self, 'clients', None):
             if getattr(self, 'client', None):
-                # We have a client (probably loaded from DB), but self.clients is empty.
-                # Populate self.clients so it uses the normal rotation loop!
+                # Seed client list from dynamically loaded DB configuration.
                 self.clients = [self.client]
                 self.current_client_index = 0
             else:
@@ -66,7 +65,7 @@ class Chat(commands.Cog):
         if method_name == 'generate_content':
             models_to_try = ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash']
             if 'model' in kwargs:
-                # If they explicitly wanted a specific model, just try that one model
+                # Enforce explicit model override.
                 models_to_try = [kwargs['model']]
         elif method_name == 'embed_content':
             models_to_try = ['gemini-embedding-2']
@@ -111,7 +110,7 @@ class Chat(commands.Cog):
     async def on_message(self, message: discord.Message):
         is_bot = message.author.bot
             
-        # Auto-detect ranking and ticket questions (humans only)
+        # Intercept ticket routing queries.
         if not is_bot:
             content_lower = message.content.lower()
             exact_phrases = [
@@ -122,9 +121,9 @@ class Chat(commands.Cog):
             ]
             
             is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
-            # Catch short variations like "where is the ticket channel?" or "how to get rank"
+            # Fallback keyword matching for malformed ticket queries.
             if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 60:
-                # Extra safety check: require an action word so it doesn't trigger on casual chat like "how is your rank?"
+                # Require verb presence to reduce false positives in casual conversation.
                 if any(word in content_lower for word in ["get", "create", "make", "do i", "is the"]):
                     is_ticket_question = True
                 
@@ -142,7 +141,7 @@ class Chat(commands.Cog):
         is_dm = isinstance(message.channel, discord.DMChannel)
         
         if not bot_mentioned and not is_dm:
-            # Check if the channel is private (hidden from the member role or @everyone)
+            # Validate channel visibility constraints.
             member_role_id = Config.MEMBER_ROLE_ID
             if not member_role_id and getattr(self.bot, 'db', None):
                 member_role_id = await self.bot.db.get_setting("MEMBER_ROLE_ID", 0)
@@ -153,11 +152,11 @@ class Chat(commands.Cog):
             else:
                 is_public = message.channel.permissions_for(message.guild.default_role).read_messages
             
-            # If it's a private human conversation (like staff-chat), ignore it completely!
+            # Drop events from restricted channels to prevent information leakage.
             if not is_public and not is_bot:
                 return
 
-            # OPTION 3: Auto-queue regular conversations into pending memory (min 3 words to avoid spam)
+            # Queue public dialogue for vector embedding (requires min 3 tokens).
             if len(message.content.split()) >= 3 and getattr(self.bot, 'db', None):
                 try:
                     author_name = f"[{message.author.display_name} (BOT)]" if is_bot else f"[{message.author.display_name}]"
@@ -171,21 +170,21 @@ class Chat(commands.Cog):
                     pass
             return
             
-        # Prevent the AI from talking to other bots (infinite loops)
+        # Prevent bot-to-bot recursion.
         if is_bot:
             return
             
-        # Check permissions and enforce rate limits for non-admins (3 messages per 5 minutes)
+        # Enforce rate limits (3/300s window) for standard users.
         is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
         
         if not is_admin:
             now = message.created_at.timestamp()
             timestamps = self.user_cooldowns.get(message.author.id, [])
-            # Filter timestamps to only keep ones within the last 300 seconds (5 minutes)
+            # Prune expired rate limit timestamps.
             timestamps = [t for t in timestamps if now - t < 300]
             
             if len(timestamps) >= 3:
-                return # Silently ignore to prevent spam
+                return # Rate limit exceeded.
                 
             timestamps.append(now)
             self.user_cooldowns[message.author.id] = timestamps
@@ -211,15 +210,15 @@ class Chat(commands.Cog):
             await message.reply("The Gemini API key is not configured. Please contact the bot owner.")
             return
 
-        # Prepare user prompt, stripping out the bot mention text
+        # Sanitize input payload.
         user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
         if not user_text and not message.attachments:
             user_text = "Hello!"
             
-        # Add a typing indicator while processing
+        # Signal processing state.
         async with message.channel.typing():
             try:
-                # 1. Get embedding for current user message
+                # Generate semantic embedding for input.
                 query_embedding = None
                 if user_text:
                     try:
@@ -230,16 +229,15 @@ class Chat(commands.Cog):
                             config=types.EmbedContentConfig(output_dimensionality=256)
                         )
                         if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                            # Convert to a standard Python list so MongoDB can serialize it
+                            # Normalize embedding vector for BSON serialization.
                             query_embedding = list(emb_response.embeddings[0].values)
                     except Exception as e:
                         print(f"Embedding error: {e}")
                         
-                # 2. Retrieve relevant context from database
+                # Execute vector similarity search for lore context.
                 recalled_context = ""
                 if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
                     try:
-                        # Use MongoDB Atlas Vector Search for lightning-fast retrieval
                         pipeline = [
                             {
                                 "$vectorSearch": {
@@ -259,24 +257,22 @@ class Chat(commands.Cog):
                         top_exchanges = await cursor.to_list(length=3)
                         
                         if top_exchanges:
-                            recalled_context = "### RECALLED LONG-TERM CONTEXT ###\nThe following are relevant past conversations with this user/channel:\n"
+                            recalled_context = "### RECALLED LONG-TERM CONTEXT (Server Memory) ###\nThe following are semantically similar past conversations from various users in the server. Do NOT assume the current user is the same person as in these past logs.\n"
                             for ex in top_exchanges:
-                                recalled_context += f"- User said: {ex.get('user_text')}\n- You replied: {ex.get('bot_reply')}\n\n"
+                                recalled_context += f"- A user said: {ex.get('user_text')}\n- You replied: {ex.get('bot_reply')}\n\n"
                     except Exception as search_err:
                         print(f"Vector search failed: {search_err}")
                             
-                # Prepare contents for Gemini
+                # Inject user-specific chat history.
                 contents = []
-                # Append history (tracked per user now instead of per channel)
                 for hist_msg in self.history[message.author.id]:
                     contents.append(hist_msg)
                 
-                # Append current message
                 parts = []
                 if user_text:
                     parts.append(types.Part.from_text(text=user_text))
                     
-                # Download and attach images to the AI prompt
+                # Stream and append image attachments to prompt context.
                 if message.attachments:
                     import aiohttp
                     async with aiohttp.ClientSession() as session:
@@ -297,16 +293,14 @@ class Chat(commands.Cog):
                     parts=parts
                 ))
                 
-                # Add recalled context to system instructions
                 dynamic_system_instruction = self.system_instruction
                 
-                # --- NEW REAL-TIME DISCORD CONTEXT ---
                 if message.guild:
                     is_admin = getattr(message.author.guild_permissions, 'administrator', False)
                     roles = [r.name for r in getattr(message.author, 'roles', []) if r.name != "@everyone"]
                     role_str = ", ".join(roles) if roles else "None"
                     
-                    # Fetch up to 10 admins (bot or human) to save processing
+                    # Limit admin fetch to top 10 for performance.
                     admins = [m.display_name for m in message.guild.members if getattr(m.guild_permissions, 'administrator', False) and not m.bot][:10]
                     admin_str = ", ".join(admins) if admins else "Unknown"
                     
@@ -329,12 +323,11 @@ class Chat(commands.Cog):
                 if recalled_context:
                     dynamic_system_instruction += "\n\n" + recalled_context
                     
-                # Fetch recent channel history for immediate context
+                # Inject recent channel state for situational awareness.
                 recent_messages_context = "\n\n--- RECENT MESSAGES IN THIS CHANNEL ---\n"
                 try:
-                    # Fetch last 10 messages before the current one
                     recent_msgs = [m async for m in message.channel.history(limit=10, before=message)]
-                    recent_msgs.reverse() # Chronological order
+                    recent_msgs.reverse()
                     
                     for m in recent_msgs:
                         content = m.content.strip()
@@ -379,7 +372,7 @@ class Chat(commands.Cog):
                     except Exception as e:
                         return f"Error searching channel: {str(e)}"
                 
-                # Call Gemini API with fallback support (rotates keys and models)
+                # Execute primary API call with configured tools and dynamic context.
                 response = await self._api_call_with_fallback(
                     'generate_content', 
                     contents=contents, 
@@ -389,12 +382,12 @@ class Chat(commands.Cog):
                     )
                 )
                 
-                # Clean up the AI's response text and fix awkward gaps between sentences
+                # Normalize response markdown and whitespace.
                 reply_text = response.text.replace('</p>', '').replace('<p>', '').replace('```html', '').replace('```', '').strip()
                 import re
                 reply_text = re.sub(r'\n+', '\n', reply_text)
                 
-                # Update history (store only the text part of the user's prompt to save tokens)
+                # Update conversational memory (text only).
                 text_only_part = types.Part.from_text(text=user_text) if user_text else types.Part.from_text(text="[Image attachment]")
                 history_content = types.Content(role="user", parts=[text_only_part])
                 
@@ -404,7 +397,7 @@ class Chat(commands.Cog):
                     parts=[types.Part.from_text(text=reply_text)]
                 ))
                 
-                # 3. Save exchange to MongoDB for long-term memory
+                # Persist exchange for future vector retrieval.
                 if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
                     try:
                         await self.bot.db.chat_memory.insert_one({
@@ -419,7 +412,7 @@ class Chat(commands.Cog):
                     except Exception as db_err:
                         print(f"MongoDB Insert Error: {db_err}")
                 
-                # Send the reply in chunks if it's over the 2000 character limit
+                # Paginate output to comply with Discord character limits.
                 chunk_size = 1990
                 chunks = [reply_text[i:i+chunk_size] for i in range(0, len(reply_text), chunk_size)]
                 
@@ -459,7 +452,6 @@ class Chat(commands.Cog):
             return
             
         if not self.client:
-            # Try to load API key
             try:
                 config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"})
                 if config_doc and config_doc.get("GEMINI_API_KEY"):
@@ -482,10 +474,10 @@ class Chat(commands.Cog):
         valid_messages = []
         
         async for history_msg in ctx.channel.history(limit=amount):
-            # Skip empty messages or bot messages
+            # Ignore unindexable content.
             if history_msg.author.bot or not history_msg.content.strip():
                 continue
-            # Skip commands
+            # Ignore bot commands.
             if history_msg.content.startswith('!') or history_msg.content.startswith('?'):
                 continue
             
@@ -533,10 +525,10 @@ class Chat(commands.Cog):
                         await self.bot.db.chat_memory.insert_many(documents_to_insert)
                         inserted_count += len(documents_to_insert)
                         
-                # Sleep for 4.1 seconds to stay safely under the 15 RPM free tier limit
+                # Enforce RPM limit throttling.
                 await asyncio.sleep(4.1)
                 
-                # Send a progress update every 100 messages so the user knows it's not frozen
+                # Emit progress telemetry.
                 if inserted_count % 100 == 0:
                     await ctx.author.send(f"⏳ Progress: Synced {inserted_count} / {len(valid_messages)} messages...")
                     
@@ -549,12 +541,12 @@ class Chat(commands.Cog):
 
     @tasks.loop(seconds=5.0)
     async def process_lore_queue(self):
-        """Background task that embeds and saves queued messages to lore without hitting rate limits."""
+        """Asynchronously embed and persist queued chat events within rate limit constraints."""
         if not self.client or not getattr(self.bot, 'db', None):
             return
             
         try:
-            # Fetch up to 10 pending messages
+            # Fetch pending batch.
             cursor = self.bot.db.db.pending_lore.find({}).limit(10)
             pending_list = await cursor.to_list(length=10)
             
@@ -577,14 +569,14 @@ class Chat(commands.Cog):
                         doc = pending_list[idx]
                         doc["embedding"] = list(emb_obj.values)
                         doc["bot_reply"] = "[Historical Community Lore]"
-                        # Remove the _id so it gets a new one in chat_memory, or just keep it
+                        # Strip _id for clean insertion into target collection.
                         doc.pop("_id", None)
                         documents_to_insert.append(doc)
                         
                 if documents_to_insert:
                     await self.bot.db.chat_memory.insert_many(documents_to_insert)
             
-            # Delete the processed messages from the queue regardless of success/fail to avoid getting stuck
+            # Unconditional dequeue to prevent poison pill deadlocks.
             ids_to_delete = [p["_id"] for p in pending_list if "_id" in p]
             if ids_to_delete:
                 await self.bot.db.db.pending_lore.delete_many({"_id": {"$in": ids_to_delete}})
@@ -594,7 +586,7 @@ class Chat(commands.Cog):
 
     @tasks.loop(hours=1.0)
     async def lore_compressor(self):
-        """Background task that compresses messages older than 7 days into single summaries."""
+        """Periodically aggregate and summarize lore older than 7 days."""
         if not self.client or not getattr(self.bot, 'db', None):
             return
             
@@ -602,7 +594,7 @@ class Chat(commands.Cog):
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
             
             while True:
-                # Find all unsummarized messages older than 7 days (limit 100 per chunk)
+                # Fetch stale, uncompressed lore batch.
                 cursor = self.bot.db.chat_memory.find({
                     "timestamp": {"$lt": cutoff_date},
                     "is_summary": {"$ne": True}
@@ -610,9 +602,9 @@ class Chat(commands.Cog):
                 
                 old_messages = await cursor.to_list(length=100)
                 if not old_messages:
-                    break # All caught up!
+                    break
                     
-                # Group by channel_id
+                # Aggregate by origin channel.
                 from collections import defaultdict
                 channel_groups = defaultdict(list)
                 for msg in old_messages:
@@ -622,7 +614,7 @@ class Chat(commands.Cog):
                     if not channel_id:
                         continue
                         
-                    # Format for Gemini
+                    # Serialize payload.
                     chat_log = ""
                     for m in msgs:
                         user_text = m.get("user_text", "")
@@ -638,7 +630,7 @@ class Chat(commands.Cog):
                         f"CHAT LOG:\n{chat_log}"
                     )
                     
-                    # Generate summary using the fast text model
+                    # Execute summarization prompt.
                     summary_response = await self._api_call_with_fallback(
                         'generate_content',
                         model='gemini-3.7-flash',
@@ -646,7 +638,7 @@ class Chat(commands.Cog):
                     )
                     summary_text = summary_response.text.strip()
                     
-                    # Embed summary
+                    # Generate semantic embedding for summary.
                     emb_response = await self._api_call_with_fallback(
                         'embed_content',
                         model='gemini-embedding-2',
@@ -657,7 +649,7 @@ class Chat(commands.Cog):
                     if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
                         embedding_vector = list(emb_response.embeddings[0].values)
                         
-                        # Insert the compressed summary
+                        # Persist aggregate artifact.
                         summary_doc = {
                             "channel_id": channel_id,
                             "user_id": 0,
@@ -669,12 +661,12 @@ class Chat(commands.Cog):
                         }
                         await self.bot.db.chat_memory.insert_one(summary_doc)
                         
-                        # Delete the old raw messages we just compressed
+                        # Prune compressed raw records.
                         msg_ids = [m["_id"] for m in msgs if "_id" in m]
                         if msg_ids:
                             await self.bot.db.chat_memory.delete_many({"_id": {"$in": msg_ids}})
                             
-                    # Sleep a bit to respect rate limits
+                    # Throttling backoff.
                     await asyncio.sleep(5)
                     
         except Exception as e:

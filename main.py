@@ -54,7 +54,7 @@ class TicketBot(commands.Bot):
         if not await self.db.init():
             raise RuntimeError("MongoDB initialization failed; refusing to start the bot")
         
-        # Register persistent views so buttons on old messages still work after restart
+        # Initialize persistent view components.
         from views.history_views import ShareClipView
         self.add_view(ShareClipView())
         
