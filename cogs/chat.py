@@ -194,6 +194,25 @@ class Chat(commands.Cog):
         if is_bot:
             return
             
+        # --- "LEAVE ON READ" FILTER (ANTI-FLOODING) ---
+        # If someone pings the bot with just "lol", ignore it so we don't flood the chat.
+        clean_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip().lower()
+        filler_words = ["lol", "lmao", "lmfao", "fr", "ok", "k", "yeah", "💀", "😭", "w", "l", "real", "true", "bro", "lolo", "bruh"]
+        
+        words = clean_text.split()
+        if len(words) > 0 and len(words) <= 3:
+            # Check if all words in the message are meaningless filler
+            is_meaningless = all(word in filler_words or not word.isalnum() for word in words)
+            if is_meaningless:
+                # Random chance to react with a skull instead of replying
+                import random
+                if random.random() < 0.3:
+                    try:
+                        await message.add_reaction("💀")
+                    except:
+                        pass
+                return # Abort processing, leave them on read
+            
         # Enforce rate limits (5/300s window) for standard users.
         is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
         
