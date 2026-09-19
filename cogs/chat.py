@@ -40,6 +40,24 @@ class Chat(commands.Cog):
         if message.author.bot:
             return
             
+        # Auto-detect ranking and ticket questions
+        content_lower = message.content.lower()
+        exact_phrases = [
+            "how to get ranked", "how do i get ranked", "where to get ranked",
+            "where do i get ranked", "how to 1v1", "how do i 1v1",
+            "where to 1v1", "how to create a ticket", "how do i create a ticket",
+            "where to create a ticket", "make a ticket", "create a 1v1 ticket"
+        ]
+        
+        is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
+        # Catch short variations like "where is the ticket channel?"
+        if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "ranked" in content_lower) and len(content_lower) < 60:
+            is_ticket_question = True
+            
+        if is_ticket_question:
+            await message.reply("Looking to get ranked or 1v1? Head over to https://discord.com/channels/1249581144597463040/1488835022055018576 to create a ticket!")
+            return
+            
         bot_mentioned = self.bot.user in message.mentions
         is_dm = isinstance(message.channel, discord.DMChannel)
         
