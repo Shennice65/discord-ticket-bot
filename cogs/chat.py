@@ -44,9 +44,8 @@ class Chat(commands.Cog):
         if self.bot.user not in message.mentions:
             return
             
-        # Restrict access to administrators only
+        # Restrict access to administrators only (silently ignore others to prevent spam)
         if not getattr(message.author, 'guild_permissions', None) or not message.author.guild_permissions.administrator:
-            await message.reply("Sorry, currently only server administrators can chat with me.")
             return
 
             
