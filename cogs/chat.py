@@ -277,6 +277,24 @@ class Chat(commands.Cog):
 
                 if recalled_context:
                     dynamic_system_instruction += "\n\n" + recalled_context
+                    
+                # Fetch recent channel history for immediate context
+                recent_messages_context = "\n\n--- RECENT MESSAGES IN THIS CHANNEL ---\n"
+                try:
+                    # Fetch last 10 messages before the current one
+                    recent_msgs = [m async for m in message.channel.history(limit=10, before=message)]
+                    recent_msgs.reverse() # Chronological order
+                    
+                    for m in recent_msgs:
+                        content = m.content.strip()
+                        if not content and m.attachments:
+                            content = "[Attachment/Image]"
+                        if content:
+                            recent_messages_context += f"{m.author.display_name}: {content}\n"
+                except Exception as e:
+                    print(f"Failed to fetch recent messages: {e}")
+                    
+                dynamic_system_instruction += recent_messages_context
                 
                 # Call Gemini API with the ultra-fast flash-lite model
                 try:
