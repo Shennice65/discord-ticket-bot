@@ -33,8 +33,9 @@ class Chat(commands.Cog):
             "If someone asks why a user was warned/banned and you don't know the exact reason, playfully guess based on their past behavior (e.g., spamming, being toxic) rather than sounding like a robot. "
             "Do NOT use periods at the end of your sentences in most cases. Use fewer commas and keep capitalization natural (often lowercase). "
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
-            "If the user asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
-            "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown. Do NOT use emojis of any kind.\n\n"
+            "If someone asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
+            "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown. Do NOT use emojis of any kind.\n"
+            "Vary your vocabulary constantly. Do NOT repeat the exact same phrases or slang you used in previous messages. If you find yourself echoing a previous sentence, rewrite it entirely.\n\n"
 
             "--- CORE SERVER KNOWLEDGE ---\n"
             "1. This is a competitive Roblox server for the game 'Timebomb Duels'. We host Ranked 1v1 matches and Personal Observations.\n"
@@ -387,7 +388,10 @@ class Chat(commands.Cog):
                     contents=contents, 
                     config=types.GenerateContentConfig(
                         system_instruction=dynamic_system_instruction,
-                        tools=[search_channel_for_image]
+                        tools=[search_channel_for_image],
+                        temperature=0.9,
+                        presence_penalty=0.5,
+                        frequency_penalty=0.5
                     )
                 )
                 
