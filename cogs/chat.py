@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 import math
 import asyncio
 from datetime import datetime, timezone
+from discord.ext import tasks
 
 class Chat(commands.Cog):
     def __init__(self, bot):
@@ -26,6 +27,10 @@ class Chat(commands.Cog):
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
             "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown."
         )
+        self.process_lore_queue.start()
+
+    def cog_unload(self):
+        self.process_lore_queue.cancel()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -33,8 +38,21 @@ class Chat(commands.Cog):
         if message.author.bot:
             return
             
-        # Check if the bot is mentioned
-        if self.bot.user not in message.mentions:
+        bot_mentioned = self.bot.user in message.mentions
+        is_dm = isinstance(message.channel, discord.DMChannel)
+        
+        if not bot_mentioned and not is_dm:
+            # OPTION 3: Auto-queue regular conversations into pending memory (min 3 words to avoid spam)
+            if len(message.content.split()) >= 3 and getattr(self.bot, 'db', None):
+                try:
+                    await self.bot.db.db.pending_lore.insert_one({
+                        "channel_id": message.channel.id,
+                        "user_id": message.author.id,
+                        "user_text": message.content.strip(),
+                        "timestamp": message.created_at
+                    })
+                except:
+                    pass
             return
             
         # Restrict access to administrators only (silently ignore others to prevent spam)
@@ -305,6 +323,49 @@ class Chat(commands.Cog):
                 break
                 
         await ctx.author.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
+
+    @tasks.loop(seconds=20.0)
+    async def process_lore_queue(self):
+        """Background task that embeds and saves queued messages to lore without hitting rate limits."""
+        if not self.client or not getattr(self.bot, 'db', None):
+            return
+            
+        try:
+            # Fetch up to 10 pending messages
+            cursor = self.bot.db.db.pending_lore.find({}).limit(10)
+            pending_list = await cursor.to_list(length=10)
+            
+            if not pending_list:
+                return
+                
+            contents = [p["user_text"] for p in pending_list]
+            
+            emb_response = self.client.models.embed_content(
+                model='gemini-embedding-2',
+                contents=contents
+            )
+            
+            if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
+                documents_to_insert = []
+                for idx, emb_obj in enumerate(emb_response.embeddings):
+                    if idx < len(pending_list):
+                        doc = pending_list[idx]
+                        doc["embedding"] = list(emb_obj.values)
+                        doc["bot_reply"] = "[Historical Community Lore]"
+                        # Remove the _id so it gets a new one in chat_memory, or just keep it
+                        doc.pop("_id", None)
+                        documents_to_insert.append(doc)
+                        
+                if documents_to_insert:
+                    await self.bot.db.chat_memory.insert_many(documents_to_insert)
+            
+            # Delete the processed messages from the queue regardless of success/fail to avoid getting stuck
+            ids_to_delete = [p["_id"] for p in pending_list if "_id" in p]
+            if ids_to_delete:
+                await self.bot.db.db.pending_lore.delete_many({"_id": {"$in": ids_to_delete}})
+                
+        except Exception as e:
+            print(f"Background lore queue error: {e}")
 
 async def setup(bot):
     await bot.add_cog(Chat(bot))
