@@ -8,14 +8,6 @@ import math
 import asyncio
 from datetime import datetime, timezone
 
-def cosine_similarity(v1, v2):
-    dot_product = sum(a * b for a, b in zip(v1, v2))
-    mag1 = math.sqrt(sum(a * a for a in v1))
-    mag2 = math.sqrt(sum(b * b for b in v2))
-    if mag1 == 0 or mag2 == 0:
-        return 0
-    return dot_product / (mag1 * mag2)
-
 class Chat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -28,10 +20,11 @@ class Chat(commands.Cog):
         # System instructions to give the bot a persona
         self.system_instruction = (
             "You are a member of a Discord community. Text exactly like an actual user in a casual chat. "
-            "Use short words, abbreviations, and slangs (like fr, tbh, ngl, lol, lmao). "
+            "Use short words and abbreviations, but be subtle with slang so it doesn't sound forced or corny. Do not overuse specific words. "
+            "Form your own opinions. Do not always agree with the user or act like a 'glazing machine'. Playfully disagree, tease, or banter when appropriate. "
             "Do NOT use periods at the end of your sentences in most cases. Use fewer commas and keep capitalization natural (often lowercase). "
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
-            "Do NOT sound like an AI assistant or professional customer service."
+            "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown."
         )
 
     @commands.Cog.listener()
@@ -89,25 +82,37 @@ class Chat(commands.Cog):
                 # 2. Retrieve relevant context from database
                 recalled_context = ""
                 if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
-                    # Fetch last 100 messages to search in memory (reduced from 500 for lightning speed)
-                    cursor = self.bot.db.chat_memory.find({"channel_id": message.channel.id}).sort("timestamp", -1).limit(100)
-                    past_exchanges = await cursor.to_list(length=100)
-                    
-                    scored_exchanges = []
-                    for exchange in past_exchanges:
-                        emb = exchange.get("embedding")
-                        if emb:
-                            score = cosine_similarity(query_embedding, emb)
-                            scored_exchanges.append((score, exchange))
-                    
-                    # Sort by score descending and take top 3
-                    scored_exchanges.sort(key=lambda x: x[0], reverse=True)
-                    top_exchanges = scored_exchanges[:3]
-                    
-                    if top_exchanges:
-                        recalled_context = "### RECALLED LONG-TERM CONTEXT ###\nThe following are relevant past conversations with this user/channel:\n"
-                        for score, ex in top_exchanges:
-                            recalled_context += f"- User said: {ex.get('user_text')}\n- You replied: {ex.get('bot_reply')}\n\n"
+                    try:
+                        # Use MongoDB Atlas Vector Search for lightning-fast retrieval
+                        pipeline = [
+                            {
+                                "$vectorSearch": {
+                                    "index": "vector_index",
+                                    "path": "embedding",
+                                    "queryVector": query_embedding,
+                                    "numCandidates": 1000,
+                                    "limit": 100  # Pull top 100 globally
+                                }
+                            },
+                            {
+                                "$match": {
+                                    "channel_id": message.channel.id
+                                }
+                            },
+                            {
+                                "$limit": 3
+                            }
+                        ]
+                        
+                        cursor = self.bot.db.chat_memory.aggregate(pipeline)
+                        top_exchanges = await cursor.to_list(length=3)
+                        
+                        if top_exchanges:
+                            recalled_context = "### RECALLED LONG-TERM CONTEXT ###\nThe following are relevant past conversations with this user/channel:\n"
+                            for ex in top_exchanges:
+                                recalled_context += f"- User said: {ex.get('user_text')}\n- You replied: {ex.get('bot_reply')}\n\n"
+                    except Exception as search_err:
+                        print(f"Vector search failed: {search_err}")
                             
                 # Prepare contents for Gemini
                 contents = []
@@ -162,7 +167,8 @@ class Chat(commands.Cog):
                     else:
                         raise api_err
                 
-                reply_text = response.text
+                # Clean up the AI's response text
+                reply_text = response.text.replace('</p>', '').replace('<p>', '').replace('```html', '').replace('```', '').strip()
                 
                 # Update history (store only the text part of the user's prompt to save tokens)
                 text_only_part = types.Part.from_text(text=user_text) if user_text else types.Part.from_text(text="[Image attachment]")
@@ -204,6 +210,91 @@ class Chat(commands.Cog):
                 print(f"Gemini API Error: {e}")
                 traceback.print_exc()
                 await message.reply(f"Oops, something went wrong while talking to my brain.\n**Admin Error Log:** `{type(e).__name__}: {e}`")
+
+    @commands.command(name="sync_lore")
+    @commands.has_permissions(administrator=True)
+    async def sync_lore(self, ctx, amount: int = 1000):
+        """Fetches historical messages and saves them as lore in the bot's memory."""
+        if not getattr(self.bot, 'db', None) or getattr(self.bot.db, 'chat_memory', None) is None:
+            await ctx.send("Database not connected!")
+            return
+            
+        if not self.client:
+            # Try to load API key
+            try:
+                config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"})
+                if config_doc and config_doc.get("GEMINI_API_KEY"):
+                    self.api_key = config_doc.get("GEMINI_API_KEY")
+                    self.client = genai.Client(api_key=self.api_key)
+            except:
+                pass
+                
+        if not self.client:
+            await ctx.send("Gemini API not connected!")
+            return
+            
+        msg = await ctx.send(f"Fetching last {amount} messages to sync lore... This might take a couple minutes to avoid hitting Google's rate limits.")
+        
+        valid_messages = []
+        
+        async for history_msg in ctx.channel.history(limit=amount):
+            # Skip empty messages or bot messages
+            if history_msg.author.bot or not history_msg.content.strip():
+                continue
+            # Skip commands
+            if history_msg.content.startswith('!') or history_msg.content.startswith('?'):
+                continue
+            
+            valid_messages.append({
+                "channel_id": history_msg.channel.id,
+                "user_id": history_msg.author.id,
+                "user_text": history_msg.content.strip(),
+                "bot_reply": "[Historical Community Lore]",
+                "timestamp": history_msg.created_at
+            })
+            
+        if not valid_messages:
+            await msg.edit(content="No valid messages found to sync.")
+            return
+            
+        await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in batches of 100...")
+        
+        # Process in batches of 100
+        batch_size = 100
+        inserted_count = 0
+        
+        for i in range(0, len(valid_messages), batch_size):
+            batch = valid_messages[i:i+batch_size]
+            contents = [m["user_text"] for m in batch]
+            
+            try:
+                emb_response = self.client.models.embed_content(
+                    model='text-embedding-004',
+                    contents=contents
+                )
+                
+                if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
+                    embeddings_list = emb_response.embeddings
+                    
+                    documents_to_insert = []
+                    for idx, emb_obj in enumerate(embeddings_list):
+                        if idx < len(batch):
+                            doc = batch[idx]
+                            doc["embedding"] = list(emb_obj.values)
+                            documents_to_insert.append(doc)
+                            
+                    if documents_to_insert:
+                        await self.bot.db.chat_memory.insert_many(documents_to_insert)
+                        inserted_count += len(documents_to_insert)
+                        
+                # Sleep for 5 seconds to avoid hitting the 15 RPM free tier limit
+                await asyncio.sleep(5)
+            except Exception as e:
+                print(f"Lore sync batch error: {e}")
+                await ctx.send(f"Error during sync batch: {e}")
+                break
+                
+        await ctx.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
 
 async def setup(bot):
     await bot.add_cog(Chat(bot))
