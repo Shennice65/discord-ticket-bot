@@ -134,9 +134,22 @@ class TicketBot(commands.Bot):
     async def reload_cog(self, ctx, extension: str):
         try:
             await self.reload_extension(extension)
-            await ctx.send(f"Successfully reloaded `{extension}`")
+            
+            import subprocess
+            file_path = extension.replace('.', '/') + '.py'
+            try:
+                result = subprocess.run(['git', 'log', '-1', '--pretty=format:%s', '--', file_path], 
+                                      capture_output=True, text=True, check=True)
+                last_change = result.stdout.strip()
+                if last_change:
+                    await ctx.send(f"✅ Successfully reloaded `{extension}`\n**Latest Change:** {last_change}")
+                else:
+                    await ctx.send(f"✅ Successfully reloaded `{extension}`")
+            except Exception:
+                await ctx.send(f"✅ Successfully reloaded `{extension}`")
+                
         except Exception as e:
-            await ctx.send(f"Failed to reload `{extension}`: {e}")
+            await ctx.send(f"❌ Failed to reload `{extension}`: {e}")
 
     @commands.command(name="restart")
     @commands.has_permissions(administrator=True)
