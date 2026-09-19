@@ -440,6 +440,7 @@ class TicketEmbeds:
         roblox_avatar_url: str,
         current_rank: str,
         total_observations: int,
+        last_active_timestamp: Optional[float] = None,
     ) -> discord.Embed:
         """Build the observer stats embed shown when selecting an observer."""
         embed = discord.Embed(
@@ -470,6 +471,19 @@ class TicketEmbeds:
         else:
             status_display = "⚫ Offline"
         embed.add_field(name="Status", value=status_display, inline=True)
+
+        if last_active_timestamp:
+            embed.add_field(
+                name="Last Active",
+                value=f"<t:{int(last_active_timestamp)}:R>",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Last Active",
+                value="*Never*",
+                inline=False
+            )
 
         embed.set_footer(text=f"User ID: {member.id}")
         return embed

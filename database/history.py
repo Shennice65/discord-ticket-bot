@@ -222,3 +222,33 @@ class HistoryMixin:
             self.observation_results.count_documents({"observer_id": observer_id}),
         )
         return ranked_count + obs_count
+
+    async def get_observer_last_active(self, observer_id: int) -> Optional[float]:
+        """Get the most recent observation timestamp (unix) for this observer."""
+        ranked_latest = await self.ranked_results.find_one(
+            {"observer_id": observer_id},
+            sort=[("created_at", -1)],
+            projection={"created_at": 1}
+        )
+        obs_latest = await self.observation_results.find_one(
+            {"observer_id": observer_id},
+            sort=[("created_at", -1)],
+            projection={"created_at": 1}
+        )
+        
+        timestamps = []
+        for doc in (ranked_latest, obs_latest):
+            if doc and "created_at" in doc:
+                try:
+                    # Format is like "2026-09-19 07:53:40.123456"
+                    dt = datetime.strptime(doc["created_at"], "%Y-%m-%d %H:%M:%S.%f")
+                    timestamps.append(dt.timestamp())
+                except ValueError:
+                    try:
+                        # Fallback for old records without microseconds
+                        dt = datetime.strptime(doc["created_at"], "%Y-%m-%d %H:%M:%S")
+                        timestamps.append(dt.timestamp())
+                    except ValueError:
+                        pass
+                        
+        return max(timestamps) if timestamps else None

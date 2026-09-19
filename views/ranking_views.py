@@ -54,9 +54,10 @@ class ObserverSelect(discord.ui.Select):
         ranking_service = interaction.client.container.get('RankingService')
 
         # Gather stats concurrently
-        current_rank, total_obs = await asyncio.gather(
+        current_rank, total_obs, last_active = await asyncio.gather(
             db.get_player_rank(observer_id),
             db.get_observer_total_observations(observer_id),
+            db.get_observer_last_active(observer_id),
         )
 
         # Roblox avatar
@@ -71,6 +72,7 @@ class ObserverSelect(discord.ui.Select):
             roblox_avatar_url=roblox_avatar_url,
             current_rank=current_rank or "Unranked",
             total_observations=total_obs,
+            last_active_timestamp=last_active,
         )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
