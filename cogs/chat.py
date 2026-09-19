@@ -262,10 +262,10 @@ class Chat(commands.Cog):
             await msg.edit(content="No valid messages found to sync.")
             return
             
-        await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in batches of 100...")
+        await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in small, safe batches of 10 to avoid Google's limits (this will take a few minutes)...")
         
-        # Process in batches of 100
-        batch_size = 100
+        # Process in batches of 10
+        batch_size = 10
         inserted_count = 0
         
         for i in range(0, len(valid_messages), batch_size):
@@ -292,8 +292,13 @@ class Chat(commands.Cog):
                         await self.bot.db.chat_memory.insert_many(documents_to_insert)
                         inserted_count += len(documents_to_insert)
                         
-                # Sleep for 5 seconds to avoid hitting the 15 RPM free tier limit
-                await asyncio.sleep(5)
+                # Sleep for 4.1 seconds to stay safely under the 15 RPM free tier limit
+                await asyncio.sleep(4.1)
+                
+                # Send a progress update every 100 messages so the user knows it's not frozen
+                if inserted_count % 100 == 0:
+                    await ctx.author.send(f"⏳ Progress: Synced {inserted_count} / {len(valid_messages)} messages...")
+                    
             except Exception as e:
                 print(f"Lore sync batch error: {e}")
                 await ctx.author.send(f"Error during sync batch: {e}")
