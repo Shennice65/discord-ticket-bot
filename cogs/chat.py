@@ -139,11 +139,9 @@ class Chat(commands.Cog):
             return
 
         # Prepare user prompt, stripping out the bot mention text
-        raw_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
-        if not raw_text and not message.attachments:
-            raw_text = "Hello!"
-            
-        user_text = f"[{message.author.display_name}] {raw_text}".strip()
+        user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
+        if not user_text and not message.attachments:
+            user_text = "Hello!"
             
         # Add a typing indicator while processing
         async with message.channel.typing():
@@ -200,8 +198,8 @@ class Chat(commands.Cog):
                             
                 # Prepare contents for Gemini
                 contents = []
-                # Append history
-                for hist_msg in self.history[message.channel.id]:
+                # Append history (tracked per user now instead of per channel)
+                for hist_msg in self.history[message.author.id]:
                     contents.append(hist_msg)
                 
                 # Append current message
@@ -293,8 +291,8 @@ class Chat(commands.Cog):
                 text_only_part = types.Part.from_text(text=user_text) if user_text else types.Part.from_text(text="[Image attachment]")
                 history_content = types.Content(role="user", parts=[text_only_part])
                 
-                self.history[message.channel.id].append(history_content)
-                self.history[message.channel.id].append(types.Content(
+                self.history[message.author.id].append(history_content)
+                self.history[message.author.id].append(types.Content(
                     role="model",
                     parts=[types.Part.from_text(text=reply_text)]
                 ))
