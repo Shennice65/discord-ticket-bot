@@ -51,8 +51,8 @@ class Chat(commands.Cog):
         self.process_lore_queue.cancel()
         self.lore_compressor.cancel()
 
-    def _api_call_with_fallback(self, method_name, **kwargs):
-        """Calls a Gemini API method with fallback and key rotation."""
+    async def _api_call_with_fallback(self, method_name, **kwargs):
+        """Calls a Gemini API method with fallback and key rotation asynchronously."""
         if not getattr(self, 'clients', None):
             if getattr(self, 'client', None):
                 # We have a client (probably loaded from DB), but self.clients is empty.
@@ -78,9 +78,9 @@ class Chat(commands.Cog):
             attempts = 0
             while attempts < len(self.clients):
                 client = self.clients[self.current_client_index]
-                method = getattr(client.models, method_name)
+                method = getattr(client.aio.models, method_name)
                 try:
-                    return method(**kwargs)
+                    return await method(**kwargs)
                 except Exception as e:
                     error_str = str(e)
                     if ("429" in error_str and "quota" in error_str.lower()) or "503" in error_str or "401" in error_str or "403" in error_str:
@@ -223,7 +223,7 @@ class Chat(commands.Cog):
                 query_embedding = None
                 if user_text:
                     try:
-                        emb_response = self._api_call_with_fallback(
+                        emb_response = await self._api_call_with_fallback(
                             'embed_content',
                             model='gemini-embedding-2',
                             contents=user_text,
@@ -346,12 +346,47 @@ class Chat(commands.Cog):
                     print(f"Failed to fetch recent messages: {e}")
                     
                 dynamic_system_instruction += recent_messages_context
+                async def search_channel_for_image(channel_name: str, keyword: str = None, username: str = None) -> str:
+                    """Gets the URL of an image posted in a specific Discord channel. Can optionally filter by a keyword in the message or the username of the sender."""
+                    try:
+                        target_channel = None
+                        channel_name_clean = channel_name.strip('#')
+                        for c in message.guild.text_channels:
+                            if c.name.lower() == channel_name_clean.lower():
+                                target_channel = c
+                                break
+                        
+                        if not target_channel:
+                            return f"Error: Could not find a text channel named '{channel_name}' in this server."
+                        
+                        async for msg in target_channel.history(limit=500):
+                            if msg.attachments:
+                                for att in msg.attachments:
+                                    if att.content_type and att.content_type.startswith('image/'):
+                                        match = True
+                                        if keyword and keyword.lower() not in msg.content.lower():
+                                            match = False
+                                        if username:
+                                            author_name = msg.author.name.lower()
+                                            display_name = getattr(msg.author, 'display_name', '').lower()
+                                            if username.lower() not in author_name and username.lower() not in display_name:
+                                                match = False
+                                        
+                                        if match:
+                                            return f"Success! Found image: {att.url}"
+                        
+                        return "Failure: No matching image found in the last 500 messages."
+                    except Exception as e:
+                        return f"Error searching channel: {str(e)}"
                 
                 # Call Gemini API with fallback support (rotates keys and models)
-                response = self._api_call_with_fallback(
+                response = await self._api_call_with_fallback(
                     'generate_content', 
                     contents=contents, 
-                    config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction)
+                    config=types.GenerateContentConfig(
+                        system_instruction=dynamic_system_instruction,
+                        tools=[search_channel_for_image]
+                    )
                 )
                 
                 # Clean up the AI's response text and fix awkward gaps between sentences
@@ -477,7 +512,7 @@ class Chat(commands.Cog):
             contents = [m["user_text"] for m in batch]
             
             try:
-                emb_response = self._api_call_with_fallback(
+                emb_response = await self._api_call_with_fallback(
                     'embed_content',
                     model='gemini-embedding-2',
                     contents=contents,
@@ -528,7 +563,7 @@ class Chat(commands.Cog):
                 
             contents = [p["user_text"] for p in pending_list]
             
-            emb_response = self._api_call_with_fallback(
+            emb_response = await self._api_call_with_fallback(
                 'embed_content',
                 model='gemini-embedding-2',
                 contents=contents,
@@ -604,7 +639,7 @@ class Chat(commands.Cog):
                     )
                     
                     # Generate summary using the fast text model
-                    summary_response = self._api_call_with_fallback(
+                    summary_response = await self._api_call_with_fallback(
                         'generate_content',
                         model='gemini-3.7-flash',
                         contents=prompt
@@ -612,7 +647,7 @@ class Chat(commands.Cog):
                     summary_text = summary_response.text.strip()
                     
                     # Embed summary
-                    emb_response = self._api_call_with_fallback(
+                    emb_response = await self._api_call_with_fallback(
                         'embed_content',
                         model='gemini-embedding-2',
                         contents=summary_text,
