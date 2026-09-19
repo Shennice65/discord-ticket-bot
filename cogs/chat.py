@@ -13,8 +13,11 @@ from discord import app_commands
 class Chat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.api_key = Config.GEMINI_API_KEY
-        self.client = genai.Client(api_key=self.api_key) if self.api_key else None
+        self.api_keys = Config.GEMINI_API_KEYS
+        self.clients = [genai.Client(api_key=key) for key in self.api_keys if key]
+        self.current_client_index = 0
+        
+        self.client = self.clients[0] if self.clients else None
         
         # Store recent history per channel. Limit to last 15 messages to save tokens.
         self.history = defaultdict(lambda: deque(maxlen=15))
@@ -47,6 +50,45 @@ class Chat(commands.Cog):
     def cog_unload(self):
         self.process_lore_queue.cancel()
         self.lore_compressor.cancel()
+
+    def _generate_with_fallback(self, contents, system_instruction):
+        if not getattr(self, 'clients', None):
+            # Fallback for when no keys are configured
+            if self.client:
+                return self.client.models.generate_content(
+                    model='gemini-3.5-flash-lite',
+                    contents=contents,
+                    config=types.GenerateContentConfig(system_instruction=system_instruction)
+                )
+            raise ValueError("No API keys configured.")
+            
+        models_to_try = ['gemini-3.5-flash-lite', 'gemini-3.7-flash']
+        
+        for model_name in models_to_try:
+            attempts = 0
+            while attempts < len(self.clients):
+                client = self.clients[self.current_client_index]
+                try:
+                    return client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                        )
+                    )
+                except Exception as e:
+                    error_str = str(e)
+                    # Check for 429 quota exhausted or 503 overloaded
+                    if ("429" in error_str and "quota" in error_str.lower()) or "503" in error_str:
+                        print(f"Error {model_name} on key index {self.current_client_index}. Rotating key...")
+                        self.current_client_index = (self.current_client_index + 1) % len(self.clients)
+                        attempts += 1
+                        continue
+                    # If it's a different error, raise it immediately
+                    raise e
+            print(f"All keys exhausted/overloaded for {model_name}, falling back to next model...")
+            
+        raise Exception("All API keys and fallback models exhausted their quotas!")
 
     @app_commands.command(name="toggleaichat", description="[Admin] Toggle the AI chat feature on or off globally.")
     @app_commands.default_permissions(administrator=True)
@@ -296,27 +338,8 @@ class Chat(commands.Cog):
                     
                 dynamic_system_instruction += recent_messages_context
                 
-                # Call Gemini API with the ultra-fast flash-lite model
-                try:
-                    response = self.client.models.generate_content(
-                        model='gemini-3.5-flash-lite',
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=dynamic_system_instruction,
-                        )
-                    )
-                except Exception as api_err:
-                    if '503' in str(api_err):
-                        print("3.5-flash-lite is overloaded (503). Falling back to 3.7-flash...")
-                        response = self.client.models.generate_content(
-                            model='gemini-3.7-flash',
-                            contents=contents,
-                            config=types.GenerateContentConfig(
-                                system_instruction=dynamic_system_instruction,
-                            )
-                        )
-                    else:
-                        raise api_err
+                # Call Gemini API with fallback support (rotates keys and models)
+                response = self._generate_with_fallback(contents, dynamic_system_instruction)
                 
                 # Clean up the AI's response text and fix awkward gaps between sentences
                 reply_text = response.text.replace('</p>', '').replace('<p>', '').replace('```html', '').replace('```', '').strip()

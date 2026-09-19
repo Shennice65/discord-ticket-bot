@@ -6,7 +6,8 @@ load_dotenv()
 class Config:
     TOKEN = os.environ.get('DISCORD_TOKEN') or os.getenv('DISCORD_TOKEN')
     GUILD_ID = int(os.environ.get('GUILD_ID', 0))
-    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+    _raw_keys = os.environ.get('GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
+    GEMINI_API_KEYS = [k.strip() for k in _raw_keys.split(',')] if _raw_keys else []
     MASTER_ADMIN_ID = 442188857014747136
     OBSERVER_ROLE_ID = int(os.environ.get('OBSERVER_ROLE_ID', 0))
     LOG_CHANNEL_ID = int(os.environ.get('LOG_CHANNEL_ID', 0))
