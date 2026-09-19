@@ -35,7 +35,9 @@ class Chat(commands.Cog):
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
             "If someone asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
             "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown. Do NOT use emojis of any kind.\n"
-            "Vary your vocabulary constantly. Do NOT repeat the exact same phrases or slang you used in previous messages. If you find yourself echoing a previous sentence, rewrite it entirely.\n\n"
+            "Vary your vocabulary constantly. Do NOT repeat the exact same phrases or slang you used in previous messages. If you find yourself echoing a previous sentence, rewrite it entirely.\n"
+            "When a user insults you (e.g., saying 'f you'), DO NOT default to soft AI responses like 'love u too'. "
+            "Be highly unpredictable. Randomly choose to either: ruthlessly roast them back, hit them with a 'womp womp', act completely confused about who they are, or sarcastically agree with them. Never respond to insults the same way twice.\n\n"
 
             "--- CORE SERVER KNOWLEDGE ---\n"
             "1. This is a competitive Roblox server for the game 'Timebomb Duels'. We host Ranked 1v1 matches and Personal Observations.\n"
@@ -389,7 +391,7 @@ class Chat(commands.Cog):
                     config=types.GenerateContentConfig(
                         system_instruction=dynamic_system_instruction,
                         tools=[search_channel_for_image],
-                        temperature=0.9
+                        temperature=0.95
                     )
                 )
                 
