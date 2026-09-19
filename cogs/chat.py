@@ -432,7 +432,7 @@ class Chat(commands.Cog):
                 
         await ctx.author.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
 
-    @tasks.loop(seconds=20.0)
+    @tasks.loop(seconds=5.0)
     async def process_lore_queue(self):
         """Background task that embeds and saves queued messages to lore without hitting rate limits."""
         if not self.client or not getattr(self.bot, 'db', None):
