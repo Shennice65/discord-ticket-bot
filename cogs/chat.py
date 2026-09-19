@@ -28,7 +28,7 @@ class Chat(commands.Cog):
             "Form your own opinions. Do not always agree with the user or act like a 'glazing machine'. Be playful but nonchalant. Tease or banter when appropriate. "
             "Do NOT use periods at the end of your sentences in most cases. Use fewer commas and keep capitalization natural (often lowercase). "
             "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
-            "If the user asks a direct question about server information (like who the admins are), answer them accurately but keep your casual/troll tone. "
+            "If the user asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
             "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown. Do NOT use emojis of any kind.\n\n"
             "--- CORE SERVER KNOWLEDGE ---\n"
             "1. This is a competitive Roblox server for the game 'Timebomb Duels'. We host Ranked 1v1 matches and Personal Observations.\n"
@@ -86,16 +86,20 @@ class Chat(commands.Cog):
                     pass
             return
             
-        # Check permissions and enforce rate limits for non-admins
+        # Check permissions and enforce rate limits for non-admins (3 messages per 2 minutes)
         is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
         
         if not is_admin:
             now = message.created_at.timestamp()
-            last_used = self.user_cooldowns.get(message.author.id, 0)
-            if now - last_used < 120:  # 2 minute cooldown (120 seconds)
+            timestamps = self.user_cooldowns.get(message.author.id, [])
+            # Filter timestamps to only keep ones within the last 120 seconds
+            timestamps = [t for t in timestamps if now - t < 120]
+            
+            if len(timestamps) >= 3:
                 return # Silently ignore to prevent spam
                 
-            self.user_cooldowns[message.author.id] = now
+            timestamps.append(now)
+            self.user_cooldowns[message.author.id] = timestamps
 
             
         # Try to load API key from DB if it wasn't in config
