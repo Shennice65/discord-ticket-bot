@@ -216,22 +216,46 @@ class HistoryMixin:
         return await cursor.to_list(length=None)
 
     async def get_observer_total_observations(self, observer_id: int) -> int:
-        """Count all tickets (ranked + observation) this observer has refereed."""
+        """Count all tickets (ranked + observation) this observer has refereed where ranks changed."""
+        ranked_query = {
+            "observer_id": observer_id,
+            "$or": [
+                {"$expr": {"$ne": ["$winner_old", "$winner_new"]}},
+                {"$expr": {"$ne": ["$loser_old", "$loser_new"]}}
+            ]
+        }
+        obs_query = {
+            "observer_id": observer_id,
+            "$expr": {"$ne": ["$starting_rank", "$ending_rank"]}
+        }
+        
         ranked_count, obs_count = await asyncio.gather(
-            self.ranked_results.count_documents({"observer_id": observer_id}),
-            self.observation_results.count_documents({"observer_id": observer_id}),
+            self.ranked_results.count_documents(ranked_query),
+            self.observation_results.count_documents(obs_query),
         )
         return ranked_count + obs_count
 
     async def get_observer_last_active(self, observer_id: int) -> Optional[float]:
-        """Get the most recent observation timestamp (unix) for this observer."""
+        """Get the most recent observation timestamp (unix) for this observer where ranks changed."""
+        ranked_query = {
+            "observer_id": observer_id,
+            "$or": [
+                {"$expr": {"$ne": ["$winner_old", "$winner_new"]}},
+                {"$expr": {"$ne": ["$loser_old", "$loser_new"]}}
+            ]
+        }
+        obs_query = {
+            "observer_id": observer_id,
+            "$expr": {"$ne": ["$starting_rank", "$ending_rank"]}
+        }
+        
         ranked_latest = await self.ranked_results.find_one(
-            {"observer_id": observer_id},
+            ranked_query,
             sort=[("created_at", -1)],
             projection={"created_at": 1}
         )
         obs_latest = await self.observation_results.find_one(
-            {"observer_id": observer_id},
+            obs_query,
             sort=[("created_at", -1)],
             projection={"created_at": 1}
         )
