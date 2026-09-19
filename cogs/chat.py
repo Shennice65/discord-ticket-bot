@@ -78,8 +78,8 @@ class Chat(commands.Cog):
                     )
                 except Exception as e:
                     error_str = str(e)
-                    # Check for 429 quota exhausted or 503 overloaded
-                    if ("429" in error_str and "quota" in error_str.lower()) or "503" in error_str:
+                    # Check for 429 quota exhausted, 503 overloaded, or 401/403 auth errors
+                    if ("429" in error_str and "quota" in error_str.lower()) or "503" in error_str or "401" in error_str or "403" in error_str:
                         print(f"Error {model_name} on key index {self.current_client_index}. Rotating key...")
                         self.current_client_index = (self.current_client_index + 1) % len(self.clients)
                         attempts += 1
