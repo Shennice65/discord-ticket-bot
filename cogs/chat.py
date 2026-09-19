@@ -269,7 +269,11 @@ class Chat(commands.Cog):
                         top_exchanges = await cursor.to_list(length=3)
                         
                         if top_exchanges:
-                            recalled_context = "### RECALLED LONG-TERM CONTEXT (Server Memory) ###\nThe following are semantically similar past conversations from various users in the server. Do NOT assume the current user is the same person as in these past logs.\n"
+                            recalled_context = (
+                                "### RECALLED LONG-TERM CONTEXT (Server Memory) ###\n"
+                                "The following are semantically similar past conversations from various users. Do NOT assume the current user is the same person as in these past logs.\n"
+                                "CRITICAL RULE: If these past logs are just casual banter, insults, or jokes, DO NOT repeat the same punchlines or comebacks you used in the past! Only use this memory for factual server lore. If it's just banter, ignore how you responded previously and come up with a completely new response.\n"
+                            )
                             for ex in top_exchanges:
                                 recalled_context += f"- A user said: {ex.get('user_text')}\n- You replied: {ex.get('bot_reply')}\n\n"
                     except Exception as search_err:
