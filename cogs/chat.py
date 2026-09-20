@@ -57,7 +57,7 @@ class Chat(commands.Cog):
             "3. If someone asks how to get ranked or 1v1, tell them to go to the ticket channel and click 'Ranked 1v1' or 'Personal Observation'.\n"
             "4. The server also features a betting system (wagers) and a web dashboard for stats and clips.\n"
             "5. There are other leagues such as OTA, ITL, ORL, any 3 letter abbreviation ending in L mostly are Leagues.\n"
-            "6. Nexus and Cataclysm have already lost.\n"
+            "6. Nexus and Xblazez already lost. Cataclysm lost to merleura\n"
         )
         
 
