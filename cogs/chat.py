@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 from config import Config
 from core.services.server_brain import ServerBrain
+from core.services.memory_extractor import MemoryExtractor
 from core.services import chat_prompts
 import asyncio
 import time
@@ -21,6 +22,7 @@ class Chat(commands.Cog):
         self.client = self.clients[0] if self.clients else None
         
         self.server_brain = ServerBrain(bot, self._embed_query)
+        self.memory_extractor = MemoryExtractor(self._api_call_with_fallback)
         # Environment is the fallback; the live value is refreshed from the
         # MongoDB config document so it can be changed without redeploying.
         self.memory_channel_id = Config.AI_MEMORY_CHANNEL_ID
@@ -547,51 +549,20 @@ class Chat(commands.Cog):
             
         await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in small, safe batches of 10 to avoid Google's limits (this will take a few minutes)...")
         
-        # Process conversation chunks instead of one permanent record per message.
-        batch_size = 10
+        # Process conversation chunks through the same extractor used by live learning.
+        batch_size = 25
         inserted_count = 0
         
         for i in range(0, len(valid_messages), batch_size):
             batch = valid_messages[i:i+batch_size]
-            chunk_text = "\n".join(
-                f"[{item['user_id']}] {item['user_text']}" for item in batch
-            )
-            source_ids = [item["message_id"] for item in batch]
-            
             try:
-                emb_response = await self._api_call_with_fallback(
-                    'embed_content',
-                    model='gemini-embedding-2',
-                    contents=chunk_text,
-                    config=types.EmbedContentConfig(output_dimensionality=256)
-                )
-                
-                if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                    chunk_doc = {
-                        "record_type": "historical_chunk",
-                        "guild_id": getattr(ctx.guild, "id", None),
-                        "channel_id": ctx.channel.id,
-                        "user_id": 0,
-                        "user_text": chunk_text,
-                        "bot_reply": "[Historical Community Lore]",
-                        "timestamp": batch[0]["timestamp"],
-                        "embedding": list(emb_response.embeddings[0].values),
-                        "source_message_ids": source_ids,
-                        "confidence": 0.35,
-                        "importance": 0.35,
-                    }
-                    await self.bot.db.chat_memory.update_one(
-                        {"record_type": "historical_chunk", "channel_id": ctx.channel.id, "source_message_ids": source_ids},
-                        {"$set": chunk_doc},
-                        upsert=True,
-                    )
-                    inserted_count += 1
+                succeeded, stored = await self.memory_extractor.process(self.bot.db, batch)
+                inserted_count += stored
                         
-                # Enforce RPM limit throttling.
-                await asyncio.sleep(4.1)
+                await asyncio.sleep(1.0)
                 
                 # Emit progress telemetry.
-                if inserted_count % 10 == 0:
+                if inserted_count and inserted_count % 10 == 0:
                     await ctx.author.send(f"⏳ Progress: Synced {min(i + len(batch), len(valid_messages))} / {len(valid_messages)} messages...")
                     
             except Exception as e:
@@ -615,48 +586,18 @@ class Chat(commands.Cog):
             pending_collection = getattr(self.bot.db, "pending_lore", None)
             if pending_collection is None:
                 pending_collection = self.bot.db.db.pending_lore
-            cursor = pending_collection.find({"channel_id": memory_channel_id}).limit(10)
-            pending_list = await cursor.to_list(length=10)
+            cursor = pending_collection.find({"channel_id": memory_channel_id}).limit(25)
+            pending_list = await cursor.to_list(length=25)
             
             if not pending_list:
                 return
                 
-            contents = [p["user_text"] for p in pending_list]
-            
-            emb_response = await self._api_call_with_fallback(
-                'embed_content',
-                model='gemini-embedding-2',
-                contents=contents,
-                config=types.EmbedContentConfig(output_dimensionality=256)
-            )
-            
-            processed_ids = []
-            if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                for idx, emb_obj in enumerate(emb_response.embeddings):
-                    if idx < len(pending_list):
-                        pending = pending_list[idx]
-                        doc = dict(pending)
-                        source_message_id = pending.get("message_id")
-                        dedupe_key = str(source_message_id or pending.get("_id"))
-                        doc["embedding"] = list(emb_obj.values)
-                        doc["bot_reply"] = "[Historical Community Lore]"
-                        doc["record_type"] = "evidence"
-                        doc["guild_id"] = pending.get("guild_id")
-                        doc["source_message_id"] = dedupe_key
-                        doc["source_message_ids"] = [source_message_id] if source_message_id else []
-                        doc["confidence"] = 0.35
-                        doc["importance"] = 0.25
-                        doc.pop("_id", None)
-                        await self.bot.db.chat_memory.update_one(
-                            {"source_message_id": dedupe_key}, {"$set": doc}, upsert=True
-                        )
-                        if pending.get("_id") is not None:
-                            processed_ids.append(pending["_id"])
+            succeeded, _stored = await self.memory_extractor.process(self.bot.db, pending_list)
 
             # Remove only records that were persisted successfully. Failed
             # batches remain queued for a later retry.
-            if processed_ids:
-                await pending_collection.delete_many({"_id": {"$in": processed_ids}})
+            if succeeded:
+                await pending_collection.delete_many({"_id": {"$in": [item["_id"] for item in pending_list if item.get("_id") is not None]}})
                 
         except Exception as e:
             print(f"Background lore queue error: {e}")

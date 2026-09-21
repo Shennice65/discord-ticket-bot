@@ -74,8 +74,11 @@ def context_text(context):
         "recent_messages": [message_data(item) for item in context.recent_messages],
         "verified_rank": ({"user_id": rank.user_id, "name": rank.name, "rank": rank.rank} if rank else None),
         "uncertain_community_memories": [
-            {"text": str(item.get("summary") or item.get("user_text") or "")[:700],
+            {"type": item.get("record_type", "community_memory"),
+             "text": str(item.get("summary") or item.get("user_text") or "")[:700],
              "past_reply": str(item.get("bot_reply") or "")[:300],
+             "associated_users": (item.get("associated_users") or [])[:20],
+             "confidence": item.get("confidence"), "importance": item.get("importance"),
              "source_message_ids": (item.get("source_message_ids") or [])[:20]}
             for item in context.memories[:3]
         ],

@@ -29,6 +29,7 @@ from cogs.chat import Chat
 from config import Config
 from core.services.server_brain import ServerBrain
 from core.services import chat_prompts
+from core.services.memory_extractor import MemoryExtractor
 
 
 class ChatContextTests(unittest.IsolatedAsyncioTestCase):
@@ -127,11 +128,11 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         self.chat._api_call_with_fallback = AsyncMock(
             return_value=SimpleNamespace(embeddings=[SimpleNamespace(values=[0.1, 0.2])])
         )
+        self.chat.memory_extractor = SimpleNamespace(process=AsyncMock(return_value=(True, 1)))
 
         with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
             await Chat.process_lore_queue.coro(self.chat)
 
-        memory.update_one.assert_awaited_once()
         pending_lore.delete_many.assert_awaited_once_with({"_id": {"$in": [pending_id]}})
 
     async def test_lore_queue_keeps_item_when_embedding_fails(self):
@@ -156,11 +157,34 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.chat._api_call_with_fallback = AsyncMock(side_effect=RuntimeError("quota"))
+        self.chat.memory_extractor = SimpleNamespace(process=AsyncMock(return_value=(False, 0)))
 
         with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
             await Chat.process_lore_queue.coro(self.chat)
 
         pending_lore.delete_many.assert_not_awaited()
+
+    async def test_memory_extractor_keeps_single_claim_uncertain_and_merges_sources(self):
+        api_call = AsyncMock(return_value=SimpleNamespace(text='{"memories":[{"type":"inside_joke","name":"bot curse","summary":"BOT22 predictions cause the opposite result","associated_users":["BOT22"],"source_message_ids":[1],"confidence":0.9,"importance":0.7}]}'))
+        extractor = MemoryExtractor(api_call)
+        existing = {"confidence": 0.4, "source_message_ids": [2], "first_seen": datetime.now(timezone.utc), "last_seen": datetime.now(timezone.utc)}
+        memory = SimpleNamespace(find_one=AsyncMock(return_value=existing), update_one=AsyncMock())
+        db = SimpleNamespace(chat_memory=memory)
+        records = [{"message_id": 1, "guild_id": 10, "channel_id": 20, "user_text": "bot curse", "timestamp": datetime.now(timezone.utc)}]
+        success, stored = await extractor.process(db, records)
+        self.assertTrue(success)
+        self.assertEqual(1, stored)
+        update = memory.update_one.await_args.args[1]["$set"]
+        self.assertEqual(0.55, update["confidence"])
+        self.assertEqual([2, 1], update["source_message_ids"])
+
+    async def test_memory_extractor_ignores_bot_evidence(self):
+        extractor = MemoryExtractor(AsyncMock())
+        db = SimpleNamespace(chat_memory=SimpleNamespace(update_one=AsyncMock()))
+        success, stored = await extractor.process(db, [{"message_id": 1, "author_bot": True}])
+        self.assertTrue(success)
+        self.assertEqual(0, stored)
+        extractor.api_call.assert_not_awaited()
 
     async def test_server_brain_groups_reply_chain_and_same_channel_recent_messages(self):
         now = datetime.now(timezone.utc)

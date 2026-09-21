@@ -140,6 +140,12 @@ class ConnectionMixin:
                     name="chat_memory_source_message_unique",
                     partialFilterExpression={"source_message_id": {"$exists": True}},
                 )),
+                ("chat_memory.memory_key", self.chat_memory.create_index(
+                    [("guild_id", 1), ("channel_id", 1), ("memory_key", 1)],
+                    unique=True,
+                    name="chat_memory_memory_key_unique",
+                    partialFilterExpression={"memory_key": {"$exists": True}},
+                )),
                 ("chat_messages.message_id", ensure_unique_index(self.chat_messages, "message_id")),
                 ("chat_messages.channel_timestamp", self.chat_messages.create_index([("guild_id", 1), ("channel_id", 1), ("created_at", -1)])),
                 ("pending_lore.message_id", self.pending_lore.create_index(
