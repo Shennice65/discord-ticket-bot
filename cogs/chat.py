@@ -361,10 +361,15 @@ class Chat(commands.Cog):
                 "guild_id": getattr(ctx.guild, "id", None),
                 "channel_id": history_msg.channel.id,
                 "message_id": history_msg.id,
-                "user_id": history_msg.author.id,
-                "user_text": history_msg.content.strip(),
+                "author_id": history_msg.author.id,
+                "author_name": history_msg.author.display_name,
+                "author_bot": history_msg.author.bot,
+                "is_bot": history_msg.author.bot,
+                "user_text": f"[{history_msg.author.display_name}] {history_msg.content.strip()}",
+                "content": history_msg.content.strip(),
                 "bot_reply": "[Historical Community Lore]",
                 "timestamp": history_msg.created_at,
+                "created_at": history_msg.created_at,
             })
             
         if not valid_messages:
