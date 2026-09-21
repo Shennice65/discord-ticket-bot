@@ -1,19 +1,17 @@
-"""Small, evidence-first community memory extractor."""
-
 import json
 import logging
 import re
 from datetime import datetime, timezone
 from google.genai import types
+from ai.llm import llm
 
 logger = logging.getLogger(__name__)
 
 MEMORY_TYPES = {"event", "inside_joke", "nickname", "relationship", "server_lore", "community_term"}
 
-
 class MemoryExtractor:
-    def __init__(self, api_call):
-        self.api_call = api_call
+    def __init__(self, bot):
+        self.bot = bot
 
     @staticmethod
     def _parse(text):
@@ -66,9 +64,7 @@ class MemoryExtractor:
             "A single supporting message must have confidence <= 0.35.\n\nEVIDENCE:\n" + evidence
         )
         try:
-            response = await self.api_call(
-                "generate_content", model="gemini-3.5-flash-lite", contents=prompt
-            )
+            response = await llm.generate_content(model="gemini-3.5-flash", contents=prompt)
             return self._parse(getattr(response, "text", ""))
         except Exception as error:
             logger.warning("Memory extraction unavailable error=%s", type(error).__name__)
@@ -77,16 +73,20 @@ class MemoryExtractor:
     async def persist(self, db, records, candidates):
         if not candidates or getattr(db, "chat_memory", None) is None:
             return 0
+            
         embeddings = []
         try:
-            response = await self.api_call(
-                "embed_content", model="gemini-embedding-2",
-                contents=[item["summary"] for item in candidates],
-                config=types.EmbedContentConfig(output_dimensionality=256),
-            )
-            embeddings = [list(item.values) for item in getattr(response, "embeddings", ())]
+            # We use the generic client from our llm wrapper to get embeddings
+            if llm.client:
+                response = await llm.client.aio.models.embed_content(
+                    model="gemini-embedding-2",
+                    contents=[item["summary"] for item in candidates],
+                    config=types.EmbedContentConfig(output_dimensionality=256),
+                )
+                embeddings = [list(item.values) for item in getattr(response, "embeddings", ())]
         except Exception as error:
             logger.debug("Memory embedding unavailable error=%s", type(error).__name__)
+            
         ids = {item.get("message_id") for item in records}
         id_strings = {str(value) for value in ids}
         first_seen = min((item.get("timestamp") or item.get("created_at") for item in records), default=datetime.now(timezone.utc))

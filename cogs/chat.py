@@ -1,12 +1,18 @@
 import discord
 from discord.ext import commands
-from google import genai
-from google.genai import types
 from config import Config
-from core.services.server_brain import ServerBrain
-from core.services.memory_extractor import MemoryExtractor
-from core.services import chat_prompts
 import asyncio
+import time
+from datetime import datetime, timezone, timedelta
+from discord.ext import tasks
+from discord import app_commands
+import logging
+
+from ai.router import AIRouter
+from context.context_builder import ContextBuilder
+from context.conversation_tracker import ConversationTracker
+from context.retrieval import MemoryRetriever
+from memory.extractor import MemoryExtractor
 import time
 from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
@@ -18,14 +24,13 @@ logger = logging.getLogger(__name__)
 class Chat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.api_keys = Config.GEMINI_API_KEYS
-        self.clients = [genai.Client(api_key=key) for key in self.api_keys if key]
-        self.current_client_index = 0
         
-        self.client = self.clients[0] if self.clients else None
+        self.tracker = ConversationTracker(bot)
+        self.retriever = MemoryRetriever(bot)
+        self.context_builder = ContextBuilder(bot, self.tracker, self.retriever)
+        self.router = AIRouter(bot, self.context_builder)
         
-        self.server_brain = ServerBrain(bot, self._embed_query)
-        self.memory_extractor = MemoryExtractor(self._api_call_with_fallback)
+        self.memory_extractor = MemoryExtractor(bot)
         # Environment is the fallback; the live value is refreshed from the
         # MongoDB config document so it can be changed without redeploying.
         self.memory_channel_id = Config.AI_MEMORY_CHANNEL_ID
@@ -141,7 +146,7 @@ class Chat(commands.Cog):
 
     async def _refresh_runtime_config(self):
         await self._refresh_memory_channel_id()
-        await self.server_brain.refresh_memory_cache(self.memory_channel_id)
+        await self.retriever.refresh_cache(self.memory_channel_id)
         db = getattr(self.bot, "db", None)
         if not db:
             return
@@ -157,7 +162,7 @@ class Chat(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def refresh_lore_cache(self):
-        await self.server_brain.refresh_lore_cache()
+        await self.context_builder.refresh_lore_cache()
 
     @tasks.loop(seconds=2)
     async def persist_evidence_queue(self):
@@ -258,18 +263,18 @@ class Chat(commands.Cog):
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
         scope = getattr(after.guild, "id", None), after.channel.id
-        if after.id in self.server_brain.recent_messages.get(scope, {}):
-            self.server_brain.forget(*scope, after.id)
-            self.server_brain.observe(after)
+        if after.id in self.tracker.recent_messages.get(scope, {}):
+            self.tracker.forget(*scope, after.id)
+            self.tracker.observe(after)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload):
-        self.server_brain.forget(payload.guild_id, payload.channel_id, payload.message_id)
+        self.tracker.forget(payload.guild_id, payload.channel_id, payload.message_id)
 
     @commands.Cog.listener()
     async def on_raw_bulk_message_delete(self, payload):
         for message_id in payload.message_ids:
-            self.server_brain.forget(payload.guild_id, payload.channel_id, message_id)
+            self.tracker.forget(payload.guild_id, payload.channel_id, message_id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -287,304 +292,21 @@ class Chat(commands.Cog):
             ]
             
             is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
-            # Fallback keyword matching for malformed ticket queries.
             if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 60:
-                # Require verb presence to reduce false positives in casual conversation.
                 if any(word in content_lower for word in ["get", "create", "make", "do i", "is the"]):
                     is_ticket_question = True
                 
             if is_ticket_question:
-                await message.reply("Looking to get ranked or 1v1? Head over to https://discord.com/channels/1249581144597463040/1488835022055018576 to create a ticket!")
+                await message.reply("Looking to get ranked or 1v1? Head over to <#1488835022055018576> to create a ticket!")
                 return
             
-        # Check if AI chat is globally enabled by admins
-        if not getattr(self, "ai_chat_enabled", True):
-            return
-
-        # Bot messages are never learned or answered. Raw evidence is queued
-        # only for the configured general channel.
-        self.server_brain.observe(message)
-        if is_bot:
-            return
         await self._record_message_evidence(message)
-                
-        bot_mentioned = self.bot.user in message.mentions
-        is_dm = isinstance(message.channel, discord.DMChannel)
-        is_reply_to_bot = await self._is_reply_to_bot(message)
-        is_direct_question = self._is_direct_question(message)
         
-        # Direct interactions are allowed in any channel the bot can read.
-        # Only unaddressed public traffic is subject to the member-role gate.
-        is_direct_interaction = bot_mentioned or is_reply_to_bot or is_direct_question
-        if not is_dm and not is_direct_interaction:
-            # Validate channel visibility constraints.
-            member_role_id = getattr(self, "member_role_id", Config.MEMBER_ROLE_ID)
-                
-            if member_role_id:
-                member_role = message.guild.get_role(int(member_role_id))
-                is_public = message.channel.permissions_for(member_role).read_messages if member_role else False
-            else:
-                is_public = message.channel.permissions_for(message.guild.default_role).read_messages
-            
-            # Drop events from restricted channels to prevent information leakage.
-            if not is_public:
-                return
-
-        if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
-            return
-
-        logger.info("AI timing stage=route seconds=%.3f", time.perf_counter() - request_started)
-            
-        # --- "LEAVE ON READ" FILTER (ANTI-FLOODING) ---
-        # If someone pings the bot with just "lol", ignore it so we don't flood the chat.
-        clean_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip().lower()
-        filler_words = ["lol", "lmao", "lmfao", "fr", "ok", "k", "yeah", "💀", "😭", "w", "l", "real", "true", "bro", "lolo", "bruh"]
-        
-        words = clean_text.split()
-        if len(words) > 0 and len(words) <= 3:
-            # Check if all words in the message are meaningless filler
-            is_meaningless = all(word in filler_words or not word.isalnum() for word in words)
-            if is_meaningless:
-                # Random chance to react with a skull instead of replying
-                import random
-                if random.random() < 0.3:
-                    try:
-                        await message.add_reaction("💀")
-                    except:
-                        pass
-                return # Abort processing, leave them on read
-            
-        # Enforce rate limits (5/300s window) for standard users.
-        is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
-        
-        if not is_admin:
-            now = message.created_at.timestamp()
-            timestamps = self.user_cooldowns.get(message.author.id, [])
-            # Prune expired rate limit timestamps.
-            timestamps = [t for t in timestamps if now - t < 300]
-            
-            if len(timestamps) >= 5:
-                return # Rate limit exceeded.
-                
-            timestamps.append(now)
-            self.user_cooldowns[message.author.id] = timestamps
-
-            
-        # Try to load API key from DB if it wasn't in config
-        if not self.client:
-            try:
-                if getattr(self.bot, 'db', None) and getattr(self.bot.db, 'db', None) is not None:
-                    config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"})
-                    if config_doc and config_doc.get("GEMINI_API_KEY"):
-                        raw_keys = config_doc.get("GEMINI_API_KEY", "")
-                        api_keys = [k.strip() for k in raw_keys.split(',')] if raw_keys else []
-                        if api_keys:
-                            self.clients = [genai.Client(api_key=key) for key in api_keys if key]
-                            if self.clients:
-                                self.client = self.clients[0]
-                                self.current_client_index = 0
-            except Exception as e:
-                print(f"Error fetching API key from DB: {e}")
-                
-        if not self.client:
-            await message.reply("The Gemini API key is not configured. Please contact the bot owner.")
-            return
-
-        # Sanitize input payload.
-        user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
-        if not user_text and not message.attachments:
-            user_text = "Hello!"
-            
-        # Signal processing state.
-        async with message.channel.typing():
-            try:
-                context_started = time.perf_counter()
-                context = await self.server_brain.build_context(message)
-                logger.info("AI timing stage=context seconds=%.3f", time.perf_counter() - context_started)
-                contents = []
-                for exchange in context.exchanges:
-                    user_turn, bot_turn = chat_prompts.labeled_exchange(exchange)
-                    contents.extend([
-                        types.Content(
-                            role="user",
-                            parts=[types.Part.from_text(text=user_turn)],
-                        ),
-                        types.Content(
-                            role="model",
-                            parts=[types.Part.from_text(text=bot_turn)],
-                        ),
-                    ])
-
-                parts = []
-                if user_text:
-                    parts.append(types.Part.from_text(text=(
-                        f"CURRENT_DISCORD_USER id={context.current.author_id} "
-                        f"name={context.current.author_name}\n{user_text}"
-                    )))
-                    
-                # Stream and append image attachments to prompt context.
-                image_started = time.perf_counter()
-                if message.attachments:
-                    import aiohttp
-                    async with aiohttp.ClientSession() as session:
-                        for att in message.attachments:
-                            if att.content_type and att.content_type.startswith('image/'):
-                                async with session.get(att.url) as resp:
-                                    if resp.status == 200:
-                                        image_data = await resp.read()
-                                        parts.append(
-                                            types.Part.from_bytes(data=image_data, mime_type=att.content_type)
-                                        )
-                if message.attachments:
-                    logger.info("AI timing stage=images seconds=%.3f", time.perf_counter() - image_started)
-                
-                if not parts:
-                    return # Neither text nor image was provided
-
-                parts.insert(0, types.Part.from_text(text=chat_prompts.context_text(context)))
-                    
-                contents.append(types.Content(
-                    role="user",
-                    parts=parts
-                ))
-                
-                dynamic_system_instruction = chat_prompts.system_instruction(context)
-                async def search_channel_for_image(channel_name: str, keyword: str = None, username: str = None) -> str:
-                    """Gets the URL of an image posted in a specific Discord channel. Can optionally filter by a keyword in the message or the username of the sender."""
-                    try:
-                        target_channel = None
-                        channel_name_clean = channel_name.strip('#<>')
-                        
-                        # First try to parse as a channel mention ID
-                        if channel_name_clean.isdigit():
-                            target_channel = message.guild.get_channel(int(channel_name_clean))
-                            
-                        # If not found by ID, search by name (exact or substring)
-                        if not target_channel:
-                            for c in message.guild.text_channels:
-                                if c.name.lower() == channel_name_clean.lower() or channel_name_clean.lower() in c.name.lower():
-                                    target_channel = c
-                                    break
-                        
-                        if not target_channel:
-                            return f"Error: Could not find a text channel named '{channel_name}' in this server."
-
-                        if not message.guild or not target_channel.permissions_for(message.author).view_channel:
-                            return "Error: You cannot view that channel."
-                        
-                        async for msg in target_channel.history(limit=500):
-                            if msg.attachments:
-                                for att in msg.attachments:
-                                    if att.content_type and att.content_type.startswith('image/'):
-                                        match = True
-                                        if keyword and keyword.lower() not in msg.content.lower():
-                                            match = False
-                                        if username:
-                                            author_name = msg.author.name.lower()
-                                            display_name = getattr(msg.author, 'display_name', '').lower()
-                                            if username.lower() not in author_name and username.lower() not in display_name:
-                                                match = False
-                                        
-                                        if match:
-                                            import aiohttp
-                                            async with aiohttp.ClientSession() as session:
-                                                async with session.get(att.url) as resp:
-                                                    if resp.status == 200:
-                                                        image_data = await resp.read()
-                                                        parts.append(
-                                                            types.Part.from_bytes(data=image_data, mime_type=att.content_type)
-                                                        )
-                                            return f"Success! The image from {att.url} has been attached to your vision context. You can now see it."
-                        
-                        return "Failure: No matching image found in the last 500 messages."
-                    except Exception as e:
-                        return f"Error searching channel: {str(e)}"
-
-                async def search_database_memory(keyword: str) -> str:
-                    """Searches the bot's long-term database memory for lore, jokes, and facts about a specific person or topic."""
-                    if not getattr(self.bot, "db", None) or getattr(self.bot.db, "chat_memory", None) is None:
-                        return "Error: Database not connected."
-                    
-                    try:
-                        cursor = self.bot.db.chat_memory.find(
-                            {
-                                "guild_id": message.guild.id,
-                                "$or": [
-                                    {"user_text": {"$regex": keyword, "$options": "i"}},
-                                    {"bot_reply": {"$regex": keyword, "$options": "i"}},
-                                    {"summary": {"$regex": keyword, "$options": "i"}},
-                                    {"associated_users": {"$regex": keyword, "$options": "i"}}
-                                ]
-                            }
-                        ).sort("timestamp", -1).limit(5)
-                        
-                        records = await cursor.to_list(length=5)
-                        if not records:
-                            return f"No memory records found for '{keyword}'."
-                            
-                        results = []
-                        for record in records:
-                            if record.get("is_summary"):
-                                results.append(f"Summary: {record.get('bot_reply')}")
-                            else:
-                                results.append(f"User: {record.get('user_text')}\nBot: {record.get('bot_reply')}")
-                                
-                        return f"Found memory records for '{keyword}':\n\n" + "\n---\n".join(results)
-                    except Exception as e:
-                        return f"Error searching memory: {str(e)}"
-                
-                # Execute primary API call with configured tools and dynamic context.
-                generation_started = time.perf_counter()
-                response = await asyncio.wait_for(
-                    self._api_call_with_fallback(
-                        'generate_content',
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=dynamic_system_instruction,
-                            tools=[search_channel_for_image, search_database_memory],
-                            temperature=0.95
-                        )
-                    ),
-                    timeout=90,
-                )
-                
-                # Normalize response markdown and whitespace.
-                reply_text = response.text.replace('</p>', '').replace('<p>', '').replace('```html', '').replace('```', '').strip()
-                import re
-                reply_text = re.sub(r'\n+', '\n', reply_text)
-                
-                # Paginate output to comply with Discord character limits.
-                chunk_size = 1990
-                chunks = [reply_text[i:i+chunk_size] for i in range(0, len(reply_text), chunk_size)]
-                
-                send_started = time.perf_counter()
-                for i, chunk in enumerate(chunks):
-                    if i == 0:
-                        await message.reply(chunk)
-                    else:
-                        await message.channel.send(chunk)
-
-                logger.info("AI timing stage=reply seconds=%.3f total=%.3f",
-                            time.perf_counter() - generation_started, time.perf_counter() - request_started)
-                logger.info("AI timing stage=send seconds=%.3f", time.perf_counter() - send_started)
-
-                self.server_brain.remember_exchange(message, user_text or "[Image attachment]", reply_text)
-                        
-            except Exception as e:
-                import traceback
-                print(f"Gemini API Error: {e}")
-                traceback.print_exc()
-                await message.reply("Oops, something went wrong while talking to my brain.")
-                try:
-                    admin_user = await self.bot.fetch_user(Config.MASTER_ADMIN_ID)
-                    if admin_user:
-                        await admin_user.send(
-                            f"⚠️ **Gemini API Error in #{getattr(message.channel, 'name', 'Direct Message')}**\n"
-                            f"**Triggered by:** {message.author.display_name} (`{message.author.id}`)\n"
-                            f"**Error Log:**\n```text\n{type(e).__name__}: {e}\n```"
-                        )
-                except Exception as dm_err:
-                    print(f"Could not send DM to admin: {dm_err}")
+        await self.router.handle_message(
+            message,
+            getattr(self, "ai_chat_enabled", True),
+            getattr(self, "member_role_id", Config.MEMBER_ROLE_ID)
+        )
 
     @commands.command(name="sync_lore")
     @commands.has_permissions(administrator=True)
@@ -604,21 +326,8 @@ class Chat(commands.Cog):
             await ctx.author.send("Database not connected!")
             return
             
-        if not self.client:
-            try:
-                config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"})
-                if config_doc and config_doc.get("GEMINI_API_KEY"):
-                    raw_keys = config_doc.get("GEMINI_API_KEY", "")
-                    api_keys = [k.strip() for k in raw_keys.split(',')] if raw_keys else []
-                    if api_keys:
-                        self.clients = [genai.Client(api_key=key) for key in api_keys if key]
-                        if self.clients:
-                            self.client = self.clients[0]
-                            self.current_client_index = 0
-            except:
-                pass
-                
-        if not self.client:
+        from ai.llm import llm
+        if not llm.client:
             await ctx.author.send("Gemini API not connected!")
             return
             
@@ -676,7 +385,8 @@ class Chat(commands.Cog):
     @tasks.loop(minutes=1)
     async def process_lore_queue(self):
         """Asynchronously embed and persist queued chat events within rate limit constraints."""
-        if not self.client or not getattr(self.bot, 'db', None):
+        from ai.llm import llm
+        if not llm.client or not getattr(self.bot, 'db', None):
             return
         memory_channel_id = await self._refresh_memory_channel_id()
         if not memory_channel_id:
@@ -706,7 +416,9 @@ class Chat(commands.Cog):
     @tasks.loop(hours=1.0)
     async def lore_compressor(self):
         """Periodically aggregate and summarize lore older than 7 days."""
-        if not self.client or not getattr(self.bot, 'db', None):
+        from ai.llm import llm
+        from google.genai import types
+        if not llm.client or not getattr(self.bot, 'db', None):
             return
         memory_channel_id = await self._refresh_memory_channel_id()
         if not memory_channel_id:
@@ -754,16 +466,16 @@ class Chat(commands.Cog):
                     )
                     
                     # Execute summarization prompt.
-                    summary_response = await self._api_call_with_fallback(
-                        'generate_content',
-                        model='gemini-3.7-flash',
+                    summary_response = await llm.generate_content(
+                        model='gemini-3.5-flash',
                         contents=prompt
                     )
-                    summary_text = summary_response.text.strip()
+                    summary_text = getattr(summary_response, "text", "").strip()
+                    if not summary_text:
+                        continue
                     
                     # Generate semantic embedding for summary.
-                    emb_response = await self._api_call_with_fallback(
-                        'embed_content',
+                    emb_response = await llm.client.aio.models.embed_content(
                         model='gemini-embedding-2',
                         contents=summary_text,
                         config=types.EmbedContentConfig(output_dimensionality=256)
@@ -777,9 +489,7 @@ class Chat(commands.Cog):
                             "record_type": "summary",
                             "guild_id": msgs[0].get("guild_id"),
                             "channel_id": channel_id,
-                            "user_id": 0,
-                            "user_text": "[WEEKLY LORE COMPRESSION]",
-                            "bot_reply": summary_text,
+                            "summary": summary_text,
                             "timestamp": datetime.now(timezone.utc),
                             "embedding": embedding_vector,
                             "is_summary": True,
@@ -787,9 +497,10 @@ class Chat(commands.Cog):
                                 source_id
                                 for record in msgs
                                 for source_id in record.get("source_message_ids", [])
-                            ],
+                            ][:100], # Keep list somewhat reasonable
                             "confidence": 0.45,
                             "importance": 0.5,
+                            "associated_users": []
                         }
                         await self.bot.db.chat_memory.insert_one(summary_doc)
                         
