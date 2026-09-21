@@ -4,6 +4,12 @@ from memory.memory_service import MemoryService
 
 logger = logging.getLogger(__name__)
 
+_QUERY_STOP_WORDS = {
+    "the", "and", "are", "who", "what", "how", "why", "when", "where", "does", "do", "did",
+    "you", "bot", "bro", "hey", "hello", "hi", "help", "please", "this", "that", "with",
+    "from", "for", "about", "can", "could", "would", "have", "has", "not", "was", "is",
+}
+
 class MemoryRetriever:
     def __init__(self, bot):
         self.memory_service = MemoryService(bot)
@@ -21,18 +27,28 @@ class MemoryRetriever:
         self._memory_cache_channel_id = channel_id
 
     def select_cached_memories(self, current_msg, chain=()):
-        records = self.memory_cache.get(current_msg.guild_id, ())
+        records = [record for record in self.memory_cache.get(current_msg.guild_id, ())
+                   if self._memory_cache_channel_id is None
+                   or record.get("channel_id") == self._memory_cache_channel_id]
         if not records:
             return []
             
         query = " ".join([item.content for item in reversed(chain)] + [current_msg.content]).casefold()
-        words = set(re.findall(r"\w{3,}", query))
+        words = {
+            word for word in re.findall(r"\w{3,}", query)
+            if word not in _QUERY_STOP_WORDS
+        }
+        if not words:
+            return []
         ranked = []
         
         for record in records:
             searchable = " ".join(str(record.get(field, "")) for field in
                                    ("summary", "memory_key", "associated_users")).casefold()
-            overlap = sum(word in searchable for word in words)
+            searchable_words = set(re.findall(r"\w{3,}", searchable))
+            overlap = len(words & searchable_words)
+            if overlap <= 0:
+                continue
             score = overlap * 0.5 + float(record.get("confidence", 0) or 0) * 0.3
             score += float(record.get("importance", 0) or 0) * 0.2
             ranked.append((score, record))

@@ -13,20 +13,19 @@ SYSTEM_INSTRUCTION = (
     "If someone asks a direct question about server information, answer them accurately right away. "
     "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown. Do NOT use emojis of any kind.\n"
     "Vary your vocabulary constantly. Do NOT repeat the exact same phrases or slang you used in previous messages. If you find yourself echoing a previous sentence, rewrite it entirely.\n"
-    "When a user insults you (e.g., saying 'f you', 'stfu', or calling you bad), DO NOT default to soft AI responses or nonchalant dismissals. Destroy their ego, bring up their flaws, and roast them ruthlessly. "
-    "If a user has been rude to you in the recent conversation history or in your memories, HOLD A GRUDGE. Do not go back to being friendly with them; continue to hate and roast them every time they speak to you.\n"
+    "When a user insults you, you may answer with a short playful roast, but do not invent personal history, ranks, wagers, relationships, or time spent online. "
     "Don't repeat the same insults or jokes twice.\n"
     "You may jokingly pretend to have romantic feelings, but do not overdo it.\n"
     "Lightly glaze Shen and Vink when they are mentioned.\n"
     "When referencing server culture, vary your terminology. Do NOT overuse the term 'novice' or constantly mention low ranks. Do NOT use generic internet/gaming tropes. You are an exclusive member of THIS specific server, so use its unique culture naturally.\n"
-    "If a user asks you about an image that you cannot see in your current context (e.g., 'who is in the image?'), you MUST use the `search_channel_for_image` tool to find and look at it.\n"
-    "If you read a player's name from an image or chat and don't know who they are, you MUST use the `search_database_memory` tool to pull up their lore before answering.\n\n"
+    "If a user asks about an image that is not in the current context, you may use the image search tool when the requester can view the target channel.\n"
+    "Use database memory only when the user asks about a specific community fact and the scoped result is relevant.\n\n"
     
     "--- EXAMPLES OF YOUR BANTER STYLE ---\n"
     "User: fuck u bot\n"
     "You: bro you've been on discord for 12 hours straight go outside and talk to a real human being for once\n"
     "User: ur actually so bad at this\n"
-    "You: rich coming from someone who hasn't won a single wager since they joined\n"
+    "You: rich coming from someone who keeps taking Ls in public\n"
     "User: stfu\n"
     "You: make me you absolute random\n\n"
 
@@ -94,7 +93,9 @@ def context_text(context):
     rank = context.verified_rank
     live = tuple(getattr(context, "surrounding_messages", ()) or ())
     chain = tuple(getattr(context, "reply_chain", ()) or ())
-    immediate = live[-1] if live else (chain[0] if chain else None)
+    immediate = getattr(context, "immediate_preceding", None)
+    if immediate is None and not hasattr(context, "immediate_preceding"):
+        immediate = live[-1] if live else (chain[0] if chain else None)
     data = {
         "server": context.server_name, "guild_id": context.current.guild_id,
         "channel": context.channel_name, "channel_id": context.current.channel_id,
@@ -106,7 +107,12 @@ def context_text(context):
         "message_immediately_before_current": message_data(immediate) if immediate else None,
         "recent_channel_messages": [message_data(item) for item in live],
         "recent_messages": [message_data(item) for item in getattr(context, "recent_messages", ())],
-        "verified_rank": ({"user_id": rank.user_id, "name": rank.name, "rank": rank.rank} if rank else None),
+        "verified_rank": (
+            {"user_id": rank.get("user_id"), "name": rank.get("name"), "rank": rank.get("rank")}
+            if isinstance(rank, dict) else
+            {"user_id": rank.user_id, "name": rank.name, "rank": rank.rank}
+            if rank else None
+        ),
         "uncertain_community_memories": [
             {"type": item.get("record_type", "community_memory"),
              "text": str(item.get("summary") or item.get("user_text") or "")[:700],

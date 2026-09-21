@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
 from discord import app_commands
 import logging
+import hashlib
 
 from ai.router import AIRouter
 from context.context_builder import ContextBuilder
@@ -90,7 +91,7 @@ class Chat(commands.Cog):
             raw_channel_id = config_doc.get("AI_MEMORY_CHANNEL_ID") if config_doc else None
             self.memory_channel_id = int(raw_channel_id) if raw_channel_id not in (None, "") else fallback
         except Exception as error:
-            print(f"AI memory channel config lookup error: {error}")
+            logger.warning("AI memory channel config lookup failed error=%s", type(error).__name__)
             self.memory_channel_id = fallback
         return self.memory_channel_id
 
@@ -132,6 +133,8 @@ class Chat(commands.Cog):
             "guild_id": message.guild.id,
             "channel_id": message.channel.id,
             "author_id": message.author.id,
+            "author_bot": bool(message.author.bot),
+            "is_bot": bool(message.author.bot),
             "content": content,
             "reply_to_message_id": reply_to_id,
             "created_at": message.created_at,
@@ -235,13 +238,13 @@ class Chat(commands.Cog):
                 try:
                     return await asyncio.wait_for(method(**kwargs), timeout=15)
                 except Exception as e:
-                    error_str = str(e)
-                    print(f"Error {model_name} on key index {self.current_client_index}: {error_str}")
+                    logger.warning("Gemini fallback failed model=%s key_index=%s error=%s",
+                                   model_name, self.current_client_index, type(e).__name__)
                     # If it's a quota issue, 503, 401, 403, 404, or 400, rotate to next key or next model
                     self.current_client_index = (self.current_client_index + 1) % len(self.clients)
                     attempts += 1
                     continue
-            print(f"All keys exhausted/overloaded for {model_name}, falling back to next model...")
+            logger.warning("Gemini fallback model exhausted model=%s", model_name)
             
         raise Exception(f"All API keys and fallback models exhausted their quotas for {method_name}!")
 
@@ -278,7 +281,6 @@ class Chat(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        print(f"[DEBUG] on_message called for: {message.content} from {message.author}")
         request_started = time.perf_counter()
         is_bot = message.author.bot
             
@@ -303,7 +305,6 @@ class Chat(commands.Cog):
             
         await self._record_message_evidence(message)
         
-        print(f"[DEBUG] Delegating to router (ai_chat_enabled={getattr(self, 'ai_chat_enabled', True)})")
         await self.router.handle_message(
             message,
             getattr(self, "ai_chat_enabled", True),
@@ -379,7 +380,7 @@ class Chat(commands.Cog):
                     await ctx.author.send(f"⏳ Progress: Synced {min(i + len(batch), len(valid_messages))} / {len(valid_messages)} messages...")
                     
             except Exception as e:
-                print(f"Lore sync batch error: {e}")
+                logger.warning("Lore sync batch failed error=%s", type(e).__name__)
                 await ctx.author.send(f"Error during sync batch: {e}")
                 break
                 
@@ -415,15 +416,15 @@ class Chat(commands.Cog):
                 await pending_collection.delete_many({"_id": {"$in": [item["_id"] for item in pending_list if item.get("_id") is not None]}})
                 
         except Exception as e:
-            print(f"Background lore queue error: {e}")
+            logger.warning("Background lore queue failed error=%s", type(e).__name__)
 
     @tasks.loop(hours=1.0)
     async def lore_compressor(self):
-        """Periodically aggregate and summarize lore older than 7 days."""
+        """Safely aggregate structured memories older than seven days."""
         from ai.llm import llm
         from google.genai import types
         await llm.ensure_keys(getattr(self.bot, 'db', None))
-        if not llm.client or not getattr(self.bot, 'db', None):
+        if not llm.client or getattr(self.bot, 'db', None) is None:
             return
         memory_channel_id = await self._refresh_memory_channel_id()
         if not memory_channel_id:
@@ -432,36 +433,41 @@ class Chat(commands.Cog):
         try:
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
             
+            collection = self.bot.db.chat_memory
             while True:
-                # Fetch stale, uncompressed lore batch.
-                cursor = self.bot.db.chat_memory.find({
+                cursor = collection.find({
                     "timestamp": {"$lt": cutoff_date},
                     "is_summary": {"$ne": True},
                     "channel_id": memory_channel_id,
+                    "summary": {"$exists": True},
                 }).limit(100)
                 
                 old_messages = await cursor.to_list(length=100)
                 if not old_messages:
                     break
-                    
-                # Aggregate by origin channel.
+                processed_any = False
+
                 from collections import defaultdict
                 channel_groups = defaultdict(list)
                 for msg in old_messages:
-                    channel_groups[msg.get("channel_id")].append(msg)
+                    channel_groups[(msg.get("guild_id"), msg.get("channel_id"))].append(msg)
                     
-                for channel_id, msgs in channel_groups.items():
+                for (guild_id, channel_id), msgs in channel_groups.items():
                     if not channel_id:
                         continue
-                        
-                    # Serialize payload.
-                    chat_log = ""
-                    for m in msgs:
-                        user_text = m.get("user_text", "")
-                        bot_reply = m.get("bot_reply", "")
-                        chat_log += f"User: {user_text}\n"
-                        if bot_reply and bot_reply != "[Historical Community Lore]":
-                            chat_log += f"Bot: {bot_reply}\n"
+
+                    source_ids = sorted({str(source_id)
+                                         for msg in msgs
+                                         for source_id in msg.get("source_message_ids", [])})
+                    if not source_ids:
+                        continue
+                    chat_log = "\n".join(
+                        f"[{msg.get('source_message_ids', [])}] {msg.get('summary', '')} "
+                        f"associated_users={msg.get('associated_users', [])}"
+                        for msg in msgs if msg.get("summary")
+                    )
+                    if not chat_log:
+                        continue
                     
                     prompt = (
                         "Summarize the key events, facts, inside jokes, and general vibe from this chat log "
@@ -470,7 +476,6 @@ class Chat(commands.Cog):
                         f"CHAT LOG:\n{chat_log}"
                     )
                     
-                    # Execute summarization prompt.
                     summary_response = await llm.generate_content(
                         model='gemini-3.5-flash',
                         contents=prompt
@@ -479,46 +484,65 @@ class Chat(commands.Cog):
                     if not summary_text:
                         continue
                     
-                    # Generate semantic embedding for summary.
-                    emb_response = await llm.client.aio.models.embed_content(
-                        model='gemini-embedding-2',
-                        contents=summary_text,
-                        config=types.EmbedContentConfig(output_dimensionality=256)
+                    emb_response = await asyncio.wait_for(
+                        llm.client.aio.models.embed_content(
+                            model='gemini-embedding-2',
+                            contents=summary_text,
+                            config=types.EmbedContentConfig(output_dimensionality=256)
+                        ),
+                        timeout=15,
                     )
                     
                     if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
                         embedding_vector = list(emb_response.embeddings[0].values)
                         
-                        # Persist aggregate artifact.
+                        source_key = hashlib.sha256("|".join(source_ids).encode()).hexdigest()[:32]
+                        source_first_seen = min(
+                            (msg.get("first_seen") or msg.get("timestamp") for msg in msgs),
+                            default=datetime.now(timezone.utc),
+                        )
+                        source_last_seen = max(
+                            (msg.get("last_seen") or msg.get("timestamp") for msg in msgs),
+                            default=source_first_seen,
+                        )
                         summary_doc = {
                             "record_type": "summary",
-                            "guild_id": msgs[0].get("guild_id"),
+                            "memory_key": f"compressed:{source_key}",
+                            "guild_id": guild_id,
                             "channel_id": channel_id,
                             "summary": summary_text,
-                            "timestamp": datetime.now(timezone.utc),
+                            "timestamp": source_last_seen,
+                            "first_seen": source_first_seen,
+                            "last_seen": source_last_seen,
                             "embedding": embedding_vector,
                             "is_summary": True,
-                            "source_message_ids": [
-                                source_id
-                                for record in msgs
-                                for source_id in record.get("source_message_ids", [])
-                            ][:100], # Keep list somewhat reasonable
-                            "confidence": 0.45,
-                            "importance": 0.5,
-                            "associated_users": []
+                            "source_message_ids": source_ids,
+                            "confidence": max(0.5, min(0.8, max(float(msg.get("confidence", 0) or 0) for msg in msgs))),
+                            "importance": max(float(msg.get("importance", 0) or 0) for msg in msgs),
+                            "associated_users": sorted({str(user)
+                                                         for msg in msgs
+                                                         for user in msg.get("associated_users", [])}),
                         }
-                        await self.bot.db.chat_memory.insert_one(summary_doc)
-                        
-                        # Prune compressed raw records.
+                        await collection.update_one(
+                            {"guild_id": guild_id, "channel_id": channel_id,
+                             "memory_key": summary_doc["memory_key"]},
+                            {"$set": summary_doc}, upsert=True,
+                        )
+
+                        # Prune only after the complete summary is persisted.
                         msg_ids = [m["_id"] for m in msgs if "_id" in m]
                         if msg_ids:
-                            await self.bot.db.chat_memory.delete_many({"_id": {"$in": msg_ids}})
+                            await collection.delete_many({"_id": {"$in": msg_ids}})
+                        processed_any = bool(msg_ids)
                             
                     # Throttling backoff.
                     await asyncio.sleep(5)
+
+                if not processed_any:
+                    break
                     
-        except Exception as e:
-            print(f"Lore compressor error: {e}")
+        except Exception as error:
+            logger.warning("Lore compressor failed error=%s", type(error).__name__)
 
 async def setup(bot):
     await bot.add_cog(Chat(bot))

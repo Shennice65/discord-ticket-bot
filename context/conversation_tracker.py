@@ -139,6 +139,15 @@ class ConversationTracker:
         candidates.sort(key=lambda item: (item.created_at, item.message_id))
         return tuple(candidates[-self.MAX_LIVE_SELECTED:])
 
+    def immediate_preceding(self, current):
+        """Return the newest cached message before the current one in this scope."""
+        candidates = [item for item in self.recent_messages.get(current.scope, {}).values()
+                      if item.message_id != current.message_id
+                      and (item.created_at, item.message_id) < (current.created_at, current.message_id)]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: (item.created_at, item.message_id))
+
     def _select_recent(self, current, chain, live=()):
         candidates = [item for item in self.recent_messages.get(current.scope, {}).values()
                       if current.created_at - self.WINDOW <= item.created_at <= current.created_at

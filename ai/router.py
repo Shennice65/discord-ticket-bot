@@ -29,6 +29,74 @@ class AIRouter:
         parent = await self.context_builder.tracker.resolve_reply_parent(message)
         return parent is not None and parent.author_id == self.bot.user.id
 
+    async def _search_channel_for_image(self, message, parts, channel_name, keyword=None, username=None):
+        """Search only channels visible to the requesting Discord user."""
+        try:
+            if message.guild is None:
+                return "Error: image search is only available inside a server."
+            target_channel = None
+            channel_name_clean = channel_name.strip('#<>')
+            if channel_name_clean.isdigit():
+                target_channel = message.guild.get_channel(int(channel_name_clean))
+            if not target_channel:
+                for channel in message.guild.text_channels:
+                    if channel.name.lower() == channel_name_clean.lower() or channel_name_clean.lower() in channel.name.lower():
+                        target_channel = channel
+                        break
+            if not target_channel:
+                return f"Error: Could not find a text channel named '{channel_name}'."
+            if not getattr(target_channel.permissions_for(message.author), "view_channel", False):
+                return "Error: You cannot view that channel."
+
+            async for found_message in target_channel.history(limit=500):
+                for attachment in getattr(found_message, "attachments", ()):
+                    if not attachment.content_type or not attachment.content_type.startswith("image/"):
+                        continue
+                    if keyword and keyword.lower() not in (found_message.content or "").lower():
+                        continue
+                    if username:
+                        author_name = getattr(found_message.author, "name", "").lower()
+                        display_name = getattr(found_message.author, "display_name", "").lower()
+                        if username.lower() not in author_name and username.lower() not in display_name:
+                            continue
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                        async with session.get(attachment.url) as response:
+                            if response.status == 200:
+                                parts.append(types.Part.from_bytes(
+                                    data=await response.read(), mime_type=attachment.content_type
+                                ))
+                    return f"Success! The image from {attachment.url} has been attached to your vision context."
+            return "Failure: No matching image found in the last 500 messages."
+        except Exception as error:
+            logger.warning("Image search failed message_id=%s error=%s", message.id, type(error).__name__)
+            return "Error: image search is temporarily unavailable."
+
+    async def _search_database_memory(self, message, name):
+        """Read only confident memories scoped to the current guild and memory channel."""
+        try:
+            if message.guild is None:
+                return "No server-scoped community memory is available in DMs."
+            memory_channel_id = self.context_builder.retriever._memory_cache_channel_id
+            if memory_channel_id is None:
+                return f"No scoped database lore found for '{name}'."
+            collection = self.bot.db.db.chat_memory
+            cursor = collection.find({
+                "guild_id": message.guild.id,
+                "channel_id": memory_channel_id,
+                "confidence": {"$gte": 0.5},
+                "associated_users": {"$regex": re.escape(name), "$options": "i"},
+            }).sort("timestamp", -1).limit(5)
+            records = await cursor.to_list(length=5)
+            if not records:
+                return f"No database lore found for '{name}'."
+            return "Database Lore for {}:\n{}".format(
+                name, "\n".join(f"- {record.get('summary', '')}" for record in records)
+            )
+        except Exception as error:
+            logger.warning("Scoped memory tool failed guild_id=%s error=%s",
+                           getattr(message.guild, "id", None), type(error).__name__)
+            return "Scoped community memory is temporarily unavailable."
+
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
         if not ai_chat_enabled:
             return
@@ -54,10 +122,7 @@ class AIRouter:
                 return
 
         if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
-            print(f"[DEBUG] Dropped: bot_mentioned={bot_mentioned}, is_dm={is_dm}, is_reply_to_bot={is_reply_to_bot}, is_direct_question={is_direct_question}")
             return
-            
-        print(f"[DEBUG] Proceeding with handle_message: {message.content}")
 
         # "LEAVE ON READ" FILTER
         clean_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip().lower()
@@ -92,6 +157,14 @@ class AIRouter:
             await message.reply("Sorry, I had trouble talking to my brain: No Gemini API keys configured.")
             return
             
+        request_deadline = time.monotonic() + 90
+
+        async def bounded(awaitable):
+            remaining = request_deadline - time.monotonic()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+            return await asyncio.wait_for(awaitable, timeout=remaining)
+
         async with message.channel.typing():
             context = await self.context_builder.build(message)
             contents = []
@@ -111,7 +184,7 @@ class AIRouter:
                 )))
                 
             if message.attachments:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
                     for att in message.attachments:
                         if att.content_type and att.content_type.startswith('image/'):
                             async with session.get(att.url) as resp:
@@ -125,60 +198,12 @@ class AIRouter:
             parts.insert(0, types.Part.from_text(text=prompts.context_text(context)))
             contents.append(types.Content(role="user", parts=parts))
             
-            # Define tools
-            async def search_channel_for_image(channel_name: str, keyword: str = None, username: str = None) -> str:
-                """Gets the URL of an image posted in a specific Discord channel. Can optionally filter by a keyword in the message or the username of the sender."""
-                try:
-                    target_channel = None
-                    channel_name_clean = channel_name.strip('#<>')
-                    if channel_name_clean.isdigit():
-                        target_channel = message.guild.get_channel(int(channel_name_clean))
-                    if not target_channel:
-                        for c in message.guild.text_channels:
-                            if c.name.lower() == channel_name_clean.lower() or channel_name_clean.lower() in c.name.lower():
-                                target_channel = c
-                                break
-                    if not target_channel:
-                        return f"Error: Could not find a text channel named '{channel_name}'."
-                    
-                    async for msg in target_channel.history(limit=500):
-                        if msg.attachments:
-                            for att in msg.attachments:
-                                if att.content_type and att.content_type.startswith('image/'):
-                                    match = True
-                                    if keyword and keyword.lower() not in msg.content.lower(): match = False
-                                    if username:
-                                        author_name = msg.author.name.lower()
-                                        display_name = getattr(msg.author, 'display_name', '').lower()
-                                        if username.lower() not in author_name and username.lower() not in display_name:
-                                            match = False
-                                    if match:
-                                        async with aiohttp.ClientSession() as session:
-                                            async with session.get(att.url) as resp:
-                                                if resp.status == 200:
-                                                    image_data = await resp.read()
-                                                    parts.append(types.Part.from_bytes(data=image_data, mime_type=att.content_type))
-                                        return f"Success! The image from {att.url} has been attached to your vision context. You can now see it."
-                    return "Failure: No matching image found in the last 500 messages."
-                except Exception as e:
-                    return f"Error: {e}"
+            async def search_channel_for_image(channel_name: str, keyword: str = None, username: str = None):
+                return await self._search_channel_for_image(message, parts, channel_name, keyword, username)
 
-            async def search_database_memory(name: str) -> str:
-                """Searches the MongoDB chat memory database for lore, jokes, or events related to a specific name."""
-                try:
-                    collection = self.bot.db.db.chat_memory
-                    cursor = collection.find({
-                        "associated_users": {"$regex": re.escape(name), "$options": "i"}
-                    }).sort("timestamp", -1).limit(5)
-                    records = await cursor.to_list(length=5)
-                    if records:
-                        res = [f"- {r.get('summary')}" for r in records]
-                        return f"Database Lore for {name}:\n" + "\n".join(res)
-                    else:
-                        return f"No database lore found for '{name}'."
-                except Exception as e:
-                    return f"Error: {e}"
-            
+            async def search_database_memory(name: str):
+                return await self._search_database_memory(message, name)
+
             tool_list = [search_channel_for_image, search_database_memory]
             config = types.GenerateContentConfig(
                 system_instruction=prompts.system_instruction(context),
@@ -187,23 +212,26 @@ class AIRouter:
             )
             
             try:
-                response = await llm.generate_content(
+                response = await bounded(llm.generate_content(
                     model="gemini-3.5-flash", 
                     contents=contents,
                     config=config
-                )
-            except Exception as e:
-                await message.reply(f"Sorry, I had trouble talking to my brain: {e}")
+                ))
+            except Exception as error:
+                logger.warning("Initial AI generation failed message_id=%s error=%s",
+                               message.id, type(error).__name__)
+                await message.reply("Sorry, I had trouble talking to my brain right now.")
                 return
 
-            if response.function_calls:
-                for fn_call in response.function_calls:
+            function_calls = getattr(response, "function_calls", ()) or ()
+            if function_calls:
+                for fn_call in function_calls[:2]:
                     fn_name = fn_call.name
                     args = fn_call.args
                     if fn_name == "search_channel_for_image":
-                        tool_result = await search_channel_for_image(**args)
+                        tool_result = await bounded(self._search_channel_for_image(message, parts, **args))
                     elif fn_name == "search_database_memory":
-                        tool_result = await search_database_memory(**args)
+                        tool_result = await bounded(self._search_database_memory(message, **args))
                     else:
                         tool_result = "Unknown tool call"
                         
@@ -217,13 +245,15 @@ class AIRouter:
                     ))
                 
                 try:
-                    response = await llm.generate_content(
+                    response = await bounded(llm.generate_content(
                         model="gemini-3.5-flash", 
                         contents=contents,
                         config=config
-                    )
-                except Exception as e:
-                    await message.reply(f"Sorry, I crashed after using a tool: {e}")
+                    ))
+                except Exception as error:
+                    logger.warning("Tool follow-up generation failed message_id=%s error=%s",
+                                   message.id, type(error).__name__)
+                    await message.reply("Sorry, I had trouble finishing that reply.")
                     return
 
             reply_text = getattr(response, 'text', '')

@@ -23,6 +23,7 @@ class BrainContext:
     author_is_admin: bool
     admins: tuple[str, ...]
     reply_chain: tuple[ContextMessage, ...] = ()
+    immediate_preceding: ContextMessage | None = None
     surrounding_messages: tuple[ContextMessage, ...] = ()
     recent_messages: tuple[ContextMessage, ...] = ()
     exchanges: tuple = ()
@@ -103,6 +104,7 @@ class ContextBuilder:
             admins=tuple(member.display_name[:100] for member in getattr(guild, "members", ())
                          if not member.bot and member.guild_permissions.administrator)[:10],
             reply_chain=chain, 
+            immediate_preceding=self.tracker.immediate_preceding(current),
             surrounding_messages=live, 
             recent_messages=recent,
             verified_rank=await self.get_verified_rank(message),

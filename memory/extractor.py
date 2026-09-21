@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import asyncio
 from datetime import datetime, timezone
 from google.genai import types
 from ai.llm import llm
@@ -21,11 +22,13 @@ class MemoryExtractor:
         try:
             payload = json.loads(text)
         except (TypeError, ValueError):
-            return []
+            return None
         if isinstance(payload, dict):
-            payload = payload.get("memories", [])
+            if "memories" not in payload:
+                return None
+            payload = payload["memories"]
         if not isinstance(payload, list):
-            return []
+            return None
         candidates = []
         for item in payload:
             if not isinstance(item, dict) or item.get("type") not in MEMORY_TYPES:
@@ -52,7 +55,9 @@ class MemoryExtractor:
 
     async def extract(self, records):
         evidence = "\n".join(
-            f"[{item.get('message_id')}] {item.get('user_text') or item.get('content', '')}"[:2200]
+            f"[{item.get('message_id')}] author_id={item.get('author_id')} "
+            f"author_name={item.get('author_name', '')} "
+            f"{item.get('user_text') or item.get('content', '')}"[:2200]
             for item in records
         )
         prompt = (
@@ -80,10 +85,13 @@ class MemoryExtractor:
         try:
             # We use the generic client from our llm wrapper to get embeddings
             if llm.client:
-                response = await llm.client.aio.models.embed_content(
-                    model="gemini-embedding-2",
-                    contents=[item["summary"] for item in candidates],
-                    config=types.EmbedContentConfig(output_dimensionality=256),
+                response = await asyncio.wait_for(
+                    llm.client.aio.models.embed_content(
+                        model="gemini-embedding-2",
+                        contents=[item["summary"] for item in candidates],
+                        config=types.EmbedContentConfig(output_dimensionality=256),
+                    ),
+                    timeout=15,
                 )
                 embeddings = [list(item.values) for item in getattr(response, "embeddings", ())]
         except Exception as error:

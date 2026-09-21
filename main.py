@@ -189,7 +189,10 @@ async def main():
     discord.utils.setup_logging()
     keep_alive()
     bot = TicketBot()
-    await bot.start(Config.TOKEN)
+    # Ensure aiohttp's Discord session is closed if startup fails before login
+    # completes (for example, when DNS or the network is temporarily down).
+    async with bot:
+        await bot.start(Config.TOKEN)
 
 if __name__ == "__main__":
     asyncio.run(main())
