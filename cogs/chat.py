@@ -402,15 +402,25 @@ class Chat(commands.Cog):
                 context = await self.server_brain.build_context(message)
                 logger.info("AI timing stage=context seconds=%.3f", time.perf_counter() - context_started)
                 contents = []
-                for user, reply in context.exchanges:
+                for exchange in context.exchanges:
+                    user_turn, bot_turn = chat_prompts.labeled_exchange(exchange)
                     contents.extend([
-                        types.Content(role="user", parts=[types.Part.from_text(text=user)]),
-                        types.Content(role="model", parts=[types.Part.from_text(text=reply)]),
+                        types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(text=user_turn)],
+                        ),
+                        types.Content(
+                            role="model",
+                            parts=[types.Part.from_text(text=bot_turn)],
+                        ),
                     ])
 
                 parts = []
                 if user_text:
-                    parts.append(types.Part.from_text(text=user_text))
+                    parts.append(types.Part.from_text(text=(
+                        f"CURRENT_DISCORD_USER id={context.current.author_id} "
+                        f"name={context.current.author_name}\n{user_text}"
+                    )))
                     
                 # Stream and append image attachments to prompt context.
                 image_started = time.perf_counter()

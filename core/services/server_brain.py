@@ -23,6 +23,7 @@ class ContextMessage:
     reply_to: int | None
     mentioned_users: tuple[int, ...] = ()
     is_bot: bool = False
+    mentioned_user_names: tuple[str, ...] = ()
 
     @property
     def scope(self):
@@ -32,12 +33,15 @@ class ContextMessage:
     def from_message(cls, message):
         reference = getattr(message, "reference", None)
         attachments = getattr(message, "attachments", ())
+        mentions = tuple(getattr(message, "mentions", ()) or ())
         return cls(
             message.id, getattr(message.guild, "id", None), message.channel.id,
             message.author.id, message.author.display_name[:100],
             (message.content or ("[Attachment/Image]" if attachments else ""))[:2000],
             message.created_at, getattr(reference, "message_id", None),
-            tuple(user.id for user in message.mentions), message.author.bot,
+            tuple(user.id for user in mentions), message.author.bot,
+            tuple(getattr(user, "display_name", getattr(user, "name", str(user.id)))[:100]
+                  for user in mentions),
         )
 
 
@@ -46,6 +50,24 @@ class VerifiedRank:
     user_id: int
     name: str
     rank: str | None  # None means unavailable, not unranked.
+
+
+@dataclass(frozen=True)
+class ConversationExchange:
+    message_id: int
+    guild_id: int | None
+    channel_id: int
+    author_id: int
+    author_name: str
+    user_text: str
+    bot_text: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class IdentityCorrection:
+    text: str
+    rejected_label: str | None = None
 
 
 @dataclass
@@ -59,11 +81,12 @@ class BrainContext:
     reply_chain: tuple[ContextMessage, ...] = ()  # Immediate parent first.
     surrounding_messages: tuple[ContextMessage, ...] = ()  # Chronological live window.
     recent_messages: tuple[ContextMessage, ...] = ()
-    exchanges: tuple[tuple[str, str], ...] = ()
+    exchanges: tuple[ConversationExchange, ...] = ()
     memories: list[dict] = field(default_factory=list)
     verified_rank: VerifiedRank | None = None
     curated_lore: str = ""
     query_embedding: list[float] | None = None
+    identity_correction: IdentityCorrection | None = None
 
 
 class ServerBrain:
@@ -77,6 +100,12 @@ class ServerBrain:
     MAX_LIVE_SELECTED = 6
     MAX_REPLY_DEPTH = 3
     LOOKUP_TIMEOUT = 1.0
+    _CORRECTION_PATTERNS = (
+        re.compile(r"\b(?:i['’]?m|i am)\s+not\s+(?:even\s+)?([^,.!?\n]{1,80})", re.IGNORECASE),
+        re.compile(r"\b(?:that['’]?s|that is)\s+not\s+me\b", re.IGNORECASE),
+        re.compile(r"\bwrong\s+person\b", re.IGNORECASE),
+        re.compile(r"\bnot\s+me\b", re.IGNORECASE),
+    )
 
     def __init__(self, bot, embed_query, lore_path="lore.txt"):
         self.bot = bot
@@ -88,6 +117,19 @@ class ServerBrain:
         self._lore_mtime = None
         self.memory_cache = {}
         self._memory_cache_channel_id = None
+
+    @classmethod
+    def detect_identity_correction(cls, content):
+        text = (content or "").strip()
+        if not text:
+            return None
+        match = cls._CORRECTION_PATTERNS[0].search(text)
+        if match:
+            label = re.sub(r"\s+", " ", match.group(1)).strip(" '`")
+            return IdentityCorrection(text[:200], label[:80] or None)
+        if any(pattern.search(text) for pattern in cls._CORRECTION_PATTERNS[1:]):
+            return IdentityCorrection(text[:200])
+        return None
 
     async def refresh_memory_cache(self, channel_id):
         if not channel_id or not getattr(self.bot, "db", None):
@@ -274,7 +316,16 @@ class ServerBrain:
     def remember_exchange(self, message, user_text, reply_text):
         key = getattr(message.guild, "id", None), message.channel.id, message.author.id
         exchanges = self._exchanges.setdefault(key, [])
-        exchanges.append((message.created_at, message.id, user_text[:2000], reply_text[:2000]))
+        exchanges.append(ConversationExchange(
+            message_id=message.id,
+            guild_id=getattr(message.guild, "id", None),
+            channel_id=message.channel.id,
+            author_id=message.author.id,
+            author_name=message.author.display_name[:100],
+            user_text=user_text[:2000],
+            bot_text=reply_text[:2000],
+            created_at=message.created_at,
+        ))
         self._exchanges[key] = exchanges[-5:]
         self._exchanges.move_to_end(key)
         while len(self._exchanges) > 256:
@@ -299,12 +350,13 @@ class ServerBrain:
             verified_rank=await self.get_verified_rank(message),
         )
         key = (*current.scope, current.author_id)
-        selected_ids = {item.message_id for item in (*chain, *recent)}
-        context.exchanges = tuple((user, reply) for timestamp, message_id, user, reply in self._exchanges.get(key, ())
-                                  if message_id in selected_ids
-                                  and current.created_at - self.WINDOW <= timestamp < current.created_at)
+        selected_ids = {item.message_id for item in (*chain, *live, *recent)}
+        context.exchanges = tuple(exchange for exchange in self._exchanges.get(key, ())
+                                  if exchange.message_id in selected_ids
+                                  and current.created_at - self.WINDOW <= exchange.created_at < current.created_at)
         context.curated_lore = self.curated_lore
         context.memories = self.select_cached_memories(current, chain)
+        context.identity_correction = self.detect_identity_correction(current.content)
         logger.debug("Context channel=%s parents=%s live=%s recent=%s memories=%s", current.channel_id,
                      len(chain), len(live), len(recent), len(context.memories))
         return context

@@ -27,7 +27,7 @@ sys.modules.setdefault("google.genai.types", types_module)
 
 from cogs.chat import Chat
 from config import Config
-from core.services.server_brain import ServerBrain
+from core.services.server_brain import ServerBrain, ConversationExchange, IdentityCorrection
 from core.services import chat_prompts
 from core.services.memory_extractor import MemoryExtractor
 import asyncio
@@ -364,6 +364,62 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("recent_channel_messages", rendered)
         self.assertIn("Joel", rendered)
         self.assertIn("mentioned_user_ids", rendered)
+
+    def test_prompt_marks_bot_claims_and_identity_corrections(self):
+        bot_claim = SimpleNamespace(message_id=9, author_id=1, author_name="Atlas",
+                                    content="Polos is CherryBomb", reply_to=7,
+                                    mentioned_users=(), mentioned_user_names=(), is_bot=True,
+                                    created_at=datetime.now(timezone.utc))
+        context = SimpleNamespace(
+            current=SimpleNamespace(message_id=10, author_id=44, author_name="Polos",
+                content="I'm not even CherryBomb", guild_id=10, channel_id=20,
+                reply_to=9, mentioned_users=(), mentioned_user_names=(), is_bot=False,
+                created_at=datetime.now(timezone.utc)),
+            server_name="Guild", channel_name="general", author_roles=(), author_is_admin=False,
+            admins=(), reply_chain=(bot_claim,), surrounding_messages=(), recent_messages=(),
+            exchanges=(), verified_rank=None, memories=[],
+            identity_correction=IdentityCorrection("I'm not even CherryBomb", "CherryBomb"),
+        )
+        rendered = chat_prompts.context_text(context)
+        self.assertIn('"speaker_type": "bot"', rendered)
+        self.assertIn('"rejected_label": "CherryBomb"', rendered)
+        self.assertIn('"author_id": 44', rendered)
+
+    async def test_exchange_keeps_discord_author_identity(self):
+        now = datetime.now(timezone.utc)
+        author = SimpleNamespace(id=44, bot=False, display_name="Polos", roles=[],
+                                 guild_permissions=SimpleNamespace(administrator=False))
+        guild = SimpleNamespace(id=10, name="Guild", members=[])
+        channel = SimpleNamespace(id=20, name="general")
+        previous = SimpleNamespace(id=7, author=author, channel=channel, guild=guild,
+                                   content="LOL", created_at=now - timedelta(seconds=5),
+                                   reference=None, mentions=[], attachments=[])
+        current = SimpleNamespace(id=8, author=author, channel=channel, guild=guild,
+                                  content="who are you talking about?", created_at=now,
+                                  reference=None, mentions=[], attachments=[])
+        bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(
+            get_player_rank=AsyncMock(return_value=None)))
+        brain = ServerBrain(bot, AsyncMock())
+        brain.observe(previous)
+        brain.remember_exchange(previous, "LOL", "Polos is definitely CherryBomb")
+        context = await brain.build_context(current)
+        self.assertEqual(1, len(context.exchanges))
+        exchange = context.exchanges[0]
+        self.assertIsInstance(exchange, ConversationExchange)
+        self.assertEqual(44, exchange.author_id)
+        self.assertEqual("Polos", exchange.author_name)
+        self.assertEqual("Polos is definitely CherryBomb", exchange.bot_text)
+
+    def test_identity_correction_detection(self):
+        correction = ServerBrain.detect_identity_correction("I'm not even CherryBomb")
+        self.assertEqual("CherryBomb", correction.rejected_label)
+        self.assertIsNone(ServerBrain.detect_identity_correction("I like CherryBomb"))
+
+    def test_cached_exchange_turns_are_identity_labeled(self):
+        exchange = ConversationExchange(7, 10, 20, 44, "Polos", "LOL", "bot reply", datetime.now(timezone.utc))
+        user_turn, bot_turn = chat_prompts.labeled_exchange(exchange)
+        self.assertIn("DISCORD_USER id=44 name=Polos", user_turn)
+        self.assertIn("BOT_RESPONSE to_user_id=44", bot_turn)
 
 
 async def _empty_async_generator():
