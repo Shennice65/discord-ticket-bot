@@ -44,7 +44,9 @@ class AIRouter:
     @staticmethod
     def _is_image_request(content):
         return bool(re.search(
-            r"\b(?:image|picture|pic|photo|screenshot)\b|\blook\s+like\b|\bshow\s+me\b",
+            r"\b(?:image|picture|pic|photo|screenshot)\b|\blook\s+like\b|\bshow\s+me\b|"
+            r"\b(?:see|read|translate|describe)\s+(?:the\s+)?(?:image|picture|photo|one\s+above)\b|"
+            r"\b(?:person|user)\s+above\s+(?:saying|doing)\b|\bwhat\s+does\s+.*\s+(?:say|saying)\b",
             (content or "").casefold(),
         ))
 
