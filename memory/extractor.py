@@ -74,6 +74,8 @@ class MemoryExtractor:
         if not candidates or getattr(db, "chat_memory", None) is None:
             return 0
             
+        await llm.ensure_keys(db)
+            
         embeddings = []
         try:
             # We use the generic client from our llm wrapper to get embeddings

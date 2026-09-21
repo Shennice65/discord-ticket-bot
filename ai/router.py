@@ -84,6 +84,11 @@ class AIRouter:
         if not user_text and not message.attachments:
             user_text = "Hello!"
             
+        await llm.ensure_keys(getattr(self.bot, "db", None))
+        if not llm.client:
+            await message.reply("Sorry, I had trouble talking to my brain: No Gemini API keys configured.")
+            return
+            
         async with message.channel.typing():
             context = await self.context_builder.build(message)
             contents = []

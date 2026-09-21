@@ -327,6 +327,7 @@ class Chat(commands.Cog):
             return
             
         from ai.llm import llm
+        await llm.ensure_keys(getattr(self.bot, 'db', None))
         if not llm.client:
             await ctx.author.send("Gemini API not connected!")
             return
@@ -386,6 +387,7 @@ class Chat(commands.Cog):
     async def process_lore_queue(self):
         """Asynchronously embed and persist queued chat events within rate limit constraints."""
         from ai.llm import llm
+        await llm.ensure_keys(getattr(self.bot, 'db', None))
         if not llm.client or not getattr(self.bot, 'db', None):
             return
         memory_channel_id = await self._refresh_memory_channel_id()
@@ -418,6 +420,7 @@ class Chat(commands.Cog):
         """Periodically aggregate and summarize lore older than 7 days."""
         from ai.llm import llm
         from google.genai import types
+        await llm.ensure_keys(getattr(self.bot, 'db', None))
         if not llm.client or not getattr(self.bot, 'db', None):
             return
         memory_channel_id = await self._refresh_memory_channel_id()

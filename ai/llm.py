@@ -26,6 +26,28 @@ class GeminiLLM:
         self.current_client_index = (self.current_client_index + 1) % len(self.clients)
         logger.warning(f"Rotated to Gemini API key index {self.current_client_index}.")
 
+    async def ensure_keys(self, db):
+        """Fetch API keys from the database if none are loaded."""
+        if self.clients:
+            return True
+            
+        if not db or getattr(db, 'db', None) is None:
+            return False
+            
+        try:
+            config_doc = await db.db.config.find_one({"_id": "api_keys"})
+            if config_doc and config_doc.get("GEMINI_API_KEY"):
+                raw_keys = config_doc.get("GEMINI_API_KEY", "")
+                api_keys = [k.strip() for k in raw_keys.split(',')] if raw_keys else []
+                if api_keys:
+                    self.clients = [genai.Client(api_key=key) for key in api_keys if key]
+                    self.current_client_index = 0
+                    return True
+        except Exception as e:
+            logger.error(f"Error fetching API key from DB: {e}")
+            
+        return False
+
     async def generate_content(self, model: str, contents: list, config: types.GenerateContentConfig = None) -> types.GenerateContentResponse:
         """Call the Gemini API with automatic key rotation on resource exhaustion."""
         for attempt in range(len(self.clients) + 1):
