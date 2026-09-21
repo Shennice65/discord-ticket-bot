@@ -79,7 +79,7 @@ class MemoryRetriever:
                     rec_id = str(record.get("_id", record.get("memory_key")))
                     if rec_id and rec_id not in seen_ids:
                         try:
-                            if float(record.get("confidence", 0) or 0) >= 0.5:
+                            if float(record.get("confidence", 0) or 0) >= 0.1:
                                 entity_matches.append(record)
                                 seen_ids.add(rec_id)
                         except (TypeError, ValueError):
@@ -93,7 +93,7 @@ class MemoryRetriever:
         words = re.findall(r"\w{3,}", current_text)
         query_words = set(words) - _QUERY_STOP_WORDS
         
-        semantic_matches = []
+        semantic_scores = {}
         if query_words or len(current_text) > 10:
             query = " ".join(
                 [item.content for item in reversed(chain[-2:])
@@ -123,15 +123,13 @@ class MemoryRetriever:
                                 
                             sim = _cosine_similarity(query_vec, rec_emb)
                             if sim > 0.65:
-                                semantic_matches.append((sim, record))
-                                
-                        semantic_matches.sort(key=lambda x: x[0], reverse=True)
+                                semantic_scores[rec_id] = sim
                 except Exception as e:
                     logger.warning(f"Semantic search failed: {type(e).__name__}")
                     
-        # Fallback to old keyword overlap if semantic fails and no entities
-        if not semantic_matches and not top_entities and query_words:
-            keyword_matches = []
+        # 3. Keyword Search Path (Always run if we have query words)
+        keyword_scores = {}
+        if query_words:
             for record in records:
                 rec_id = str(record.get("_id", record.get("memory_key")))
                 if rec_id in seen_ids: continue
@@ -139,12 +137,24 @@ class MemoryRetriever:
                 searchable_words = set(re.findall(r"\w{3,}", searchable))
                 overlap = len(query_words & searchable_words)
                 if overlap > 0:
-                    score = overlap * 0.5 + float(record.get("confidence", 0) or 0) * 0.3 + float(record.get("importance", 0) or 0) * 0.2
-                    keyword_matches.append((score, record))
-            keyword_matches.sort(key=lambda x: x[0], reverse=True)
-            semantic_matches = keyword_matches
+                    score = min(1.0, (overlap * 0.4) + float(record.get("confidence", 0) or 0) * 0.2)
+                    keyword_scores[rec_id] = score
+        
+        # Merge scores and rank
+        hybrid_matches = []
+        for record in records:
+            rec_id = str(record.get("_id", record.get("memory_key")))
+            if rec_id in seen_ids: continue
             
-        results = top_entities + [rec for _, rec in semantic_matches[:2]]
+            sem_score = semantic_scores.get(rec_id, 0.0)
+            kw_score = keyword_scores.get(rec_id, 0.0)
+            
+            final_score = max(sem_score, kw_score)
+            if final_score > 0:
+                hybrid_matches.append((final_score, record))
+                
+        hybrid_matches.sort(key=lambda x: x[0], reverse=True)
+        results = top_entities + [rec for _, rec in hybrid_matches[:2]]
         
         # Filter excluded terms out of results just in case
         excluded = {item.casefold() for item in excluded_terms if item}

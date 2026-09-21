@@ -66,7 +66,7 @@ class MemoryExtractor:
             "relationship, server_lore, community_term. Ignore ordinary chat, insults, questions, and "
             "one-off claims. Never use bot messages as evidence. Each item must include type, name, summary, "
             "associated_users, source_message_ids chosen only from the IDs shown, confidence, and importance. "
-            "A single supporting message must have confidence <= 0.35.\n\nEVIDENCE:\n" + evidence
+            "Assign high confidence to unique server lore or inside jokes even if they only appear in a single message.\n\nEVIDENCE:\n" + evidence
         )
         try:
             response = await llm.generate_content(model="gemini-3.5-flash", contents=prompt)
@@ -107,7 +107,7 @@ class MemoryExtractor:
                           if value in ids or str(value) in id_strings]
             if not source_ids:
                 continue
-            confidence = min(0.35, candidate["confidence"]) if len(source_ids) == 1 else max(candidate["confidence"], 0.5)
+            confidence = candidate["confidence"]
             query = {"guild_id": records[0].get("guild_id"), "channel_id": records[0].get("channel_id"),
                      "memory_key": candidate["memory_key"]}
             existing = await db.chat_memory.find_one(query)
