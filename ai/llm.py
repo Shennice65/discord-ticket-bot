@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 class GeminiLLM:
     def __init__(self):
-        self.api_keys = Config.GEMINI_API_KEYS
-        self.clients = [genai.Client(api_key=key) for key in self.api_keys if key]
+        self.api_keys = [k for k in Config.GEMINI_API_KEYS if k and k != "your_gemini_api_key_here"]
+        self.clients = [genai.Client(api_key=key) for key in self.api_keys]
         self.current_client_index = 0
 
     @property
