@@ -263,8 +263,9 @@ class ServerBrain:
             pass
         except OSError as error:
             logger.warning("Curated lore unavailable error=%s", type(error).__name__)
-        if current.guild_id is not None and current.channel_id == memory_channel_id:
-            # Short follow-ups need their parent when searching memory.
+        if current.guild_id is not None and memory_channel_id:
+            # Search approved general-channel memories while keeping the
+            # current guild boundary. Short follow-ups include their parent.
             query = "\n".join([*(item.content[:500] for item in reversed(chain)), current.content])[:3500]
             try:
                 context.query_embedding = await self.embed_query(query) if query.strip() else None
@@ -272,7 +273,8 @@ class ServerBrain:
                 logger.warning("Embedding unavailable; using keyword retrieval error=%s", type(error).__name__)
             try:
                 context.memories = await self.bot.db.get_chat_context_memories(
-                    current.guild_id, current.channel_id, query, context.query_embedding
+                    current.guild_id, current.channel_id, query, context.query_embedding,
+                    source_channel_id=memory_channel_id,
                 )
             except Exception as error:
                 logger.warning("Memory retrieval unavailable error=%s", type(error).__name__)

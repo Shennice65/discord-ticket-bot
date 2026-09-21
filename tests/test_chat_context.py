@@ -196,7 +196,9 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([41, 40], [item.message_id for item in context.reply_chain])
         self.assertFalse(any(item.message_id == 1 for item in context.recent_messages))
         self.assertEqual("Gold", context.verified_rank.rank)
-        db.get_chat_context_memories.assert_awaited_once_with(10, 20, "parent question\nsame thread follow-up\nwhat is my rank?", [0.1])
+        db.get_chat_context_memories.assert_awaited_once_with(
+            10, 20, "parent question\nsame thread follow-up\nwhat is my rank?", [0.1], source_channel_id=20
+        )
 
     async def test_server_brain_excludes_other_channel_context(self):
         bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(

@@ -7,10 +7,13 @@ logger = logging.getLogger(__name__)
 
 
 class ChatContextMixin:
-    async def get_chat_context_memories(self, guild_id, channel_id, query, embedding=None):
+    async def get_chat_context_memories(
+        self, guild_id, channel_id, query, embedding=None, source_channel_id=None
+    ):
         if self.chat_memory is None:
             return []
-        scope = {"guild_id": guild_id, "channel_id": channel_id}
+        lookup_channel_id = source_channel_id or channel_id
+        scope = {"guild_id": guild_id, "channel_id": lookup_channel_id}
         fields = {"guild_id": 1, "channel_id": 1, "user_text": 1, "bot_reply": 1,
                   "summary": 1, "source_message_ids": 1, "confidence": 1, "record_type": 1}
         results = []
@@ -42,7 +45,9 @@ class ChatContextMixin:
         selected = []
         seen = set()
         for record in results:
-            if record.get("guild_id") != guild_id or record.get("channel_id") != channel_id:
+            if record.get("guild_id") != guild_id or record.get("channel_id") != lookup_channel_id:
+                continue
+            if source_channel_id != channel_id and float(record.get("confidence", 0) or 0) < 0.5:
                 continue
             identity = str(record.get("_id", record))
             if identity in seen:
@@ -51,5 +56,5 @@ class ChatContextMixin:
             selected.append(record)
             if len(selected) == 3:
                 break
-        logger.debug("Memory retrieval channel=%s selected=%s", channel_id, len(selected))
+        logger.debug("Memory retrieval channel=%s selected=%s", lookup_channel_id, len(selected))
         return selected
