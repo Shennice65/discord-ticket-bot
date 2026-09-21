@@ -331,7 +331,7 @@ class Chat(commands.Cog):
         except:
             pass # Ignore if we don't have delete permissions
 
-        if not await self._is_memory_channel(ctx.channel):
+        if not self._is_memory_channel(ctx.message):
             await ctx.author.send("Lore sync cannot be run in this channel because it is an ignored AI memory channel.")
             return
             
