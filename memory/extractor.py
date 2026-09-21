@@ -97,10 +97,18 @@ class MemoryExtractor:
         except Exception as error:
             logger.debug("Memory embedding unavailable error=%s", type(error).__name__)
             
+        def _ensure_aware(dt):
+            if dt is None: return None
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
         ids = {item.get("message_id") for item in records}
         id_strings = {str(value) for value in ids}
-        first_seen = min((item.get("timestamp") or item.get("created_at") for item in records), default=datetime.now(timezone.utc))
-        last_seen = max((item.get("timestamp") or item.get("created_at") for item in records), default=first_seen)
+        
+        dts = [_ensure_aware(item.get("timestamp") or item.get("created_at")) for item in records]
+        dts = [dt for dt in dts if dt]
+        base_first_seen = min(dts, default=datetime.now(timezone.utc))
+        base_last_seen = max(dts, default=base_first_seen)
+        
         stored = 0
         for index, candidate in enumerate(candidates):
             source_ids = [value for value in candidate["source_message_ids"]
@@ -111,6 +119,10 @@ class MemoryExtractor:
             query = {"guild_id": records[0].get("guild_id"),
                      "memory_key": candidate["memory_key"]}
             existing = await db.chat_memory.find_one(query)
+            
+            cand_first = base_first_seen
+            cand_last = base_last_seen
+            
             if existing:
                 prior_ids = set(existing.get("source_message_ids") or [])
                 new_ids = [value for value in source_ids if value not in prior_ids]
@@ -118,14 +130,16 @@ class MemoryExtractor:
                 if new_ids:
                     confidence = min(0.99, confidence + 0.15)
                 source_ids = list(dict.fromkeys((existing.get("source_message_ids") or []) + source_ids))
-                existing_first = existing.get("first_seen") or first_seen
-                existing_last = existing.get("last_seen") or last_seen
-                first_seen = min(existing_first, first_seen)
-                last_seen = max(existing_last, last_seen)
+                
+                existing_first = _ensure_aware(existing.get("first_seen")) or cand_first
+                existing_last = _ensure_aware(existing.get("last_seen")) or cand_last
+                cand_first = min(existing_first, cand_first)
+                cand_last = max(existing_last, cand_last)
+                
             fields = {"record_type": candidate["record_type"], "summary": candidate["summary"],
                       "associated_users": candidate["associated_users"], "source_message_ids": source_ids,
                       "confidence": confidence, "importance": candidate["importance"],
-                      "first_seen": first_seen, "last_seen": last_seen, "timestamp": last_seen}
+                      "first_seen": cand_first, "last_seen": cand_last, "timestamp": cand_last}
             if len(embeddings) > index:
                 fields["embedding"] = embeddings[index]
             await db.chat_memory.update_one(
