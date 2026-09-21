@@ -92,6 +92,8 @@ class Chat(commands.Cog):
             self.memory_channel_id = int(raw_channel_id) if raw_channel_id not in (None, "") else fallback
             
             ignored = config_doc.get("AI_IGNORED_MEMORY_CHANNELS", []) if config_doc else []
+            if isinstance(ignored, str):
+                ignored = [cid.strip() for cid in ignored.split(',')]
             self.ignored_memory_channels = [int(cid) for cid in ignored if cid]
         except Exception as error:
             logger.warning("AI memory channel config lookup failed error=%s", type(error).__name__)
