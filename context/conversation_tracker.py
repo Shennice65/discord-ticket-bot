@@ -3,6 +3,7 @@ import logging
 from collections import OrderedDict
 from datetime import datetime, timedelta
 import re
+import time
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,22 @@ class ConversationTracker:
         self.bot = bot
         self.recent_messages = OrderedDict()
         self._exchanges = OrderedDict()
+        self._identity_corrections = OrderedDict()
+
+    def identity_correction(self, current, correction=None):
+        """Remember attribution corrections only for this user and channel."""
+        now = time.monotonic()
+        for key, (expires, _) in list(self._identity_corrections.items()):
+            if expires <= now:
+                del self._identity_corrections[key]
+        key = (*current.scope, current.author_id)
+        if correction is not None:
+            self._identity_corrections[key] = (now + 900, correction)
+            self._identity_corrections.move_to_end(key)
+            while len(self._identity_corrections) > 1000:
+                self._identity_corrections.popitem(last=False)
+        cached = self._identity_corrections.get(key)
+        return cached[1] if cached else None
 
     def _remember(self, item):
         bucket = self.recent_messages.setdefault(item.scope, OrderedDict())

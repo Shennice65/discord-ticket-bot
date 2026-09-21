@@ -118,7 +118,10 @@ class ContextBuilder:
                                   and current.created_at - self.tracker.WINDOW <= exchange.created_at < current.created_at)
                                   
         context.curated_lore = self.curated_lore
-        context.memories = self.retriever.select_cached_memories(current, chain)
-        context.identity_correction = self.detect_identity_correction(current.content)
+        context.identity_correction = self.tracker.identity_correction(
+            current, self.detect_identity_correction(current.content)
+        )
+        rejected = (context.identity_correction.rejected_label,) if context.identity_correction else ()
+        context.memories = self.retriever.select_cached_memories(current, chain, rejected)
         
         return context

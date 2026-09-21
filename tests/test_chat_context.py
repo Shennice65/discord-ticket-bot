@@ -21,6 +21,16 @@ genai_module.Client = lambda **kwargs: object()
 types_module.HttpOptions = lambda **kwargs: kwargs
 types_module.EmbedContentConfig = lambda **kwargs: kwargs
 types_module.GenerateContentConfig = lambda **kwargs: kwargs
+types_module.Tool = lambda **kwargs: kwargs
+types_module.FunctionDeclaration = lambda **kwargs: kwargs
+types_module.AutomaticFunctionCallingConfig = lambda **kwargs: kwargs
+types_module.Content = lambda **kwargs: kwargs
+types_module.Part = SimpleNamespace(
+    from_text=lambda **kwargs: kwargs,
+    from_bytes=lambda **kwargs: kwargs,
+    from_function_call=lambda **kwargs: kwargs,
+    from_function_response=lambda **kwargs: kwargs,
+)
 types_module.GenerateContentResponse = object
 errors_module.APIError = type("APIError", (Exception,), {})
 google_module.genai = genai_module
@@ -35,7 +45,7 @@ from ai.llm import GeminiLLM
 from ai import prompts
 from ai.router import AIRouter
 from context.context_builder import ContextBuilder, IdentityCorrection
-from context.conversation_tracker import ConversationExchange, ConversationTracker
+from context.conversation_tracker import ContextMessage, ConversationExchange, ConversationTracker
 from context.retrieval import MemoryRetriever
 from cogs.chat import Chat
 from memory.extractor import MemoryExtractor
@@ -104,6 +114,30 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], retriever.select_cached_memories(current))
         current.content = "what about CherryBomb?"
         self.assertEqual(["cherrybomb"], [item["memory_key"] for item in retriever.select_cached_memories(current)])
+        self.assertEqual([], retriever.select_cached_memories(current, excluded_terms=("CherryBomb",)))
+
+    async def test_memory_retrieval_excludes_low_confidence_and_bot_chain(self):
+        retriever = MemoryRetriever(SimpleNamespace(db=None))
+        retriever._memory_cache_channel_id = 20
+        retriever.memory_cache = {10: [
+            {"guild_id": 10, "channel_id": 20, "summary": "CherryBomb uses CB", "memory_key": "cherrybomb",
+             "associated_users": ["CherryBomb"], "confidence": 0.4, "importance": 1.0},
+        ]}
+        bot_claim = SimpleNamespace(content="CherryBomb is Polos", is_bot=True, guild_id=10, channel_id=20)
+        current = SimpleNamespace(guild_id=10, channel_id=20, content="hello")
+        self.assertEqual([], retriever.select_cached_memories(current, (bot_claim,)))
+
+    async def test_identity_correction_is_scoped_and_expires(self):
+        tracker = ConversationTracker(SimpleNamespace(user=SimpleNamespace(id=1)))
+        correction = IdentityCorrection("I'm not CherryBomb", "CherryBomb")
+        current = ContextMessage(1, 10, 20, 44, "Polos", "I'm not CherryBomb",
+                                datetime.now(timezone.utc), None)
+        other_user = ContextMessage(2, 10, 20, 55, "proxic", "yo",
+                                    datetime.now(timezone.utc), None)
+        self.assertEqual(correction, tracker.identity_correction(current, correction))
+        self.assertIsNone(tracker.identity_correction(other_user))
+        tracker._identity_corrections[(10, 20, 44)] = (0, correction)
+        self.assertIsNone(tracker.identity_correction(current))
 
     async def test_raw_evidence_is_queued_with_bot_flags(self):
         chat = object.__new__(Chat)
@@ -281,6 +315,86 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         router = AIRouter(bot, builder)
         result = await router._search_database_memory(requester, "Polos")
         self.assertIn("No database lore", result)
+
+    async def test_normal_triggered_reply_uses_one_generation_without_key_or_tool_calls(self):
+        bot_user = SimpleNamespace(id=1, display_name="Atlas", name="Atlas")
+        bot = SimpleNamespace(user=bot_user)
+        message = make_message(content="@Atlas hello", mentions=[bot_user])
+
+        class Typing:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *_args):
+                return False
+
+        message.channel.typing = lambda: Typing()
+        message.reply = AsyncMock()
+        message.channel.send = AsyncMock()
+        tracker = ConversationTracker(bot)
+        current = ContextMessage(message.id, 10, 20, 7, "member", "hello",
+                                  message.created_at, None)
+        context = SimpleNamespace(
+            current=current, server_name="Guild", channel_name="general", author_roles=(),
+            author_is_admin=False, admins=(), reply_chain=(), immediate_preceding=None,
+            surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
+            verified_rank=None, curated_lore="", identity_correction=None,
+        )
+        builder = SimpleNamespace(tracker=tracker, build=AsyncMock(return_value=context))
+        router = AIRouter(bot, builder)
+        fake_llm = SimpleNamespace(
+            client=object(),
+            generate_content=AsyncMock(return_value=SimpleNamespace(text="hello", function_calls=[])),
+        )
+        with patch("ai.router.llm", fake_llm):
+            await router.handle_message(message, True, None)
+
+        fake_llm.generate_content.assert_awaited_once()
+        self.assertNotIn("ensure_keys", fake_llm.__dict__)
+        message.reply.assert_awaited_once_with("hello")
+        self.assertEqual("hello", tracker._exchanges[(10, 20, 7)][0].bot_text)
+
+    async def test_tool_execution_is_one_round_and_final_generation_has_no_tools(self):
+        bot_user = SimpleNamespace(id=1, display_name="Atlas", name="Atlas")
+        bot = SimpleNamespace(user=bot_user)
+        message = make_message(content="@Atlas who is Polos?", mentions=[bot_user])
+
+        class Typing:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *_args):
+                return False
+
+        message.channel.typing = lambda: Typing()
+        message.reply = AsyncMock()
+        message.channel.send = AsyncMock()
+        tracker = ConversationTracker(bot)
+        current = ContextMessage(message.id, 10, 20, 7, "member", "who is Polos?",
+                                  message.created_at, None)
+        context = SimpleNamespace(
+            current=current, server_name="Guild", channel_name="general", author_roles=(),
+            author_is_admin=False, admins=(), reply_chain=(), immediate_preceding=None,
+            surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
+            verified_rank=None, curated_lore="", identity_correction=None,
+        )
+        builder = SimpleNamespace(tracker=tracker, build=AsyncMock(return_value=context))
+        router = AIRouter(bot, builder)
+        responses = [
+            SimpleNamespace(text="", function_calls=[SimpleNamespace(
+                name="search_database_memory", args={"name": "Polos"})]),
+            SimpleNamespace(text="Polos is Polos", function_calls=[]),
+        ]
+        fake_llm = SimpleNamespace(client=object(), generate_content=AsyncMock(side_effect=responses))
+        router._search_database_memory = AsyncMock(return_value="Polos community fact")
+        with patch("ai.router.llm", fake_llm):
+            await router.handle_message(message, True, None)
+
+        self.assertEqual(2, fake_llm.generate_content.await_count)
+        first_config = fake_llm.generate_content.await_args_list[0].kwargs["config"]
+        final_config = fake_llm.generate_content.await_args_list[1].kwargs["config"]
+        self.assertTrue(first_config["tools"])
+        self.assertEqual([], final_config["tools"])
+        router._search_database_memory.assert_awaited_once_with(message, name="Polos")
+        message.reply.assert_awaited_once_with("Polos is Polos")
 
 
 if __name__ == "__main__":

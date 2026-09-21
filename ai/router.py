@@ -98,6 +98,7 @@ class AIRouter:
             return "Scoped community memory is temporarily unavailable."
 
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
+        request_started = time.perf_counter()
         if not ai_chat_enabled:
             return
 
@@ -123,6 +124,8 @@ class AIRouter:
 
         if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
             return
+        logger.info("AI stage message_id=%s stage=routing duration_ms=%d",
+                    message.id, (time.perf_counter() - request_started) * 1000)
 
         # "LEAVE ON READ" FILTER
         clean_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip().lower()
@@ -151,22 +154,32 @@ class AIRouter:
         user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
         if not user_text and not message.attachments:
             user_text = "Hello!"
-            
-        await llm.ensure_keys(getattr(self.bot, "db", None))
+
         if not llm.client:
             await message.reply("Sorry, I had trouble talking to my brain: No Gemini API keys configured.")
             return
             
         request_deadline = time.monotonic() + 90
 
-        async def bounded(awaitable):
+        async def bounded(awaitable, timeout=None):
             remaining = request_deadline - time.monotonic()
             if remaining <= 0:
+                close = getattr(awaitable, "close", None)
+                if close:
+                    close()
                 raise asyncio.TimeoutError()
-            return await asyncio.wait_for(awaitable, timeout=remaining)
+            return await asyncio.wait_for(awaitable, timeout=min(remaining, timeout or remaining))
 
         async with message.channel.typing():
-            context = await self.context_builder.build(message)
+            stage_started = time.perf_counter()
+            try:
+                context = await bounded(self.context_builder.build(message))
+            except Exception as error:
+                logger.warning("AI context failed message_id=%s error=%s", message.id, type(error).__name__)
+                await bounded(message.reply("Sorry, I couldn't load the conversation context."))
+                return
+            logger.info("AI stage message_id=%s stage=context duration_ms=%d",
+                        message.id, (time.perf_counter() - stage_started) * 1000)
             contents = []
             
             for exchange in context.exchanges:
@@ -183,14 +196,26 @@ class AIRouter:
                     f"name={context.current.author_name}\n{user_text}"
                 )))
                 
-            if message.attachments:
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                    for att in message.attachments:
-                        if att.content_type and att.content_type.startswith('image/'):
-                            async with session.get(att.url) as resp:
-                                if resp.status == 200:
-                                    image_data = await resp.read()
-                                    parts.append(types.Part.from_bytes(data=image_data, mime_type=att.content_type))
+            stage_started = time.perf_counter()
+            try:
+                async def load_attachments():
+                    if not message.attachments:
+                        return
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                        for att in message.attachments:
+                            if att.content_type and att.content_type.startswith('image/'):
+                                async with session.get(att.url) as resp:
+                                    if resp.status == 200:
+                                        image_data = await resp.read()
+                                        parts.append(types.Part.from_bytes(data=image_data, mime_type=att.content_type))
+                await bounded(load_attachments(), timeout=10)
+            except Exception as error:
+                logger.warning("AI attachment loading failed message_id=%s error=%s",
+                               message.id, type(error).__name__)
+                await bounded(message.reply("Sorry, I couldn't load that attachment."))
+                return
+            logger.info("AI stage message_id=%s stage=attachments duration_ms=%d",
+                        message.id, (time.perf_counter() - stage_started) * 1000)
             
             if not parts:
                 return
@@ -198,19 +223,37 @@ class AIRouter:
             parts.insert(0, types.Part.from_text(text=prompts.context_text(context)))
             contents.append(types.Content(role="user", parts=parts))
             
-            async def search_channel_for_image(channel_name: str, keyword: str = None, username: str = None):
-                return await self._search_channel_for_image(message, parts, channel_name, keyword, username)
-
-            async def search_database_memory(name: str):
-                return await self._search_database_memory(message, name)
-
-            tool_list = [search_channel_for_image, search_database_memory]
+            tool_list = [types.Tool(function_declarations=[
+                types.FunctionDeclaration(
+                    name="search_channel_for_image",
+                    description="Find a recent image in a channel the requester can view.",
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {
+                            "channel_name": {"type": "string"},
+                            "keyword": {"type": "string"},
+                            "username": {"type": "string"},
+                        },
+                        "required": ["channel_name"],
+                    },
+                ),
+                types.FunctionDeclaration(
+                    name="search_database_memory",
+                    description="Find a specific scoped community fact for a named member.",
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                ),
+            ])]
             config = types.GenerateContentConfig(
                 system_instruction=prompts.system_instruction(context),
                 temperature=0.95,
-                tools=tool_list
+                tools=tool_list,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             )
-            
+            generation_started = time.perf_counter()
             try:
                 response = await bounded(llm.generate_content(
                     model="gemini-3.5-flash", 
@@ -220,52 +263,77 @@ class AIRouter:
             except Exception as error:
                 logger.warning("Initial AI generation failed message_id=%s error=%s",
                                message.id, type(error).__name__)
-                await message.reply("Sorry, I had trouble talking to my brain right now.")
+                await bounded(message.reply("Sorry, I had trouble talking to my brain right now."))
                 return
+            logger.info("AI stage message_id=%s stage=generation duration_ms=%d model=%s",
+                        message.id, (time.perf_counter() - generation_started) * 1000, "gemini-3.5-flash")
 
             function_calls = getattr(response, "function_calls", ()) or ()
             if function_calls:
+                tool_started = time.perf_counter()
                 for fn_call in function_calls[:2]:
                     fn_name = fn_call.name
                     args = fn_call.args
-                    if fn_name == "search_channel_for_image":
-                        tool_result = await bounded(self._search_channel_for_image(message, parts, **args))
-                    elif fn_name == "search_database_memory":
-                        tool_result = await bounded(self._search_database_memory(message, **args))
-                    else:
-                        tool_result = "Unknown tool call"
+                    try:
+                        if fn_name == "search_channel_for_image":
+                            tool_result = await bounded(self._search_channel_for_image(message, parts, **args), timeout=10)
+                        elif fn_name == "search_database_memory":
+                            tool_result = await bounded(self._search_database_memory(message, **args), timeout=10)
+                        else:
+                            tool_result = "Unknown tool call"
+                    except Exception as error:
+                        logger.warning("AI tool failed message_id=%s tool=%s error=%s",
+                                       message.id, fn_name, type(error).__name__)
+                        tool_result = "The requested tool was unavailable."
                         
                     contents.append(types.Content(
                         role="model",
                         parts=[types.Part.from_function_call(name=fn_name, args=args)]
                     ))
                     contents.append(types.Content(
-                        role="user",
+                        role="tool",
                         parts=[types.Part.from_function_response(name=fn_name, response={"result": tool_result})]
                     ))
                 
+                logger.info("AI stage message_id=%s stage=tools duration_ms=%d count=%d",
+                            message.id, (time.perf_counter() - tool_started) * 1000,
+                            min(len(function_calls), 2))
+                final_config = types.GenerateContentConfig(
+                    system_instruction=prompts.system_instruction(context),
+                    temperature=0.95,
+                    tools=[],
+                )
                 try:
                     response = await bounded(llm.generate_content(
                         model="gemini-3.5-flash", 
                         contents=contents,
-                        config=config
+                        config=final_config
                     ))
                 except Exception as error:
                     logger.warning("Tool follow-up generation failed message_id=%s error=%s",
                                    message.id, type(error).__name__)
-                    await message.reply("Sorry, I had trouble finishing that reply.")
+                    await bounded(message.reply("Sorry, I had trouble finishing that reply."))
                     return
 
             reply_text = getattr(response, 'text', '')
             if not reply_text:
+                await bounded(message.reply("Sorry, I couldn't produce a reply this time."))
                 return
-                
-            self.context_builder.tracker.remember_exchange(message, user_text, reply_text)
             
             # Send paginated
             pages = [reply_text[i:i+2000] for i in range(0, len(reply_text), 2000)]
-            for i, page in enumerate(pages):
-                if i == 0:
-                    await message.reply(page)
-                else:
-                    await message.channel.send(page)
+            send_started = time.perf_counter()
+            try:
+                for i, page in enumerate(pages):
+                    if i == 0:
+                        await bounded(message.reply(page))
+                        self.context_builder.tracker.remember_exchange(message, user_text, reply_text)
+                    else:
+                        await bounded(message.channel.send(page))
+            except Exception as error:
+                logger.warning("AI reply send failed message_id=%s error=%s",
+                               message.id, type(error).__name__)
+                return
+            logger.info("AI stage message_id=%s stage=send duration_ms=%d total_ms=%d",
+                        message.id, (time.perf_counter() - send_started) * 1000,
+                        (time.perf_counter() - request_started) * 1000)

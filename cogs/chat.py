@@ -148,6 +148,11 @@ class Chat(commands.Cog):
             logger.warning("Chat evidence queue full; dropping message_id=%s", message.id)
 
     async def _refresh_runtime_config(self):
+        from ai.llm import llm
+        try:
+            await asyncio.wait_for(llm.ensure_keys(getattr(self.bot, "db", None)), timeout=10)
+        except Exception as error:
+            logger.warning("Gemini configuration refresh failed error=%s", type(error).__name__)
         await self._refresh_memory_channel_id()
         await self.retriever.refresh_cache(self.memory_channel_id)
         db = getattr(self.bot, "db", None)
