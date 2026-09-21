@@ -58,12 +58,15 @@ class Chat(commands.Cog):
 
     def _is_memory_channel(self, message: discord.Message) -> bool:
         """Return whether a message may contribute to long-term AI memory."""
+        channel_id = getattr(message.channel, "id", None)
+        if channel_id in getattr(self, "ignored_memory_channels", []):
+            return False
+
         memory_channel_id = getattr(self, "memory_channel_id", Config.AI_MEMORY_CHANNEL_ID)
-        return bool(
-            memory_channel_id
-            and getattr(message.channel, "id", None) == memory_channel_id
-            and getattr(message, "guild", None) is not None
-        )
+        if memory_channel_id:
+            return channel_id == memory_channel_id
+
+        return getattr(message, "guild", None) is not None
 
     async def _refresh_memory_channel_id(self) -> int:
         """Load the AI memory channel from MongoDB, with an environment fallback."""
@@ -77,22 +80,23 @@ class Chat(commands.Cog):
         config_collection = getattr(getattr(db, "db", None), "config", None) if db else None
         if config_collection is None:
             self.memory_channel_id = fallback
+            self.ignored_memory_channels = []
             return self.memory_channel_id
 
         try:
-            config_doc = await config_collection.find_one(
-                {"_id": "api_keys"}, {"AI_MEMORY_CHANNEL_ID": 1}
-            )
-            if not config_doc or config_doc.get("AI_MEMORY_CHANNEL_ID") in (None, ""):
-                config_doc = await config_collection.find_one(
-                    {"AI_MEMORY_CHANNEL_ID": {"$exists": True}},
-                    {"AI_MEMORY_CHANNEL_ID": 1},
-                )
+            config_doc = await config_collection.find_one({"_id": "api_keys"})
+            if not config_doc or (config_doc.get("AI_MEMORY_CHANNEL_ID") in (None, "") and "AI_IGNORED_MEMORY_CHANNELS" not in config_doc):
+                config_doc = await config_collection.find_one({"AI_MEMORY_CHANNEL_ID": {"$exists": True}})
+                
             raw_channel_id = config_doc.get("AI_MEMORY_CHANNEL_ID") if config_doc else None
             self.memory_channel_id = int(raw_channel_id) if raw_channel_id not in (None, "") else fallback
+            
+            ignored = config_doc.get("AI_IGNORED_MEMORY_CHANNELS", []) if config_doc else []
+            self.ignored_memory_channels = [int(cid) for cid in ignored if cid]
         except Exception as error:
             logger.warning("AI memory channel config lookup failed error=%s", type(error).__name__)
             self.memory_channel_id = fallback
+            self.ignored_memory_channels = []
         return self.memory_channel_id
 
     async def _is_reply_to_bot(self, message: discord.Message) -> bool:
