@@ -73,7 +73,8 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.activity")
         print("Cogs loaded. Syncing commands...")
         
-        asyncio.create_task(start_web_server(self, port=8080))
+        port = int(os.environ.get("PORT", 8080))
+        asyncio.create_task(start_web_server(self, port=port))
         
         self.ping_clips_service.start()
         
