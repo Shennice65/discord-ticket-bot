@@ -30,9 +30,34 @@ from config import Config
 from core.services.server_brain import ServerBrain
 from core.services import chat_prompts
 from core.services.memory_extractor import MemoryExtractor
+import asyncio
 
 
 class ChatContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_embedding_cache_reuses_query_but_isolates_guilds(self):
+        embed = AsyncMock(return_value=[0.1])
+        brain = ServerBrain(SimpleNamespace(), embed)
+        await brain._cached_embedding((1, 2), "who is bot22?")
+        await brain._cached_embedding((1, 2), "who is bot22?")
+        self.assertEqual(embed.await_count, 1)
+        await brain._cached_embedding((3, 2), "who is bot22?")
+        self.assertEqual(embed.await_count, 2)
+
+    async def test_stalled_embedding_is_cancelled(self):
+        async def stalled(_query):
+            await asyncio.Event().wait()
+        brain = ServerBrain(SimpleNamespace(), stalled)
+        brain.EMBEDDING_TIMEOUT = 0.01
+        with self.assertRaises(asyncio.TimeoutError):
+            await brain._cached_embedding((1, 2), "history")
+        self.assertFalse(brain._embedding_cache)
+
+    def test_greetings_skip_memory_but_short_questions_do_not(self):
+        self.assertFalse(ServerBrain.needs_memory("<@123> yo!"))
+        self.assertFalse(ServerBrain.needs_memory("thanks"))
+        self.assertTrue(ServerBrain.needs_memory("who won?"))
+        self.assertTrue(ServerBrain.needs_memory("bot22"))
+
     def setUp(self):
         self.chat = object.__new__(Chat)
 

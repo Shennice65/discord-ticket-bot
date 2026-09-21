@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -73,6 +74,8 @@ class ServerBrain:
     MAX_RECENT = 75
     MAX_SELECTED = 12
     MAX_REPLY_DEPTH = 3
+    LOOKUP_TIMEOUT = 1.0
+    EMBEDDING_TIMEOUT = 1.5
 
     def __init__(self, bot, embed_query, lore_path="lore.txt"):
         self.bot = bot
@@ -81,6 +84,27 @@ class ServerBrain:
         self.recent_messages = OrderedDict()
         self._seeded = set()
         self._exchanges = OrderedDict()
+        self._embedding_cache = OrderedDict()
+
+    @staticmethod
+    def needs_memory(content):
+        text = re.sub(r"<@!?\d+>", "", content).strip().casefold()
+        text = re.sub(r"[^\w\s]", "", text).strip()
+        return text not in {"", "hi", "hey", "hello", "yo", "sup", "thanks", "thank you", "ok", "lol", "stfu"}
+
+    async def _cached_embedding(self, scope, query):
+        key = (*scope, query)
+        cached = self._embedding_cache.get(key)
+        if cached and time.monotonic() - cached[0] < 300:
+            self._embedding_cache.move_to_end(key)
+            return cached[1]
+        embedding = await asyncio.wait_for(self.embed_query(query), self.EMBEDDING_TIMEOUT)
+        if embedding:
+            self._embedding_cache[key] = (time.monotonic(), embedding)
+            self._embedding_cache.move_to_end(key)
+            while len(self._embedding_cache) > 128:
+                self._embedding_cache.popitem(last=False)
+        return embedding
 
     def _remember(self, item):
         bucket = self.recent_messages.setdefault(item.scope, OrderedDict())
@@ -128,7 +152,7 @@ class ServerBrain:
         resolved = getattr(reference, "resolved", None)
         if resolved is None:
             try:
-                resolved = await message.channel.fetch_message(parent_id)
+                resolved = await asyncio.wait_for(message.channel.fetch_message(parent_id), self.LOOKUP_TIMEOUT)
             except Exception as error:
                 logger.debug("Reply parent unavailable channel=%s error=%s", scope[1], type(error).__name__)
                 return None
@@ -154,7 +178,7 @@ class ServerBrain:
             ancestor = self.recent_messages.get(scope, {}).get(parent.reply_to)
             if ancestor is None:
                 try:
-                    fetched = await message.channel.fetch_message(parent.reply_to)
+                    fetched = await asyncio.wait_for(message.channel.fetch_message(parent.reply_to), self.LOOKUP_TIMEOUT)
                     if (getattr(fetched.guild, "id", None), fetched.channel.id) != scope:
                         break
                     ancestor = ContextMessage.from_message(fetched)
@@ -217,7 +241,7 @@ class ServerBrain:
             return None
         target = next((user for user in message.mentions if user.id != self.bot.user.id), message.author)
         try:
-            rank = await self.bot.db.get_player_rank(target.id)
+            rank = await asyncio.wait_for(self.bot.db.get_player_rank(target.id), self.LOOKUP_TIMEOUT)
             rank = rank.strip() if isinstance(rank, str) and rank.strip() else "Unranked"
         except Exception as error:
             logger.warning("Rank lookup unavailable error=%s", type(error).__name__)
@@ -236,7 +260,11 @@ class ServerBrain:
     async def build_context(self, message, *, memory_channel_id=0):
         current = ContextMessage.from_message(message)
         self.observe(message)
-        await self._seed_recent(message, current)
+        if self.needs_memory(current.content):
+            try:
+                await asyncio.wait_for(self._seed_recent(message, current), self.LOOKUP_TIMEOUT)
+            except asyncio.TimeoutError:
+                self._seeded.discard(current.scope)
         chain = await self._reply_chain(message)
         recent = self._select_recent(current, chain)
         guild = message.guild
@@ -263,19 +291,19 @@ class ServerBrain:
             pass
         except OSError as error:
             logger.warning("Curated lore unavailable error=%s", type(error).__name__)
-        if current.guild_id is not None and memory_channel_id:
+        if current.guild_id is not None and memory_channel_id and self.needs_memory(current.content):
             # Search approved general-channel memories while keeping the
             # current guild boundary. Short follow-ups include their parent.
             query = "\n".join([*(item.content[:500] for item in reversed(chain)), current.content])[:3500]
             try:
-                context.query_embedding = await self.embed_query(query) if query.strip() else None
+                context.query_embedding = await self._cached_embedding(current.scope, query) if query.strip() else None
             except Exception as error:
                 logger.warning("Embedding unavailable; using keyword retrieval error=%s", type(error).__name__)
             try:
-                context.memories = await self.bot.db.get_chat_context_memories(
+                context.memories = await asyncio.wait_for(self.bot.db.get_chat_context_memories(
                     current.guild_id, current.channel_id, query, context.query_embedding,
                     source_channel_id=memory_channel_id,
-                )
+                ), self.LOOKUP_TIMEOUT)
             except Exception as error:
                 logger.warning("Memory retrieval unavailable error=%s", type(error).__name__)
         logger.debug("Context channel=%s parents=%s recent=%s memories=%s", current.channel_id,
