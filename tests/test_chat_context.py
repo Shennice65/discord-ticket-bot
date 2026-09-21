@@ -316,6 +316,14 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         result = await router._search_database_memory(requester, "Polos")
         self.assertIn("No database lore", result)
 
+    def test_cached_memory_avoids_database_tool(self):
+        bot = SimpleNamespace(user=SimpleNamespace(id=1))
+        builder = SimpleNamespace(retriever=SimpleNamespace(_memory_cache_channel_id=20))
+        router = AIRouter(bot, builder)
+        message = make_message(content="who is Polos?")
+        context = SimpleNamespace(memories=[{"summary": "Polos community fact"}])
+        self.assertFalse(router._needs_memory_lookup(message, context))
+
     async def test_normal_triggered_reply_uses_one_generation_without_key_or_tool_calls(self):
         bot_user = SimpleNamespace(id=1, display_name="Atlas", name="Atlas")
         bot = SimpleNamespace(user=bot_user)
@@ -339,7 +347,10 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
             verified_rank=None, curated_lore="", identity_correction=None,
         )
-        builder = SimpleNamespace(tracker=tracker, build=AsyncMock(return_value=context))
+        builder = SimpleNamespace(
+            tracker=tracker, retriever=SimpleNamespace(_memory_cache_channel_id=20),
+            build=AsyncMock(return_value=context),
+        )
         router = AIRouter(bot, builder)
         fake_llm = SimpleNamespace(
             client=object(),
@@ -376,7 +387,10 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
             verified_rank=None, curated_lore="", identity_correction=None,
         )
-        builder = SimpleNamespace(tracker=tracker, build=AsyncMock(return_value=context))
+        builder = SimpleNamespace(
+            tracker=tracker, retriever=SimpleNamespace(_memory_cache_channel_id=20),
+            build=AsyncMock(return_value=context),
+        )
         router = AIRouter(bot, builder)
         responses = [
             SimpleNamespace(text="", function_calls=[SimpleNamespace(

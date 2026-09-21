@@ -24,6 +24,56 @@ class AIRouter:
             return False
         bot_name = (getattr(self.bot.user, "display_name", "") or getattr(self.bot.user, "name", "")).lower()
         return any(token in content for token in ("bot", bot_name) if token)
+
+    @staticmethod
+    def _is_image_request(content):
+        return bool(re.search(
+            r"\b(?:image|picture|pic|photo|screenshot)\b|\blook\s+like\b|\bshow\s+me\b",
+            (content or "").casefold(),
+        ))
+
+    def _needs_memory_lookup(self, message, context):
+        """Offer the slower DB fallback only for explicit fact questions on a cache miss."""
+        if message.guild is None or getattr(context, "memories", None):
+            return False
+        retriever = getattr(self.context_builder, "retriever", None)
+        if not getattr(retriever, "_memory_cache_channel_id", None):
+            return False
+        content = (message.content or "").casefold()
+        return bool(re.search(
+            r"\b(?:who\s+(?:is|was)|who\s+\w{2,}\s+is|what\s+do\s+you\s+know\s+about|"
+            r"tell\s+me\s+about|what\s+happened\s+to|why\s+is)\b",
+            content,
+        ))
+
+    @staticmethod
+    def _tool_declarations(include_image, include_memory):
+        declarations = []
+        if include_image:
+            declarations.append(types.FunctionDeclaration(
+                name="search_channel_for_image",
+                description="Find a recent image in a channel the requester can view.",
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "channel_name": {"type": "string"},
+                        "keyword": {"type": "string"},
+                        "username": {"type": "string"},
+                    },
+                    "required": ["channel_name"],
+                },
+            ))
+        if include_memory:
+            declarations.append(types.FunctionDeclaration(
+                name="search_database_memory",
+                description="Find a specific scoped community fact for a named member.",
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            ))
+        return [types.Tool(function_declarations=declarations)] if declarations else []
         
     async def _is_reply_to_bot(self, message):
         parent = await self.context_builder.tracker.resolve_reply_parent(message)
@@ -223,36 +273,18 @@ class AIRouter:
             parts.insert(0, types.Part.from_text(text=prompts.context_text(context)))
             contents.append(types.Content(role="user", parts=parts))
             
-            tool_list = [types.Tool(function_declarations=[
-                types.FunctionDeclaration(
-                    name="search_channel_for_image",
-                    description="Find a recent image in a channel the requester can view.",
-                    parameters_json_schema={
-                        "type": "object",
-                        "properties": {
-                            "channel_name": {"type": "string"},
-                            "keyword": {"type": "string"},
-                            "username": {"type": "string"},
-                        },
-                        "required": ["channel_name"],
-                    },
-                ),
-                types.FunctionDeclaration(
-                    name="search_database_memory",
-                    description="Find a specific scoped community fact for a named member.",
-                    parameters_json_schema={
-                        "type": "object",
-                        "properties": {"name": {"type": "string"}},
-                        "required": ["name"],
-                    },
-                ),
-            ])]
-            config = types.GenerateContentConfig(
-                system_instruction=prompts.system_instruction(context),
-                temperature=0.95,
-                tools=tool_list,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            tool_list = self._tool_declarations(
+                self._is_image_request(user_text),
+                self._needs_memory_lookup(message, context),
             )
+            config_kwargs = {
+                "system_instruction": prompts.system_instruction(context),
+                "temperature": 0.95,
+                "tools": tool_list,
+            }
+            if tool_list:
+                config_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
+            config = types.GenerateContentConfig(**config_kwargs)
             generation_started = time.perf_counter()
             try:
                 response = await bounded(llm.generate_content(
