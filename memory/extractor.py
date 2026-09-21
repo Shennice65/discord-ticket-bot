@@ -64,7 +64,7 @@ class MemoryExtractor:
             "A single supporting message must have confidence <= 0.35.\n\nEVIDENCE:\n" + evidence
         )
         try:
-            response = await llm.generate_content(model="gemini-1.5-flash", contents=prompt)
+            response = await llm.generate_content(model="gemini-3.5-flash", contents=prompt)
             return self._parse(getattr(response, "text", ""))
         except Exception as error:
             logger.warning("Memory extraction unavailable error=%s", type(error).__name__)

@@ -217,7 +217,7 @@ class Chat(commands.Cog):
             
         models_to_try = []
         if method_name == 'generate_content':
-            models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-8b']
+            models_to_try = ['gemini-3.5-flash', 'gemini-3.5-flash-lite']
             if 'model' in kwargs:
                 # Enforce explicit model override.
                 models_to_try = [kwargs['model']]
@@ -472,7 +472,7 @@ class Chat(commands.Cog):
                     
                     # Execute summarization prompt.
                     summary_response = await llm.generate_content(
-                        model='gemini-1.5-flash',
+                        model='gemini-3.5-flash',
                         contents=prompt
                     )
                     summary_text = getattr(summary_response, "text", "").strip()

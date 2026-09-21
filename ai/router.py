@@ -188,7 +188,7 @@ class AIRouter:
             
             try:
                 response = await llm.generate_content(
-                    model="gemini-1.5-flash-8b", 
+                    model="gemini-3.5-flash", 
                     contents=contents,
                     config=config
                 )
@@ -218,7 +218,7 @@ class AIRouter:
                 
                 try:
                     response = await llm.generate_content(
-                        model="gemini-1.5-flash-8b", 
+                        model="gemini-3.5-flash", 
                         contents=contents,
                         config=config
                     )

@@ -11,7 +11,13 @@ logger = logging.getLogger(__name__)
 class GeminiLLM:
     def __init__(self):
         self.api_keys = [k for k in Config.GEMINI_API_KEYS if k and k != "your_gemini_api_key_here"]
-        self.clients = [genai.Client(api_key=key) for key in self.api_keys]
+        self.clients = []
+        for key in self.api_keys:
+            if not key.startswith("AIza"):
+                self.clients.append(genai.Client(api_key="dummy", http_options=types.HttpOptions(headers={"x-goog-api-key": key})))
+            else:
+                self.clients.append(genai.Client(api_key=key))
+        print(f"[DEBUG] Loaded API keys from env/config: {self.api_keys}")
         self.current_client_index = 0
 
     @property
@@ -41,7 +47,12 @@ class GeminiLLM:
                 api_keys = [k.strip().strip("'\"") for k in raw_keys.split(',')] if raw_keys else []
                 api_keys = [k for k in api_keys if k]
                 if api_keys:
-                    self.clients = [genai.Client(api_key=key) for key in api_keys]
+                    self.clients = []
+                    for key in api_keys:
+                        if not key.startswith("AIza"):
+                            self.clients.append(genai.Client(api_key="dummy", http_options=types.HttpOptions(headers={"x-goog-api-key": key})))
+                        else:
+                            self.clients.append(genai.Client(api_key=key))
                     self.current_client_index = 0
                     return True
         except Exception as e:
