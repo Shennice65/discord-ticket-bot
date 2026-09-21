@@ -331,9 +331,8 @@ class Chat(commands.Cog):
         except:
             pass # Ignore if we don't have delete permissions
 
-        memory_channel_id = await self._refresh_memory_channel_id()
-        if not memory_channel_id or ctx.channel.id != memory_channel_id:
-            await ctx.author.send("Lore sync is limited to the configured general chat channel.")
+        if not await self._is_memory_channel(ctx.channel):
+            await ctx.author.send("Lore sync cannot be run in this channel because it is an ignored AI memory channel.")
             return
             
         if not getattr(self.bot, 'db', None) or getattr(self.bot.db, 'chat_memory', None) is None:
