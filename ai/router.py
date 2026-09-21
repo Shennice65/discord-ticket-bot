@@ -286,13 +286,14 @@ class AIRouter:
                                        message.id, fn_name, type(error).__name__)
                         tool_result = "The requested tool was unavailable."
                         
+                    # Feed the result back as bounded labeled context. This keeps
+                    # the final request tool-free and works across SDK versions
+                    # that differ in function-response role validation.
                     contents.append(types.Content(
-                        role="model",
-                        parts=[types.Part.from_function_call(name=fn_name, args=args)]
-                    ))
-                    contents.append(types.Content(
-                        role="tool",
-                        parts=[types.Part.from_function_response(name=fn_name, response={"result": tool_result})]
+                        role="user",
+                        parts=[types.Part.from_text(
+                            text=f"TOOL_RESULT name={fn_name}\n{str(tool_result)[:4000]}"
+                        )]
                     ))
                 
                 logger.info("AI stage message_id=%s stage=tools duration_ms=%d count=%d",
