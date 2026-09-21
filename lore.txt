@@ -1,6 +1,0 @@
---- SERVER LORE & KNOWLEDGE ---
-- Current Season: Asian Timebomb League (ATL) Season 8
-- Active Teams: Cataclysm, Cherrybomb, Merleura, Nexus, Senpai, Toaster, Xblaze
-- Ranks: Phantom, Champion, Elite, Legend, Masters, Novice
-- Rules: Do not be toxic, no spamming.
-- You can add more facts here! The bot will read this file on startup.
