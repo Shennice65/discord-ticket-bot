@@ -248,7 +248,10 @@ class Chat(commands.Cog):
         is_reply_to_bot = await self._is_reply_to_bot(message)
         is_direct_question = self._is_direct_question(message)
         
-        if not is_dm:
+        # Direct interactions are allowed in any channel the bot can read.
+        # Only unaddressed public traffic is subject to the member-role gate.
+        is_direct_interaction = bot_mentioned or is_reply_to_bot or is_direct_question
+        if not is_dm and not is_direct_interaction:
             # Validate channel visibility constraints.
             member_role_id = Config.MEMBER_ROLE_ID
             if not member_role_id and getattr(self.bot, 'db', None):
