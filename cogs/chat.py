@@ -486,11 +486,52 @@ class Chat(commands.Cog):
                                                 match = False
                                         
                                         if match:
-                                            return f"Success! Found image: {att.url}"
+                                            import aiohttp
+                                            async with aiohttp.ClientSession() as session:
+                                                async with session.get(att.url) as resp:
+                                                    if resp.status == 200:
+                                                        image_data = await resp.read()
+                                                        parts.append(
+                                                            types.Part.from_bytes(data=image_data, mime_type=att.content_type)
+                                                        )
+                                            return f"Success! The image from {att.url} has been attached to your vision context. You can now see it."
                         
                         return "Failure: No matching image found in the last 500 messages."
                     except Exception as e:
                         return f"Error searching channel: {str(e)}"
+
+                async def search_database_memory(keyword: str) -> str:
+                    """Searches the bot's long-term database memory for lore, jokes, and facts about a specific person or topic."""
+                    if not getattr(self.bot, "db", None) or getattr(self.bot.db, "chat_memory", None) is None:
+                        return "Error: Database not connected."
+                    
+                    try:
+                        cursor = self.bot.db.chat_memory.find(
+                            {
+                                "guild_id": message.guild.id,
+                                "$or": [
+                                    {"user_text": {"$regex": keyword, "$options": "i"}},
+                                    {"bot_reply": {"$regex": keyword, "$options": "i"}},
+                                    {"summary": {"$regex": keyword, "$options": "i"}},
+                                    {"associated_users": {"$regex": keyword, "$options": "i"}}
+                                ]
+                            }
+                        ).sort("timestamp", -1).limit(5)
+                        
+                        records = await cursor.to_list(length=5)
+                        if not records:
+                            return f"No memory records found for '{keyword}'."
+                            
+                        results = []
+                        for record in records:
+                            if record.get("is_summary"):
+                                results.append(f"Summary: {record.get('bot_reply')}")
+                            else:
+                                results.append(f"User: {record.get('user_text')}\nBot: {record.get('bot_reply')}")
+                                
+                        return f"Found memory records for '{keyword}':\n\n" + "\n---\n".join(results)
+                    except Exception as e:
+                        return f"Error searching memory: {str(e)}"
                 
                 # Execute primary API call with configured tools and dynamic context.
                 generation_started = time.perf_counter()
@@ -500,7 +541,7 @@ class Chat(commands.Cog):
                         contents=contents,
                         config=types.GenerateContentConfig(
                             system_instruction=dynamic_system_instruction,
-                            tools=[search_channel_for_image],
+                            tools=[search_channel_for_image, search_database_memory],
                             temperature=0.95
                         )
                     ),
