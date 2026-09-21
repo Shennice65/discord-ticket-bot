@@ -38,9 +38,10 @@ class GeminiLLM:
             config_doc = await db.db.config.find_one({"_id": "api_keys"})
             if config_doc and config_doc.get("GEMINI_API_KEY"):
                 raw_keys = config_doc.get("GEMINI_API_KEY", "")
-                api_keys = [k.strip() for k in raw_keys.split(',')] if raw_keys else []
+                api_keys = [k.strip().strip("'\"") for k in raw_keys.split(',')] if raw_keys else []
+                api_keys = [k for k in api_keys if k]
                 if api_keys:
-                    self.clients = [genai.Client(api_key=key) for key in api_keys if key]
+                    self.clients = [genai.Client(api_key=key) for key in api_keys]
                     self.current_client_index = 0
                     return True
         except Exception as e:
