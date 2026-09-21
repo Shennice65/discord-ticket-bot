@@ -10,4 +10,24 @@ Run these checks after deploying a new AI build:
 6. Ask about an image in a channel the requester cannot view. The bot must reject the search without reading that channel's history.
 7. Temporarily make Gemini unavailable. The bot should send one short failure response and stop typing instead of hanging.
 
+8. Ask for a current rank, player history, leaderboard, ticket history, server rules, lore, and clips. The bot should use read-only tools and never mutate server or database state.
+
+9. Trigger a tool-call failure or an unavailable tool. The bot should explain that the lookup is unavailable and still finish the response without exposing provider or database details.
+
+10. Gemini mode uses the Python agent runner. If OpenRouter is enabled later,
+install `agent-sidecar` dependencies and verify that stopping the sidecar
+transparently falls back to the same Python tool pipeline.
+
+11. Verify the reset utility in a test database with
+`python scripts/reset_ai_memory.py --confirm-ai-reset`. It may delete only
+`chat_memory`, `chat_messages`, and `pending_lore`; ranking, ticket, betting,
+clip, settings, and Discord-message data must remain unchanged.
+
+The sidecar setup is:
+
+```text
+cd agent-sidecar
+npm install
+```
+
 Check logs for stage durations and message IDs only. They must not contain message content or API keys.

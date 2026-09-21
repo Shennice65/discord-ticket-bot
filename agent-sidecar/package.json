@@ -1,0 +1,13 @@
+{
+  "name": "atl-agent-sidecar",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Archimedes-style bounded OpenRouter agent runtime for the Discord bot",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -114,11 +114,8 @@ class Chat(commands.Cog):
         return any(token in content for token in ("bot", bot_name) if token)
 
     async def _embed_query(self, text):
-        response = await self._api_call_with_fallback(
-            'embed_content', model='gemini-embedding-2', contents=text,
-            config=types.EmbedContentConfig(output_dimensionality=256),
-        )
-        return list(response.embeddings[0].values) if response.embeddings else None
+        embeddings = await self._api_call_with_fallback('embed_content', contents=[text])
+        return embeddings[0] if embeddings else None
 
     async def _record_message_evidence(self, message: discord.Message) -> None:
         """Queue raw general-channel evidence without blocking the reply path."""
@@ -158,7 +155,7 @@ class Chat(commands.Cog):
         try:
             await asyncio.wait_for(llm.ensure_keys(getattr(self.bot, "db", None)), timeout=10)
         except Exception as error:
-            logger.warning("Gemini configuration refresh failed error=%s", type(error).__name__)
+            logger.warning("OpenRouter configuration refresh failed error=%s", type(error).__name__)
         await self._refresh_memory_channel_id()
         await self.retriever.refresh_cache()
         db = getattr(self.bot, "db", None)
@@ -220,44 +217,14 @@ class Chat(commands.Cog):
                     break
 
     async def _api_call_with_fallback(self, method_name, **kwargs):
-        """Calls a Gemini API method with fallback and key rotation asynchronously."""
-        if not getattr(self, 'clients', None):
-            if getattr(self, 'client', None):
-                # Seed client list from dynamically loaded DB configuration.
-                self.clients = [self.client]
-                self.current_client_index = 0
-            else:
-                raise ValueError("No API keys configured.")
-            
-        models_to_try = []
+        """Compatibility bridge for the remaining background memory jobs."""
+        from ai.llm import llm
+        if method_name == 'embed_content':
+            return await llm.embed(kwargs.get('contents') or [])
         if method_name == 'generate_content':
-            models_to_try = ['gemini-3.5-flash', 'gemini-3.5-flash-lite']
-            if 'model' in kwargs:
-                # Enforce explicit model override.
-                models_to_try = [kwargs['model']]
-        elif method_name == 'embed_content':
-            models_to_try = ['gemini-embedding-2']
-            if 'model' in kwargs:
-                models_to_try = [kwargs['model']]
-            
-        for model_name in models_to_try:
-            kwargs['model'] = model_name
-            attempts = 0
-            while attempts < len(self.clients):
-                client = self.clients[self.current_client_index]
-                method = getattr(client.aio.models, method_name)
-                try:
-                    return await asyncio.wait_for(method(**kwargs), timeout=15)
-                except Exception as e:
-                    logger.warning("Gemini fallback failed model=%s key_index=%s error=%s",
-                                   model_name, self.current_client_index, type(e).__name__)
-                    # If it's a quota issue, 503, 401, 403, 404, or 400, rotate to next key or next model
-                    self.current_client_index = (self.current_client_index + 1) % len(self.clients)
-                    attempts += 1
-                    continue
-            logger.warning("Gemini fallback model exhausted model=%s", model_name)
-            
-        raise Exception(f"All API keys and fallback models exhausted their quotas for {method_name}!")
+            response = await llm.generate([{"role": "user", "content": kwargs.get('contents', '')}])
+            return response
+        raise ValueError(f"Unsupported AI method: {method_name}")
 
     @app_commands.command(name="toggleaichat", description="[Admin] Toggle the AI chat feature on or off globally.")
     @app_commands.default_permissions(administrator=True)
@@ -342,10 +309,10 @@ class Chat(commands.Cog):
         from ai.llm import llm
         await llm.ensure_keys(getattr(self.bot, 'db', None))
         if not llm.client:
-            await ctx.author.send("Gemini API not connected!")
+            await ctx.author.send("OpenRouter API not connected!")
             return
             
-        msg = await ctx.author.send(f"Fetching last {amount} messages from <#{ctx.channel.id}> to sync lore... This might take a couple minutes to avoid hitting Google's rate limits.")
+        msg = await ctx.author.send(f"Fetching last {amount} messages from <#{ctx.channel.id}> to sync lore... This might take a couple minutes to avoid hitting provider limits.")
         
         valid_messages = []
         
@@ -376,7 +343,7 @@ class Chat(commands.Cog):
             await msg.edit(content="No valid messages found to sync.")
             return
             
-        await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in small, safe batches of 10 to avoid Google's limits (this will take a few minutes)...")
+        await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in small, safe batches of 10 to avoid provider limits (this will take a few minutes)...")
         
         # Process conversation chunks through the same extractor used by live learning.
         batch_size = 25
@@ -437,7 +404,6 @@ class Chat(commands.Cog):
     async def lore_compressor(self):
         """Safely aggregate structured memories older than seven days."""
         from ai.llm import llm
-        from google.genai import types
         await llm.ensure_keys(getattr(self.bot, 'db', None))
         if not llm.client or getattr(self.bot, 'db', None) is None:
             return
@@ -491,25 +457,20 @@ class Chat(commands.Cog):
                         f"CHAT LOG:\n{chat_log}"
                     )
                     
-                    summary_response = await llm.generate_content(
-                        model='gemini-3.5-flash',
-                        contents=prompt
-                    )
+                    summary_response = await llm.generate_content(contents=prompt)
                     summary_text = getattr(summary_response, "text", "").strip()
                     if not summary_text:
                         continue
                     
-                    emb_response = await asyncio.wait_for(
-                        llm.client.aio.models.embed_content(
-                            model='gemini-embedding-2',
-                            contents=summary_text,
-                            config=types.EmbedContentConfig(output_dimensionality=256)
-                        ),
-                        timeout=15,
-                    )
-                    
-                    if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                        embedding_vector = list(emb_response.embeddings[0].values)
+                    if hasattr(llm, "embed"):
+                        embeddings = await llm.embed([summary_text])
+                        embedding_vector = embeddings[0] if embeddings else None
+                    else:
+                        emb_response = await llm.client.aio.models.embed_content(
+                            model="legacy", contents=[summary_text], config=None
+                        )
+                        embedding_vector = list(emb_response.embeddings[0].values) if emb_response.embeddings else None
+                    if embedding_vector:
                         
                         source_key = hashlib.sha256("|".join(source_ids).encode()).hexdigest()[:32]
                         source_first_seen = min(

@@ -1,0 +1,245 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _json_value(value):
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items() if key != "_id"}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _tool(name, description, properties, required=()):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": list(required),
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+class ReadOnlyToolRegistry:
+    """Local, permission-aware tools exposed to the OpenRouter agent."""
+
+    def __init__(self, bot, context_builder):
+        self.bot = bot
+        self.context_builder = context_builder
+        self.plugin_tools = {
+            name: value for name, value in getattr(getattr(bot, "plugin_registry", None), "tools", {}).items()
+            if value.get("read_only", False)
+        }
+        self._definitions = [
+            _tool(
+                "get_player_rank",
+                "Read the authoritative current rank and Discord display name for a user. Never treat the rank label as the person's name.",
+                {"user_id": {"type": "integer", "description": "Discord user ID"}},
+                ("user_id",),
+            ),
+            _tool(
+                "get_player_history",
+                "Read a player's recent ranked and personal-observation history.",
+                {
+                    "user_id": {"type": "integer", "description": "Discord user ID"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                ("user_id",),
+            ),
+            _tool(
+                "get_leaderboard",
+                "Read the current authoritative player ladder, including each player's Discord display name and rank.",
+                {"limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+            ),
+            _tool(
+                "get_recent_tickets",
+                "Read recent closed or active tickets for a Discord user.",
+                {
+                    "user_id": {"type": "integer", "description": "Discord user ID"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                ("user_id",),
+            ),
+            _tool(
+                "get_server_rules",
+                "Return the authoritative rules and workflows for this Discord server.",
+                {},
+            ),
+            _tool(
+                "search_server_lore",
+                "Search scoped community memories relevant to the current Discord channel.",
+                {"query": {"type": "string", "minLength": 1, "maxLength": 200}},
+                ("query",),
+            ),
+            _tool(
+                "search_clips",
+                "Read clips saved by a Discord user.",
+                {"user_id": {"type": "integer", "description": "Discord user ID"}},
+                ("user_id",),
+            ),
+        ]
+        self._definitions.extend(
+            value["definition"] for value in self.plugin_tools.values()
+        )
+
+    @property
+    def definitions(self):
+        return list(self._definitions)
+
+    async def execute(self, name, arguments, message, context):
+        handlers = {
+            "get_player_rank": self._get_player_rank,
+            "get_player_history": self._get_player_history,
+            "get_leaderboard": self._get_leaderboard,
+            "get_recent_tickets": self._get_recent_tickets,
+            "get_server_rules": self._get_server_rules,
+            "search_server_lore": self._search_server_lore,
+            "search_clips": self._search_clips,
+        }
+        if name in self.plugin_tools:
+            handler = self.plugin_tools[name]["handler"]
+            try:
+                return _json_value(await handler(arguments or {}, message, context))
+            except Exception as error:
+                logger.warning("Plugin AI tool failed tool=%s error=%s", name, type(error).__name__)
+                return {"error": "The requested plugin lookup is temporarily unavailable."}
+        handler = handlers.get(name)
+        if handler is None:
+            return {"error": "Unknown or disabled tool."}
+        try:
+            result = await handler(arguments or {}, message, context)
+            return _json_value(result)
+        except Exception as error:
+            logger.warning("Read-only AI tool failed tool=%s error=%s", name, type(error).__name__)
+            return {"error": "The requested server lookup is temporarily unavailable."}
+
+    async def _get_player_rank(self, args, message, _context):
+        user_id = int(args["user_id"])
+        rank = await self.bot.db.get_player_rank(user_id)
+        member = message.guild.get_member(user_id) if getattr(message, "guild", None) else None
+        player_name = (
+            getattr(member, "display_name", None)
+            or getattr(member, "name", None)
+            or f"Discord user {user_id}"
+        )
+        return {
+            "user_id": user_id,
+            "player_name": player_name,
+            "player_mention": f"<@{user_id}>",
+            "rank": rank or "Unranked",
+        }
+
+    async def _get_player_history(self, args, message, _context):
+        user_id = int(args["user_id"])
+        member = message.guild.get_member(user_id) if message.guild else None
+        user_name = getattr(member, "display_name", "")
+        limit = max(1, min(int(args.get("limit", 5)), 10))
+        history = await self.bot.db.get_user_history(user_id, user_name, limit=limit)
+        return {
+            "user_id": user_id,
+            "ranked": history.get("ranked", [])[:limit],
+            "observations": history.get("observations", [])[:limit],
+        }
+
+    async def _get_leaderboard(self, args, message, _context):
+        limit = max(1, min(int(args.get("limit", 10)), 20))
+        players = await self.bot.db.get_all_player_ranks()
+        from utils.ladder_utils import get_sort_key
+
+        ranked = [
+            player for player in players
+            if get_sort_key(player.get("rank", ""))[0] != 99
+        ]
+        ranked.sort(key=lambda player: get_sort_key(player.get("rank", "")))
+        guild = getattr(message, "guild", None)
+
+        def display_name(player):
+            user_id = player.get("user_id")
+            member = None
+            if guild and user_id is not None:
+                try:
+                    member = guild.get_member(int(user_id))
+                except (TypeError, ValueError):
+                    pass
+            return (
+                getattr(member, "display_name", None)
+                or player.get("name")
+                or f"Discord user {user_id}"
+            )
+
+        return {
+            "players": [
+                {
+                    "user_id": player.get("user_id"),
+                    "player_name": display_name(player),
+                    "player_mention": f"<@{player.get('user_id')}>" if player.get("user_id") else None,
+                    "rank": player.get("rank", ""),
+                }
+                for player in ranked[:limit]
+            ]
+        }
+
+    async def _get_recent_tickets(self, args, message, _context):
+        user_id = int(args["user_id"])
+        limit = max(1, min(int(args.get("limit", 5)), 10))
+        query = {"$or": [{"user_id": user_id}, {"opponent_id": user_id}]}
+        if not message.guild or not getattr(self.bot.db, "tickets", None):
+            return {"tickets": []}
+        cursor = self.bot.db.tickets.find(query).sort("created_at", -1).limit(limit)
+        tickets = await cursor.to_list(length=limit)
+        return {"tickets": tickets}
+
+    async def _get_server_rules(self, _args, _message, _context):
+        return {
+            "game": "Timebomb Duels",
+            "workflows": [
+                "Ranked 1v1 requests go through the Ranked 1v1 ticket.",
+                "Personal observations go through the Personal Observation ticket.",
+                "Observers spectate matches and record official results and rank changes.",
+                "Current rank answers must come from the player-rank database.",
+            ],
+            "constraint": "When authoritative data is unavailable, say that it could not be verified.",
+        }
+
+    async def _search_server_lore(self, args, message, context):
+        query = str(args.get("query", "")).casefold().strip()
+        current = context.current
+        records = self.context_builder.retriever.memory_cache.get(current.guild_id, [])
+        if not records:
+            return {"memories": []}
+        channel_id = getattr(message.channel, "id", None)
+        words = {word for word in query.split() if len(word) >= 3}
+        matches = []
+        for record in records:
+            if record.get("channel_id") not in (None, channel_id):
+                continue
+            searchable = " ".join(str(record.get(field, "")) for field in (
+                "summary", "memory_key", "associated_users"
+            )).casefold()
+            if words and not any(word in searchable for word in words):
+                continue
+            matches.append(record)
+        matches.sort(
+            key=lambda record: (
+                float(record.get("importance", 0) or 0),
+                float(record.get("confidence", 0) or 0),
+            ),
+            reverse=True,
+        )
+        return {"memories": matches[:5]}
+
+    async def _search_clips(self, args, _message, _context):
+        user_id = int(args["user_id"])
+        clips = await self.bot.db.get_user_clips(user_id)
+        return {"user_id": user_id, "clips": clips[:10]}

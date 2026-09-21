@@ -3,6 +3,7 @@ import logging
 import math
 from memory.memory_service import MemoryService
 from ai.llm import llm
+from framework.memory import MemoryScope
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,15 @@ class MemoryRetriever:
             return []
             
         guild_id = current_msg.guild_id
-        records = self.memory_cache.get(guild_id, [])
+        scope = MemoryScope(
+            guild_id,
+            getattr(current_msg, "channel_id", None) or self._memory_cache_channel_id,
+            getattr(current_msg, "author_id", None),
+        )
+        records = [
+            record for record in self.memory_cache.get(guild_id, [])
+            if scope.matches_record(record)
+        ]
         if not records:
             return []
             
@@ -102,13 +111,7 @@ class MemoryRetriever:
             
             if len(query) > 5:
                 try:
-                    from google.genai import types
-                    response = await llm.embed_content(
-                        model="gemini-embedding-2", 
-                        contents=[query],
-                        config=types.EmbedContentConfig(output_dimensionality=256)
-                    )
-                    embeddings = [list(item.values) for item in getattr(response, "embeddings", ())]
+                    embeddings = await llm.embed([query])
                     if embeddings:
                         query_vec = embeddings[0]
                         for record in records:

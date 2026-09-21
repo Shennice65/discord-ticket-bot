@@ -1,23 +1,39 @@
 import asyncio
+import json
 import logging
-import time
 import random
 import re
-import aiohttp
-from google.genai import types
+import time
 
-from ai.llm import llm
 from ai import prompts
+from ai.llm import GenerationResult, ToolCall, llm
+from ai.sidecar import AgentSidecarBridge
+from ai.tools import ReadOnlyToolRegistry
 from context.context_builder import ContextBuilder
+from config import Config
+from framework.approvals import ApprovalManager
+from framework.audit import record_agent_event
+from framework.pipeline import ToolExecutionPipeline
 
 logger = logging.getLogger(__name__)
 
+
 class AIRouter:
+    MAX_TOOL_ROUNDS = 4
+
     def __init__(self, bot, context_builder: ContextBuilder):
         self.bot = bot
         self.context_builder = context_builder
         self.user_cooldowns = {}
-        
+        self._concurrency_limit = asyncio.Semaphore(3)
+        self.tools = ReadOnlyToolRegistry(bot, context_builder)
+        self.pipeline = ToolExecutionPipeline(
+            self.tools,
+            bot,
+            approvals=ApprovalManager(getattr(Config, "AGENT_APPROVAL_TOOLS", ())),
+        )
+        self.sidecar = AgentSidecarBridge(bot)
+
     def _is_direct_question(self, content):
         content = (content or "").strip().lower()
         if "?" not in content:
@@ -32,15 +48,43 @@ class AIRouter:
             (content or "").casefold(),
         ))
 
+    @staticmethod
+    def _should_offer_tools(content):
+        """Keep casual conversation out of the retrieval/tool path."""
+        return bool(re.search(
+            r"\b(rank|history|leaderboard|ticket|rule|lore|clip|image|picture|photo|server|player|"
+            r"recent|match|bet)\b",
+            (content or "").casefold(),
+        ))
 
     @staticmethod
-    def _tool_declarations(include_image, include_memory):
-        declarations = []
-        if include_image:
-            declarations.append(types.FunctionDeclaration(
-                name="search_channel_for_image",
-                description="Find a recent image in a channel the requester can view.",
-                parameters_json_schema={
+    def _apply_tool_mentions(text, mention_sources):
+        """Turn model references to tool-returned players into real Discord tags."""
+        result = text
+        for source in mention_sources:
+            name = str(source.get("player_name") or "").strip()
+            user_id = source.get("user_id")
+            mention = str(source.get("player_mention") or "").strip()
+            if not mention or not user_id:
+                continue
+            result = result.replace(f"Discord user {user_id}", mention)
+            if name:
+                result = re.sub(
+                    rf"(?<![\w@]){re.escape(name)}(?![\w])",
+                    mention,
+                    result,
+                    flags=re.IGNORECASE,
+                )
+        return result
+
+    @staticmethod
+    def _image_tool_definition():
+        return {
+            "type": "function",
+            "function": {
+                "name": "search_channel_for_image",
+                "description": "Find a recent image in a channel the requester can view.",
+                "parameters": {
                     "type": "object",
                     "properties": {
                         "channel_name": {"type": "string"},
@@ -48,10 +92,11 @@ class AIRouter:
                         "username": {"type": "string"},
                     },
                     "required": ["channel_name"],
+                    "additionalProperties": False,
                 },
-            ))
-        return [types.Tool(function_declarations=declarations)] if declarations else []
-        
+            },
+        }
+
     async def _is_reply_to_bot(self, message):
         parent = await self.context_builder.tracker.resolve_reply_parent(message)
         return parent is not None and parent.author_id == self.bot.user.id
@@ -86,34 +131,67 @@ class AIRouter:
                         display_name = getattr(found_message.author, "display_name", "").lower()
                         if username.lower() not in author_name and username.lower() not in display_name:
                             continue
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                        async with session.get(attachment.url) as response:
-                            if response.status == 200:
-                                parts.append(types.Part.from_bytes(
-                                    data=await response.read(), mime_type=attachment.content_type
-                                ))
-                    return f"Success! The image from {attachment.url} has been attached to your vision context."
-            return "Failure: No matching image found in the last 500 messages."
+                    parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": attachment.url},
+                    })
+                    return f"Success: the image URL {attachment.url} was attached to the vision context."
+            return "Failure: no matching image found in the last 500 messages."
         except Exception as error:
             logger.warning("Image search failed message_id=%s error=%s", message.id, type(error).__name__)
             return "Error: image search is temporarily unavailable."
 
+    async def _run_image_tool(self, args, message, _context):
+        parts = []
+        result = await self._search_channel_for_image(
+            message,
+            parts,
+            str(args.get("channel_name", "")),
+            keyword=args.get("keyword"),
+            username=args.get("username"),
+        )
+        if parts:
+            result = f"{result} {parts[0].get('image_url', {}).get('url', '')}"
+        return result
+
+    async def _generate(self, messages, tools=None):
+        """Call the new adapter while retaining compatibility with old test doubles."""
+        if hasattr(llm, "generate"):
+            return await llm.generate(messages, tools=tools, temperature=0.6, max_tokens=1200)
+        response = await llm.generate_content(
+            model="openrouter",
+            contents=json.dumps(messages, ensure_ascii=False),
+        )
+        legacy_calls = tuple(
+            ToolCall(call_id="", name=call.name, arguments=getattr(call, "args", {}) or {})
+            for call in (getattr(response, "function_calls", ()) or ())
+        )
+        return GenerationResult(text=getattr(response, "text", ""), tool_calls=legacy_calls)
+
+    async def _load_attachment_parts(self, message):
+        parts = []
+        for attachment in getattr(message, "attachments", ()):
+            content_type = getattr(attachment, "content_type", "") or ""
+            if content_type.startswith("image/"):
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": attachment.url},
+                })
+        return parts
 
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
         request_started = time.perf_counter()
         if not ai_chat_enabled:
             return
 
-        is_bot = message.author.bot
-        self.context_builder.tracker.observe(message)
-        if is_bot:
+        if message.author.bot:
             return
-            
+        self.context_builder.tracker.observe(message)
+
         bot_mentioned = self.bot.user in message.mentions
-        is_dm = str(message.channel.type) == 'private'
+        is_dm = message.guild is None
         is_reply_to_bot = await self._is_reply_to_bot(message)
         is_direct_question = self._is_direct_question(message.content)
-        
         is_direct_interaction = bot_mentioned or is_reply_to_bot or is_direct_question
         if not is_dm and not is_direct_interaction:
             if member_role_id:
@@ -123,31 +201,27 @@ class AIRouter:
                 is_public = message.channel.permissions_for(message.guild.default_role).read_messages
             if not is_public:
                 return
-
-        if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
+        if not is_direct_interaction and not is_dm:
             return
+
         logger.info("AI stage message_id=%s stage=routing duration_ms=%d",
                     message.id, (time.perf_counter() - request_started) * 1000)
 
-        # "LEAVE ON READ" FILTER
         clean_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip().lower()
         filler_words = ["lol", "lmao", "lmfao", "fr", "ok", "k", "yeah", "💀", "😭", "w", "l", "real", "true", "bro", "lolo", "bruh"]
         words = clean_text.split()
-        if len(words) > 0 and len(words) <= 3:
-            if all(word in filler_words or not word.isalnum() for word in words):
-                if random.random() < 0.3:
-                    try:
-                        await message.add_reaction("💀")
-                    except:
-                        pass
-                return
-                
-        # RATE LIMIT
-        is_admin = getattr(message.author, 'guild_permissions', None) and message.author.guild_permissions.administrator
+        if 0 < len(words) <= 3 and all(word in filler_words or not word.isalnum() for word in words):
+            if random.random() < 0.3:
+                try:
+                    await message.add_reaction("💀")
+                except Exception:
+                    pass
+            return
+
+        is_admin = bool(getattr(getattr(message.author, "guild_permissions", None), "administrator", False))
         if not is_admin:
             now = message.created_at.timestamp()
-            timestamps = self.user_cooldowns.get(message.author.id, [])
-            timestamps = [t for t in timestamps if now - t < 300]
+            timestamps = [t for t in self.user_cooldowns.get(message.author.id, []) if now - t < 300]
             if len(timestamps) >= 5:
                 return
             timestamps.append(now)
@@ -157,11 +231,13 @@ class AIRouter:
         if not user_text and not message.attachments:
             user_text = "Hello!"
 
+        if hasattr(llm, "ensure_keys"):
+            await llm.ensure_keys(getattr(self.bot, "db", None))
         if not llm.client:
-            await message.reply("Sorry, I had trouble talking to my brain: No Gemini API keys configured.")
+            await message.reply("Sorry, I had trouble talking to my brain: no OpenRouter API key is configured.")
             return
-            
-        request_deadline = time.monotonic() + 90
+
+        request_deadline = time.monotonic() + getattr(Config, "AI_REQUEST_TIMEOUT_SECONDS", 180)
 
         async def bounded(awaitable, timeout=None):
             remaining = request_deadline - time.monotonic()
@@ -172,151 +248,171 @@ class AIRouter:
                 raise asyncio.TimeoutError()
             return await asyncio.wait_for(awaitable, timeout=min(remaining, timeout or remaining))
 
-        async with message.channel.typing():
-            stage_started = time.perf_counter()
-            try:
-                context = await bounded(self.context_builder.build(message))
-            except Exception as error:
-                logger.warning("AI context failed message_id=%s error=%s", message.id, type(error).__name__)
-                await bounded(message.reply("Sorry, I couldn't load the conversation context."))
-                return
-            logger.info("AI stage message_id=%s stage=context duration_ms=%d",
-                        message.id, (time.perf_counter() - stage_started) * 1000)
-            contents = []
-            
-            for exchange in context.exchanges:
-                user_turn, bot_turn = prompts.labeled_exchange(exchange)
-                contents.extend([
-                    types.Content(role="user", parts=[types.Part.from_text(text=user_turn)]),
-                    types.Content(role="model", parts=[types.Part.from_text(text=bot_turn)]),
-                ])
+        try:
+            await bounded(self._concurrency_limit.acquire(), timeout=45)
+        except asyncio.TimeoutError:
+            await message.reply("Sorry, I'm a bit overwhelmed right now. Please try again in a minute!")
+            return
 
-            parts = []
-            if user_text:
-                parts.append(types.Part.from_text(text=(
-                    f"CURRENT_DISCORD_USER id={context.current.author_id} "
-                    f"name={context.current.author_name}\n{user_text}"
-                )))
-                
-            stage_started = time.perf_counter()
-            try:
-                async def load_attachments():
-                    if not message.attachments:
-                        return
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                        for att in message.attachments:
-                            if att.content_type and att.content_type.startswith('image/'):
-                                async with session.get(att.url) as resp:
-                                    if resp.status == 200:
-                                        image_data = await resp.read()
-                                        parts.append(types.Part.from_bytes(data=image_data, mime_type=att.content_type))
-                await bounded(load_attachments(), timeout=10)
-            except Exception as error:
-                logger.warning("AI attachment loading failed message_id=%s error=%s",
-                               message.id, type(error).__name__)
-                await bounded(message.reply("Sorry, I couldn't load that attachment."))
-                return
-            logger.info("AI stage message_id=%s stage=attachments duration_ms=%d",
-                        message.id, (time.perf_counter() - stage_started) * 1000)
-            
-            if not parts:
-                return
-                
-            parts.insert(0, types.Part.from_text(text=prompts.context_text(context)))
-            contents.append(types.Content(role="user", parts=parts))
-            
-            tool_list = self._tool_declarations(
-                self._is_image_request(user_text),
-                False,
-            )
-            config_kwargs = {
-                "system_instruction": prompts.system_instruction(context),
-                "temperature": 0.82,
-                "tools": tool_list,
-            }
-            if tool_list:
-                config_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
-            config = types.GenerateContentConfig(**config_kwargs)
-            generation_started = time.perf_counter()
-            try:
-                response = await bounded(llm.generate_content(
-                    model="gemini-3.5-flash", 
-                    contents=contents,
-                    config=config
-                ))
-            except Exception as error:
-                logger.warning("Initial AI generation failed message_id=%s error=%s",
-                               message.id, type(error).__name__)
-                await bounded(message.reply("Sorry, I had trouble talking to my brain right now."))
-                return
-            logger.info("AI stage message_id=%s stage=generation duration_ms=%d model=%s",
-                        message.id, (time.perf_counter() - generation_started) * 1000, "gemini-3.5-flash")
-
-            function_calls = getattr(response, "function_calls", ()) or ()
-            if function_calls:
-                tool_started = time.perf_counter()
-                for fn_call in function_calls[:2]:
-                    fn_name = fn_call.name
-                    args = fn_call.args
-                    try:
-                        if fn_name == "search_channel_for_image":
-                            tool_result = await bounded(self._search_channel_for_image(message, parts, **args), timeout=10)
-                        else:
-                            tool_result = "Unknown tool call"
-                    except Exception as error:
-                        logger.warning("AI tool failed message_id=%s tool=%s error=%s",
-                                       message.id, fn_name, type(error).__name__)
-                        tool_result = "The requested tool was unavailable."
-                        
-                    # Feed the result back as bounded labeled context. This keeps
-                    # the final request tool-free and works across SDK versions
-                    # that differ in function-response role validation.
-                    contents.append(types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(
-                            text=f"TOOL_RESULT name={fn_name}\n{str(tool_result)[:4000]}"
-                        )]
-                    ))
-                
-                logger.info("AI stage message_id=%s stage=tools duration_ms=%d count=%d",
-                            message.id, (time.perf_counter() - tool_started) * 1000,
-                            min(len(function_calls), 2))
-                final_config = types.GenerateContentConfig(
-                    system_instruction=prompts.system_instruction(context),
-                    temperature=0.82,
-                    tools=[],
-                )
+        try:
+            async with message.channel.typing():
                 try:
-                    response = await bounded(llm.generate_content(
-                        model="gemini-3.5-flash", 
-                        contents=contents,
-                        config=final_config
-                    ))
+                    context = await bounded(self.context_builder.build(message))
                 except Exception as error:
-                    logger.warning("Tool follow-up generation failed message_id=%s error=%s",
-                                   message.id, type(error).__name__)
-                    await bounded(message.reply("Sorry, I had trouble finishing that reply."))
+                    logger.warning("AI context failed message_id=%s error=%s", message.id, type(error).__name__)
+                    await message.reply("Sorry, I couldn't load the conversation context.")
                     return
 
-            reply_text = getattr(response, 'text', '')
-            if not reply_text:
-                await bounded(message.reply("Sorry, I couldn't produce a reply this time."))
-                return
-            
-            # Send paginated
-            pages = [reply_text[i:i+2000] for i in range(0, len(reply_text), 2000)]
-            send_started = time.perf_counter()
-            try:
-                for i, page in enumerate(pages):
-                    if i == 0:
-                        await bounded(message.reply(page))
+                messages = [{"role": "system", "content": prompts.system_instruction(context)}]
+                for exchange in context.exchanges:
+                    user_turn, bot_turn = prompts.labeled_exchange(exchange)
+                    messages.extend([
+                        {"role": "user", "content": user_turn},
+                        {"role": "assistant", "content": bot_turn},
+                    ])
+
+                content_parts = [{
+                    "type": "text",
+                    "text": prompts.context_text(context) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
+                }]
+                content_parts.extend(await self._load_attachment_parts(message))
+                messages.append({
+                    "role": "user",
+                    "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
+                })
+
+                tool_definitions = self.tools.definitions if self._should_offer_tools(user_text) else []
+                if self._is_image_request(user_text):
+                    image_definition = self._image_tool_definition()
+                    tool_definitions.append(image_definition)
+                    self.pipeline.register_external_tool(image_definition, self._run_image_tool)
+
+                response = None
+                sidecar_response = None
+                streamed_reply = None
+                streamed_text = []
+                mention_sources = []
+
+                def collect_mentions(tool_name, result):
+                    if tool_name not in {"get_player_rank", "get_leaderboard"}:
+                        return
+                    data = result.get("data") if isinstance(result, dict) else None
+                    if not isinstance(data, dict):
+                        return
+                    rows = data.get("players") if tool_name == "get_leaderboard" else [data]
+                    for row in rows or ():
+                        if isinstance(row, dict) and row.get("player_mention"):
+                            mention_sources.append(row)
+
+                async def execute_agent_tool(name, arguments):
+                    result = await bounded(
+                        self.pipeline.execute(name, arguments, message, context),
+                        timeout=15,
+                    )
+                    collect_mentions(name, result)
+                    return result
+
+                async def on_delta(delta):
+                    nonlocal streamed_reply
+                    if not delta:
+                        return
+                    streamed_text.append(str(delta))
+                    preview = "".join(streamed_text).strip()[:2000]
+                    if not preview:
+                        return
+                    if streamed_reply is None:
+                        streamed_reply = await bounded(message.reply(preview))
+                    else:
+                        await bounded(streamed_reply.edit(content=preview))
+
+                if getattr(llm, "api_key", "") and getattr(self.sidecar, "enabled", False):
+                    try:
+                        sidecar_response = await bounded(
+                            self.sidecar.run(
+                                messages,
+                                tool_definitions,
+                                execute_agent_tool,
+                                on_delta=on_delta,
+                            ),
+                            timeout=90,
+                        )
+                    except Exception as error:
+                        logger.info("Agent sidecar fallback message_id=%s error=%s", message.id, type(error).__name__)
+                    if sidecar_response:
+                        response = sidecar_response
+                        await record_agent_event(
+                            self.bot, event="agent_completed", model=response.model,
+                            usage=response.usage,
+                        )
+
+                if response is None:
+                    for tool_round in range(self.MAX_TOOL_ROUNDS + 1):
+                        try:
+                            response = await bounded(self._generate(messages, tools=tool_definitions))
+                        except Exception as error:
+                            logger.warning("AI generation failed message_id=%s error=%s", message.id, type(error).__name__)
+                            await message.reply("Sorry, I had trouble talking to my brain right now.")
+                            return
+
+                        if not response.tool_calls:
+                            break
+                        if tool_round >= self.MAX_TOOL_ROUNDS:
+                            messages.append({"role": "user", "content": "Tool limit reached. Answer using the verified context already available."})
+                            response = await bounded(self._generate(messages, tools=None))
+                            break
+
+                        if response.assistant_message:
+                            messages.append(response.assistant_message)
+                        else:
+                            messages.append({
+                                "role": "assistant",
+                                "content": response.text or None,
+                                "tool_calls": [
+                                    {"id": call.call_id, "type": "function", "function": {
+                                        "name": call.name, "arguments": json.dumps(call.arguments)
+                                    }} for call in response.tool_calls
+                                ],
+                            })
+
+                        for call in response.tool_calls:
+                            tool_started = time.perf_counter()
+                            result = await execute_agent_tool(call.name, call.arguments)
+                            logger.info("AI stage message_id=%s stage=tool tool=%s duration_ms=%d",
+                                        message.id, call.name, (time.perf_counter() - tool_started) * 1000)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": call.call_id,
+                                "content": json.dumps(result, ensure_ascii=False)[:6000]
+                                if not isinstance(result, str) else result[:6000],
+                            })
+
+                reply_text = self._apply_tool_mentions(
+                    (response.text if response else "").strip(), mention_sources
+                )
+                if not reply_text:
+                    await message.reply("Sorry, I couldn't produce a reply this time.")
+                    return
+
+                pages = [reply_text[i:i + 2000] for i in range(0, len(reply_text), 2000)]
+                for index, page in enumerate(pages):
+                    if index == 0:
+                        if streamed_reply is not None:
+                            if page != "".join(streamed_text).strip()[:2000]:
+                                await bounded(streamed_reply.edit(content=page))
+                        else:
+                            await bounded(message.reply(page))
                         self.context_builder.tracker.remember_exchange(message, user_text, reply_text)
                     else:
                         await bounded(message.channel.send(page))
-            except Exception as error:
-                logger.warning("AI reply send failed message_id=%s error=%s",
-                               message.id, type(error).__name__)
-                return
-            logger.info("AI stage message_id=%s stage=send duration_ms=%d total_ms=%d",
-                        message.id, (time.perf_counter() - send_started) * 1000,
-                        (time.perf_counter() - request_started) * 1000)
+                usage = response.usage if response else {}
+                logger.info(
+                    "AI stage message_id=%s stage=send model=%s total_ms=%d prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+                    message.id,
+                    response.model if response else "",
+                    (time.perf_counter() - request_started) * 1000,
+                    usage.get("prompt_tokens") if isinstance(usage, dict) else None,
+                    usage.get("completion_tokens") if isinstance(usage, dict) else None,
+                    usage.get("total_tokens") if isinstance(usage, dict) else None,
+                )
+        finally:
+            self._concurrency_limit.release()

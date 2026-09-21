@@ -16,6 +16,7 @@ from core.container import Container
 from core.services.ranking_service import RankingService
 from core.services.ticket_service import TicketService
 from web.dashboard import start_web_server
+from framework.plugins import PluginRegistry
 
 
 class BotCommandTree(app_commands.CommandTree):
@@ -44,6 +45,7 @@ class TicketBot(commands.Bot):
         )
         
         self.db = Database()
+        self.plugin_registry = PluginRegistry()
         
         self.container = Container()
         self.container.register('Database', self.db)
@@ -54,6 +56,9 @@ class TicketBot(commands.Bot):
         print("Starting setup_hook...")
         if not await self.db.init():
             raise RuntimeError("MongoDB initialization failed; refusing to start the bot")
+
+        loaded_plugins = self.plugin_registry.load_directory()
+        print(f"Loaded {loaded_plugins} bot plugin(s).")
         
         # Initialize persistent view components.
         from views.history_views import ShareClipView
@@ -98,6 +103,13 @@ class TicketBot(commands.Bot):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print(f"Bot is in {len(self.guilds)} guilds")
         print("------")
+
+    async def close(self):
+        chat = self.get_cog("Chat")
+        sidecar = getattr(getattr(chat, "router", None), "sidecar", None)
+        if sidecar is not None:
+            await sidecar.stop()
+        await super().close()
         
     @tasks.loop(minutes=14)
     async def ping_clips_service(self):

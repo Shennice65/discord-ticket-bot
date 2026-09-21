@@ -6,8 +6,40 @@ load_dotenv()
 class Config:
     TOKEN = os.environ.get('DISCORD_TOKEN') or os.getenv('DISCORD_TOKEN')
     GUILD_ID = int(os.environ.get('GUILD_ID', 0))
-    _raw_keys = os.environ.get('GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
-    GEMINI_API_KEYS = [k.strip() for k in _raw_keys.split(',')] if _raw_keys else []
+    AI_PROVIDER = os.environ.get('AI_PROVIDER', 'gemini').strip().casefold()
+    _raw_gemini_keys = os.environ.get('GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
+    GEMINI_API_KEYS = [key.strip() for key in _raw_gemini_keys.split(',') if key.strip()]
+    GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.5-flash-lite')
+    GEMINI_FALLBACK_MODELS = [
+        model.strip() for model in os.environ.get(
+            'GEMINI_FALLBACK_MODELS', 'gemini-3.6-flash,gemini-3.8-flash'
+        ).split(',') if model.strip()
+    ]
+    GEMINI_EMBEDDING_MODEL = os.environ.get('GEMINI_EMBEDDING_MODEL', 'gemini-embedding-001')
+    GEMINI_EMBEDDING_DIMENSIONS = int(os.environ.get('GEMINI_EMBEDDING_DIMENSIONS', '256'))
+    AI_REQUEST_TIMEOUT_SECONDS = max(30, int(os.environ.get('AI_REQUEST_TIMEOUT_SECONDS', '180')))
+    OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '') or os.getenv('OPENROUTER_API_KEY', '')
+    OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'google/gemini-3-flash-preview')
+    OPENROUTER_FALLBACK_MODELS = [
+        model.strip() for model in os.environ.get(
+            'OPENROUTER_FALLBACK_MODELS',
+            'anthropic/claude-sonnet-4.5,openai/gpt-5.1',
+        ).split(',') if model.strip()
+    ]
+    OPENROUTER_EMBEDDING_MODEL = os.environ.get(
+        'OPENROUTER_EMBEDDING_MODEL', 'openai/text-embedding-3-small'
+    )
+    OPENROUTER_EMBEDDING_DIMENSIONS = int(os.environ.get('OPENROUTER_EMBEDDING_DIMENSIONS', '256'))
+    AGENT_SIDECAR_ENABLED = os.environ.get('AGENT_SIDECAR_ENABLED', 'true').casefold() in {
+        '1', 'true', 'yes', 'on'
+    }
+    AGENT_SIDECAR_HOST = os.environ.get('AGENT_SIDECAR_HOST', '127.0.0.1')
+    AGENT_SIDECAR_PORT = int(os.environ.get('AGENT_SIDECAR_PORT', '8765'))
+    AGENT_MAX_STEPS = max(1, min(int(os.environ.get('AGENT_MAX_STEPS', '4')), 4))
+    AGENT_APPROVAL_TOOLS = [
+        tool.strip() for tool in os.environ.get('AGENT_APPROVAL_TOOLS', '').split(',')
+        if tool.strip()
+    ]
     MASTER_ADMIN_ID = 442188857014747136
     OBSERVER_ROLE_ID = int(os.environ.get('OBSERVER_ROLE_ID', 0))
     LOG_CHANNEL_ID = int(os.environ.get('LOG_CHANNEL_ID', 0))

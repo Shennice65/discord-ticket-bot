@@ -1,9 +1,7 @@
 import json
 import logging
 import re
-import asyncio
 from datetime import datetime, timezone
-from google.genai import types
 from ai.llm import llm
 
 logger = logging.getLogger(__name__)
@@ -69,7 +67,7 @@ class MemoryExtractor:
             "Assign high confidence to unique server lore or inside jokes even if they only appear in a single message.\n\nEVIDENCE:\n" + evidence
         )
         try:
-            response = await llm.generate_content(model="gemini-3.5-flash", contents=prompt)
+            response = await llm.generate_content(contents=prompt)
             return self._parse(getattr(response, "text", ""))
         except Exception as error:
             logger.warning("Memory extraction unavailable error=%s", type(error).__name__)
@@ -83,17 +81,8 @@ class MemoryExtractor:
             
         embeddings = []
         try:
-            # We use the generic client from our llm wrapper to get embeddings
             if llm.client:
-                response = await asyncio.wait_for(
-                    llm.client.aio.models.embed_content(
-                        model="gemini-embedding-2",
-                        contents=[item["summary"] for item in candidates],
-                        config=types.EmbedContentConfig(output_dimensionality=256),
-                    ),
-                    timeout=15,
-                )
-                embeddings = [list(item.values) for item in getattr(response, "embeddings", ())]
+                embeddings = await llm.embed([item["summary"] for item in candidates])
         except Exception as error:
             logger.debug("Memory embedding unavailable error=%s", type(error).__name__)
             
@@ -117,6 +106,7 @@ class MemoryExtractor:
                 continue
             confidence = candidate["confidence"]
             query = {"guild_id": records[0].get("guild_id"),
+                     "channel_id": records[0].get("channel_id"),
                      "memory_key": candidate["memory_key"]}
             existing = await db.chat_memory.find_one(query)
             
@@ -136,7 +126,9 @@ class MemoryExtractor:
                 cand_first = min(existing_first, cand_first)
                 cand_last = max(existing_last, cand_last)
                 
-            fields = {"record_type": candidate["record_type"], "summary": candidate["summary"],
+            fields = {"guild_id": records[0].get("guild_id"),
+                      "channel_id": records[0].get("channel_id"),
+                      "record_type": candidate["record_type"], "summary": candidate["summary"],
                       "associated_users": candidate["associated_users"], "source_message_ids": source_ids,
                       "confidence": confidence, "importance": candidate["importance"],
                       "first_seen": cand_first, "last_seen": cand_last, "timestamp": cand_last}
@@ -154,7 +146,14 @@ class MemoryExtractor:
         records = [item for item in records if not item.get("author_bot") and not item.get("is_bot")]
         if not records:
             return True, 0
-        candidates = await self.extract(records)
-        if candidates is None:
-            return False, 0
-        return True, await self.persist(db, records, candidates)
+        groups = {}
+        for record in records:
+            key = (record.get("guild_id"), record.get("channel_id"))
+            groups.setdefault(key, []).append(record)
+        total = 0
+        for group in groups.values():
+            candidates = await self.extract(group)
+            if candidates is None:
+                return False, total
+            total += await self.persist(db, group, candidates)
+        return True, total
