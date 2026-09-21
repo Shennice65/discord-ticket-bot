@@ -128,4 +128,33 @@ class GeminiLLM:
             logger.warning("Gemini model exhausted model=%s", model_name)
         raise RuntimeError("All Gemini models and keys exhausted.")
 
+    async def embed_content(self, model: str, contents: list, config: types.EmbedContentConfig = None) -> types.EmbedContentResponse:
+        """Call Gemini to generate embeddings with bounded attempts and key rotation."""
+        if not self.clients:
+            raise RuntimeError("No Gemini API keys configured.")
+        requested_models = list(dict.fromkeys((model, *self.MODEL_FALLBACKS.get("embed_content", ()))))
+        for model_name in requested_models:
+            for attempt in range(len(self.clients)):
+                client = self.client
+                try:
+                    return await asyncio.wait_for(
+                        client.aio.models.embed_content(
+                            model=model_name, contents=contents, config=config
+                        ),
+                        timeout=self.ATTEMPT_TIMEOUT,
+                    )
+                except Exception as error:
+                    retryable = isinstance(error, (asyncio.TimeoutError, TimeoutError))
+                    if isinstance(error, APIError):
+                        retryable = True
+                    if not retryable or attempt >= len(self.clients) - 1:
+                        logger.warning("Gemini embed attempt failed model=%s key_index=%s error=%s",
+                                       model_name, self.current_client_index, type(error).__name__)
+                        break
+                    logger.warning("Rotating Gemini key model=%s key_index=%s error=%s",
+                                   model_name, self.current_client_index, type(error).__name__)
+                    self.rotate_key()
+            logger.warning("Gemini embed model exhausted model=%s", model_name)
+        raise RuntimeError("All Gemini models and keys exhausted for embedding.")
+
 llm = GeminiLLM()

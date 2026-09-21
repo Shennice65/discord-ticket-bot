@@ -32,45 +32,6 @@ class AIRouter:
             (content or "").casefold(),
         ))
 
-    def _needs_memory_lookup(self, message, context):
-        """Offer the slower DB fallback only for explicit fact questions on a cache miss."""
-        if message.guild is None or getattr(context, "memories", None):
-            return False
-        retriever = getattr(self.context_builder, "retriever", None)
-        if not getattr(retriever, "_memory_cache_channel_id", None):
-            return False
-        content = (message.content or "").casefold()
-        return bool(re.search(
-            r"\b(?:who\s+(?:is|was)|who\s+\w{2,}\s+is|what\s+do\s+you\s+know\s+about|"
-            r"tell\s+me\s+about|what\s+happened\s+to|why\s+is)\b",
-            content,
-        ))
-
-    def _memory_lookup_name(self, message):
-        """Extract a small human/member name for a scoped cache-miss lookup."""
-        for mentioned in getattr(message, "mentions", ()):
-            if (getattr(mentioned, "id", None) != getattr(self.bot.user, "id", None)
-                    and not getattr(mentioned, "bot", False)):
-                return (getattr(mentioned, "display_name", None)
-                        or getattr(mentioned, "name", None))
-
-        content = (message.content or "").strip()
-        patterns = (
-            r"\bwho\s+(?:is|was)\s+([A-Za-z0-9][A-Za-z0-9 _-]{1,59}?)(?:\?|$)",
-            r"\bwho\s+([A-Za-z0-9][A-Za-z0-9 _-]{1,59}?)\s+is\b",
-            r"\b(?:what\s+do\s+you\s+know\s+about|tell\s+me\s+about|"
-            r"what\s+happened\s+to|why\s+is)\s+([A-Za-z0-9][A-Za-z0-9 _-]{1,59}?)(?:\?|$)",
-        )
-        for pattern in patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                name = match.group(1).strip(" .,?!")
-                normalized = re.sub(r"\s+", " ", name.casefold())
-                if (normalized in {"this", "that", "them", "him", "her", "who"}
-                        or normalized.startswith(("this person", "that person", "the person"))):
-                    return None
-                return name
-        return None
 
     @staticmethod
     def _tool_declarations(include_image, include_memory):
@@ -87,16 +48,6 @@ class AIRouter:
                         "username": {"type": "string"},
                     },
                     "required": ["channel_name"],
-                },
-            ))
-        if include_memory:
-            declarations.append(types.FunctionDeclaration(
-                name="search_database_memory",
-                description="Find a specific scoped community fact for a named member.",
-                parameters_json_schema={
-                    "type": "object",
-                    "properties": {"name": {"type": "string"}},
-                    "required": ["name"],
                 },
             ))
         return [types.Tool(function_declarations=declarations)] if declarations else []
@@ -147,31 +98,6 @@ class AIRouter:
             logger.warning("Image search failed message_id=%s error=%s", message.id, type(error).__name__)
             return "Error: image search is temporarily unavailable."
 
-    async def _search_database_memory(self, message, name):
-        """Read only confident memories scoped to the current guild and memory channel."""
-        try:
-            if message.guild is None:
-                return "No server-scoped community memory is available in DMs."
-            memory_channel_id = self.context_builder.retriever._memory_cache_channel_id
-            if memory_channel_id is None:
-                return f"No scoped database lore found for '{name}'."
-            collection = self.bot.db.db.chat_memory
-            cursor = collection.find({
-                "guild_id": message.guild.id,
-                "channel_id": memory_channel_id,
-                "confidence": {"$gte": 0.5},
-                "associated_users": {"$regex": re.escape(name), "$options": "i"},
-            }).sort("timestamp", -1).limit(5)
-            records = await cursor.to_list(length=5)
-            if not records:
-                return f"No database lore found for '{name}'."
-            return "Database Lore for {}:\n{}".format(
-                name, "\n".join(f"- {record.get('summary', '')}" for record in records)
-            )
-        except Exception as error:
-            logger.warning("Scoped memory tool failed guild_id=%s error=%s",
-                           getattr(message.guild, "id", None), type(error).__name__)
-            return "Scoped community memory is temporarily unavailable."
 
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
         request_started = time.perf_counter()
@@ -265,32 +191,7 @@ class AIRouter:
                     types.Content(role="model", parts=[types.Part.from_text(text=bot_turn)]),
                 ])
 
-            memory_evidence = None
-            if self._needs_memory_lookup(message, context):
-                lookup_name = self._memory_lookup_name(message)
-                if lookup_name:
-                    stage_started = time.perf_counter()
-                    try:
-                        memory_evidence = await bounded(
-                            self._search_database_memory(message, lookup_name),
-                            timeout=1.5,
-                        )
-                    except Exception as error:
-                        logger.warning(
-                            "AI memory lookup failed message_id=%s error=%s",
-                            message.id, type(error).__name__,
-                        )
-                    logger.info(
-                        "AI stage message_id=%s stage=memory_lookup duration_ms=%d",
-                        message.id, (time.perf_counter() - stage_started) * 1000,
-                    )
-
             parts = []
-            if memory_evidence:
-                parts.append(types.Part.from_text(text=(
-                    "SCOPED_MEMORY_LOOKUP (uncertain community evidence; do not "
-                    "override verified metadata)\n" + str(memory_evidence)[:4000]
-                )))
             if user_text:
                 parts.append(types.Part.from_text(text=(
                     f"CURRENT_DISCORD_USER id={context.current.author_id} "
@@ -360,8 +261,6 @@ class AIRouter:
                     try:
                         if fn_name == "search_channel_for_image":
                             tool_result = await bounded(self._search_channel_for_image(message, parts, **args), timeout=10)
-                        elif fn_name == "search_database_memory":
-                            tool_result = await bounded(self._search_database_memory(message, **args), timeout=10)
                         else:
                             tool_result = "Unknown tool call"
                     except Exception as error:

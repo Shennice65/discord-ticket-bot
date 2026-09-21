@@ -32,6 +32,7 @@ types_module.Part = SimpleNamespace(
     from_function_response=lambda **kwargs: kwargs,
 )
 types_module.GenerateContentResponse = object
+types_module.EmbedContentResponse = object
 errors_module.APIError = type("APIError", (Exception,), {})
 google_module.genai = genai_module
 genai_module.types = types_module
@@ -116,10 +117,10 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
              "associated_users": [], "confidence": 0.9, "importance": 0.9},
         ]}
         current = SimpleNamespace(guild_id=10, content="hello")
-        self.assertEqual([], retriever.select_cached_memories(current))
+        self.assertEqual([], await retriever.select_cached_memories(current))
         current.content = "what about CherryBomb?"
-        self.assertEqual(["cherrybomb"], [item["memory_key"] for item in retriever.select_cached_memories(current)])
-        self.assertEqual([], retriever.select_cached_memories(current, excluded_terms=("CherryBomb",)))
+        self.assertEqual(["cherrybomb"], [item["memory_key"] for item in await retriever.select_cached_memories(current)])
+        self.assertEqual([], await retriever.select_cached_memories(current, excluded_terms=("CherryBomb",)))
 
     async def test_memory_retrieval_excludes_low_confidence_and_bot_chain(self):
         retriever = MemoryRetriever(SimpleNamespace(db=None))
@@ -130,7 +131,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         ]}
         bot_claim = SimpleNamespace(content="CherryBomb is Polos", is_bot=True, guild_id=10, channel_id=20)
         current = SimpleNamespace(guild_id=10, channel_id=20, content="hello")
-        self.assertEqual([], retriever.select_cached_memories(current, (bot_claim,)))
+        self.assertEqual([], await retriever.select_cached_memories(current, (bot_claim,)))
 
     async def test_identity_correction_is_scoped_and_expires(self):
         tracker = ConversationTracker(SimpleNamespace(user=SimpleNamespace(id=1)))
@@ -304,30 +305,6 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Error: You cannot view that channel.", result)
         target.history.assert_not_called()
 
-    async def test_database_memory_tool_applies_guild_channel_and_confidence_scope(self):
-        requester = make_message(guild_id=44)
-        cursor = SimpleNamespace(
-            sort=lambda *_args: cursor,
-            limit=lambda *_args: cursor,
-            to_list=AsyncMock(return_value=[]),
-        )
-        collection = SimpleNamespace(find=lambda query: (self.assertEqual({
-            "guild_id": 44, "channel_id": 20, "confidence": {"$gte": 0.5},
-            "associated_users": {"$regex": "Polos", "$options": "i"},
-        }, query) or cursor))
-        builder = SimpleNamespace(retriever=SimpleNamespace(_memory_cache_channel_id=20))
-        bot = SimpleNamespace(db=SimpleNamespace(db=SimpleNamespace(chat_memory=collection)))
-        router = AIRouter(bot, builder)
-        result = await router._search_database_memory(requester, "Polos")
-        self.assertIn("No database lore", result)
-
-    def test_cached_memory_avoids_database_tool(self):
-        bot = SimpleNamespace(user=SimpleNamespace(id=1))
-        builder = SimpleNamespace(retriever=SimpleNamespace(_memory_cache_channel_id=20))
-        router = AIRouter(bot, builder)
-        message = make_message(content="who is Polos?")
-        context = SimpleNamespace(memories=[{"summary": "Polos community fact"}])
-        self.assertFalse(router._needs_memory_lookup(message, context))
 
     async def test_normal_triggered_reply_uses_one_generation_without_key_or_tool_calls(self):
         bot_user = SimpleNamespace(id=1, display_name="Atlas", name="Atlas")
@@ -369,55 +346,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         message.reply.assert_awaited_once_with("hello")
         self.assertEqual("hello", tracker._exchanges[(10, 20, 7)][0].bot_text)
 
-    async def test_cache_miss_memory_prefetch_keeps_one_generation(self):
-        bot_user = SimpleNamespace(id=1, display_name="Atlas", name="Atlas")
-        bot = SimpleNamespace(user=bot_user)
-        message = make_message(content="@Atlas who is Polos?", mentions=[bot_user])
 
-        class Typing:
-            async def __aenter__(self):
-                return self
-            async def __aexit__(self, *_args):
-                return False
-
-        message.channel.typing = lambda: Typing()
-        message.reply = AsyncMock()
-        message.channel.send = AsyncMock()
-        tracker = ConversationTracker(bot)
-        current = ContextMessage(message.id, 10, 20, 7, "member", "who is Polos?",
-                                  message.created_at, None)
-        context = SimpleNamespace(
-            current=current, server_name="Guild", channel_name="general", author_roles=(),
-            author_is_admin=False, admins=(), reply_chain=(), immediate_preceding=None,
-            surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
-            verified_rank=None, curated_lore="", identity_correction=None,
-        )
-        builder = SimpleNamespace(
-            tracker=tracker, retriever=SimpleNamespace(_memory_cache_channel_id=20),
-            build=AsyncMock(return_value=context),
-        )
-        router = AIRouter(bot, builder)
-        responses = [SimpleNamespace(text="Polos is Polos", function_calls=[])]
-        fake_llm = SimpleNamespace(client=object(), generate_content=AsyncMock(side_effect=responses))
-        router._search_database_memory = AsyncMock(return_value="Polos community fact")
-        with patch("ai.router.llm", fake_llm):
-            await router.handle_message(message, True, None)
-
-        self.assertEqual(1, fake_llm.generate_content.await_count)
-        first_config = fake_llm.generate_content.await_args_list[0].kwargs["config"]
-        self.assertEqual([], first_config["tools"])
-        router._search_database_memory.assert_awaited_once_with(message, "Polos")
-        message.reply.assert_awaited_once_with("Polos is Polos")
-
-    def test_memory_lookup_name_supports_common_question_forms(self):
-        bot = SimpleNamespace(user=SimpleNamespace(id=1))
-        router = AIRouter(bot, SimpleNamespace())
-        self.assertEqual("Chiz", router._memory_lookup_name(
-            make_message(content="do you know who Chiz is?")))
-        self.assertEqual("CherryBomb", router._memory_lookup_name(
-            make_message(content="tell me about CherryBomb")))
-        self.assertIsNone(router._memory_lookup_name(
-            make_message(content="who is this person above me?")))
 
 
 if __name__ == "__main__":

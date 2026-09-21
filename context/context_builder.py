@@ -122,6 +122,6 @@ class ContextBuilder:
             current, self.detect_identity_correction(current.content)
         )
         rejected = (context.identity_correction.rejected_label,) if context.identity_correction else ()
-        context.memories = self.retriever.select_cached_memories(current, chain, rejected)
+        context.memories = await self.retriever.select_cached_memories(current, chain, rejected)
         
         return context
