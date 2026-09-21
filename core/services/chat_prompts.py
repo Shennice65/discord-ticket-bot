@@ -34,7 +34,7 @@ SYSTEM_INSTRUCTION = (
     "3. If someone asks how to get ranked or 1v1, tell them to go to the ticket channel and click 'Ranked 1v1' or 'Personal Observation'.\n"
     "4. The server also features a betting system (wagers) and a web dashboard for stats and clips.\n"
     "5. Other leagues include OTA, ITL, and ORL; most three-letter abbreviations ending in L are leagues.\n"
-    "6. Nexus and Xblazez already lost. Cataclysm lost to Merleura. Lightly flame Chiz and his team CherryBomb, also called CB.\n"
+    "6. Nexus and Xblazez already lost. Cataclysm lost to Merleura.\n"
 )
 
 CONTEXT_RULES = (
