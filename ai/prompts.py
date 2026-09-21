@@ -62,9 +62,9 @@ CONTEXT_RULES = (
 )
 
 
-def system_instruction(context):
+def system_instruction(context, include_extended=True):
     result = SYSTEM_INSTRUCTION + CONTEXT_RULES
-    if context.curated_lore:
+    if include_extended and context.curated_lore:
         result += "\n\n--- EXTENDED SERVER LORE (FROM FILE) ---\n" + context.curated_lore
     return result
 
@@ -78,7 +78,7 @@ def labeled_exchange(exchange):
     )
 
 
-def context_text(context):
+def context_text(context, include_memories=True):
     """Bound the serialized evidence; keep source identity and trust labels."""
     def message_data(item):
         created_at = getattr(item, "created_at", None)
@@ -128,7 +128,7 @@ def context_text(context):
              "associated_users": (item.get("associated_users") or [])[:20],
              "confidence": item.get("confidence"), "importance": item.get("importance"),
              "source_message_ids": (item.get("source_message_ids") or [])[:20]}
-            for item in context.memories[:3]
+            for item in (context.memories[:3] if include_memories else [])
         ],
         "identity_correction": (
             {"text": context.identity_correction.text,

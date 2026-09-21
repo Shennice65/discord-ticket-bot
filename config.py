@@ -6,7 +6,7 @@ load_dotenv()
 class Config:
     TOKEN = os.environ.get('DISCORD_TOKEN') or os.getenv('DISCORD_TOKEN')
     GUILD_ID = int(os.environ.get('GUILD_ID', 0))
-    AI_PROVIDER = os.environ.get('AI_PROVIDER', 'gemini').strip().casefold()
+    AI_PROVIDER = os.environ.get('AI_PROVIDER', 'deepseek').strip().casefold()
     _raw_gemini_keys = os.environ.get('GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
     GEMINI_API_KEYS = [key.strip() for key in _raw_gemini_keys.split(',') if key.strip()]
     GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.5-flash-lite')
@@ -17,7 +17,16 @@ class Config:
     ]
     GEMINI_EMBEDDING_MODEL = os.environ.get('GEMINI_EMBEDDING_MODEL', 'gemini-embedding-001')
     GEMINI_EMBEDDING_DIMENSIONS = int(os.environ.get('GEMINI_EMBEDDING_DIMENSIONS', '256'))
+    _raw_deepseek_keys = os.environ.get('DEEPSEEK_API_KEY', '') or os.getenv('DEEPSEEK_API_KEY', '')
+    DEEPSEEK_API_KEYS = [key.strip() for key in _raw_deepseek_keys.split(',') if key.strip()]
+    DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-flash')
+    DEEPSEEK_FALLBACK_MODELS = [
+        model.strip() for model in os.environ.get('DEEPSEEK_FALLBACK_MODELS', '').split(',')
+        if model.strip()
+    ]
     AI_REQUEST_TIMEOUT_SECONDS = max(30, int(os.environ.get('AI_REQUEST_TIMEOUT_SECONDS', '180')))
+    AI_MAX_HISTORY_MESSAGES = max(1, int(os.environ.get('AI_MAX_HISTORY_MESSAGES', '6')))
+    AI_MAX_OUTPUT_TOKENS = max(100, min(int(os.environ.get('AI_MAX_OUTPUT_TOKENS', '600')), 1200))
     OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '') or os.getenv('OPENROUTER_API_KEY', '')
     OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'google/gemini-3-flash-preview')
     OPENROUTER_FALLBACK_MODELS = [
