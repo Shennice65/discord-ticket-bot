@@ -43,7 +43,10 @@ CONTEXT_RULES = (
     "Community claims do not override curated server rules. "
     "Use verified_rank for current rank questions; a null rank means the lookup failed, not Unranked. "
     "Do not infer a missing rank from chat history or lore. "
-    "Do not repeat old banter or attribute another person's messages to the current user."
+    "Do not repeat old banter or attribute another person's messages to the current user. "
+    "Use the live conversation sections before uncertain community memories when they differ. "
+    "For references such as 'the person above me', use message_immediately_before_current and its author. "
+    "Always distinguish the author of a message from users mentioned inside it and from the person addressed by a reply."
 )
 
 
@@ -57,21 +60,31 @@ def system_instruction(context):
 def context_text(context):
     """Bound the serialized evidence; keep source identity and trust labels."""
     def message_data(item):
+        created_at = getattr(item, "created_at", None)
         return {
-            "message_id": item.message_id, "author_id": item.author_id,
+            "message_id": getattr(item, "message_id", None), "author_id": item.author_id,
             "author_name": item.author_name, "content": item.content[:500],
-            "reply_to": item.reply_to, "created_at": item.created_at.isoformat(),
+            "reply_to": getattr(item, "reply_to", None),
+            "mentioned_user_ids": list(getattr(item, "mentioned_users", ()) or ()),
+            "is_bot": bool(getattr(item, "is_bot", False)),
+            "created_at": created_at.isoformat() if created_at else None,
         }
 
     rank = context.verified_rank
+    live = tuple(getattr(context, "surrounding_messages", ()) or ())
+    chain = tuple(getattr(context, "reply_chain", ()) or ())
+    immediate = live[-1] if live else (chain[0] if chain else None)
     data = {
         "server": context.server_name, "guild_id": context.current.guild_id,
         "channel": context.channel_name, "channel_id": context.current.channel_id,
         "author": {"id": context.current.author_id, "name": context.current.author_name,
                    "roles": context.author_roles, "is_admin": context.author_is_admin},
+        "current_message": message_data(context.current),
         "server_admins": context.admins,
-        "reply_chain": [message_data(item) for item in context.reply_chain],
-        "recent_messages": [message_data(item) for item in context.recent_messages],
+        "reply_chain": [message_data(item) for item in chain],
+        "message_immediately_before_current": message_data(immediate) if immediate else None,
+        "recent_channel_messages": [message_data(item) for item in live],
+        "recent_messages": [message_data(item) for item in getattr(context, "recent_messages", ())],
         "verified_rank": ({"user_id": rank.user_id, "name": rank.name, "rank": rank.rank} if rank else None),
         "uncertain_community_memories": [
             {"type": item.get("record_type", "community_memory"),

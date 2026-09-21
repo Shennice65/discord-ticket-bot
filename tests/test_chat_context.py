@@ -261,6 +261,66 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         context = await brain.build_context(current)
         self.assertFalse(context.recent_messages)
 
+    async def test_live_window_includes_immediate_preceding_author_and_recent_messages(self):
+        now = datetime.now(timezone.utc)
+        bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(
+            get_player_rank=AsyncMock(return_value=None)))
+        brain = ServerBrain(bot, AsyncMock())
+        guild = SimpleNamespace(id=10, name="Guild", members=[])
+        channel = SimpleNamespace(id=20, name="general")
+
+        def make(mid, author_id, text, created_at, channel_obj=channel, guild_obj=guild):
+            return SimpleNamespace(
+                id=mid,
+                author=SimpleNamespace(id=author_id, bot=False, display_name=f"user-{author_id}",
+                                       roles=[], guild_permissions=SimpleNamespace(administrator=False)),
+                channel=channel_obj,
+                guild=guild_obj,
+                content=text,
+                created_at=created_at,
+                reference=None,
+                mentions=[],
+                attachments=[],
+            )
+
+        preceding = make(10, 44, "Joel said bro vink", now - timedelta(seconds=4))
+        nearby = make(11, 55, "another nearby message", now - timedelta(seconds=2))
+        old = make(12, 66, "old channel traffic", now - timedelta(minutes=3))
+        other_channel = make(13, 77, "different channel", now - timedelta(seconds=1),
+                             SimpleNamespace(id=21, name="other"))
+        for item in (preceding, nearby, old, other_channel):
+            brain.observe(item)
+
+        current = make(14, 88, "who is this person above me?", now)
+        context = await brain.build_context(current)
+
+        self.assertEqual([10, 11], [item.message_id for item in context.surrounding_messages])
+        self.assertEqual(55, context.surrounding_messages[-1].author_id)
+        self.assertNotIn(12, [item.message_id for item in context.surrounding_messages])
+        self.assertNotIn(13, [item.message_id for item in context.surrounding_messages])
+
+    async def test_live_window_excludes_reply_chain_duplicates_but_keeps_chain_priority(self):
+        now = datetime.now(timezone.utc)
+        author = SimpleNamespace(id=7, bot=False, display_name="member", roles=[],
+                                 guild_permissions=SimpleNamespace(administrator=False))
+        guild = SimpleNamespace(id=10, name="Guild", members=[])
+        channel = SimpleNamespace(id=20, name="general")
+        parent = SimpleNamespace(id=30, author=author, channel=channel, guild=guild,
+                                 content="parent", created_at=now - timedelta(seconds=10),
+                                 reference=None, mentions=[], attachments=[])
+        current = SimpleNamespace(id=31, author=author, channel=channel, guild=guild,
+                                  content="reply", created_at=now,
+                                  reference=SimpleNamespace(message_id=30, channel_id=20),
+                                  mentions=[], attachments=[])
+        current.reference.resolved = parent
+        bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(
+            get_player_rank=AsyncMock(return_value=None)))
+        brain = ServerBrain(bot, AsyncMock())
+        brain.observe(parent)
+        context = await brain.build_context(current)
+        self.assertEqual([30], [item.message_id for item in context.reply_chain])
+        self.assertNotIn(30, [item.message_id for item in context.surrounding_messages])
+
     async def test_high_confidence_memory_is_served_from_local_cache(self):
         now = datetime.now(timezone.utc)
         record = {"guild_id": 10, "channel_id": 20, "record_type": "inside_joke",
@@ -286,11 +346,24 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(current=SimpleNamespace(author_id=7, author_name="member", content="hello",
             guild_id=10, channel_id=20),
             server_name="Guild", channel_name="general", author_roles=(), author_is_admin=False, admins=(),
-            reply_chain=(), recent_messages=(), exchanges=(), verified_rank=None,
+            reply_chain=(), surrounding_messages=(), recent_messages=(), exchanges=(), verified_rank=None,
             memories=[{"summary": "community claim", "confidence": 0.4, "source_message_ids": [1]}])
         rendered = chat_prompts.context_text(context)
         self.assertIn("uncertain_community_memories", rendered)
         self.assertIn("community claim", rendered)
+
+    def test_prompt_labels_live_speakers_and_mentions(self):
+        item = SimpleNamespace(message_id=9, author_id=44, author_name="Joel", content="bro vink",
+                               reply_to=None, mentioned_users=(55,), created_at=datetime.now(timezone.utc))
+        context = SimpleNamespace(current=SimpleNamespace(author_id=7, author_name="member", content="who is above",
+            guild_id=10, channel_id=20), server_name="Guild", channel_name="general", author_roles=(),
+            author_is_admin=False, admins=(), reply_chain=(), surrounding_messages=(item,), recent_messages=(),
+            exchanges=(), verified_rank=None, memories=[])
+        rendered = chat_prompts.context_text(context)
+        self.assertIn("message_immediately_before_current", rendered)
+        self.assertIn("recent_channel_messages", rendered)
+        self.assertIn("Joel", rendered)
+        self.assertIn("mentioned_user_ids", rendered)
 
 
 async def _empty_async_generator():

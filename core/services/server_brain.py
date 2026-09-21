@@ -57,6 +57,7 @@ class BrainContext:
     author_is_admin: bool
     admins: tuple[str, ...]
     reply_chain: tuple[ContextMessage, ...] = ()  # Immediate parent first.
+    surrounding_messages: tuple[ContextMessage, ...] = ()  # Chronological live window.
     recent_messages: tuple[ContextMessage, ...] = ()
     exchanges: tuple[tuple[str, str], ...] = ()
     memories: list[dict] = field(default_factory=list)
@@ -69,9 +70,11 @@ class ServerBrain:
     """Own context selection; the cog supplies Discord events and an embed adapter."""
 
     WINDOW = timedelta(minutes=15)
+    LIVE_WINDOW = timedelta(minutes=2)
     MAX_CHANNELS = 128
     MAX_RECENT = 75
     MAX_SELECTED = 12
+    MAX_LIVE_SELECTED = 6
     MAX_REPLY_DEPTH = 3
     LOOKUP_TIMEOUT = 1.0
 
@@ -208,7 +211,23 @@ class ServerBrain:
             parent = ancestor
         return tuple(chain)
 
-    def _select_recent(self, current, chain):
+    def select_live_window(self, current, chain=()):
+        """Return nearby same-channel messages using only the gateway cache.
+
+        The result is chronological and intentionally independent of participants so a
+        prompt such as "the person above me" still has the preceding speaker available.
+        Reply-chain entries are represented by the higher-priority chain section and are
+        omitted here to avoid spending the small live-window budget twice.
+        """
+        candidates = [item for item in self.recent_messages.get(current.scope, {}).values()
+                      if item.message_id != current.message_id
+                      and current.created_at - self.LIVE_WINDOW <= item.created_at <= current.created_at]
+        chain_ids = {item.message_id for item in chain}
+        candidates = [item for item in candidates if item.message_id not in chain_ids]
+        candidates.sort(key=lambda item: (item.created_at, item.message_id))
+        return tuple(candidates[-self.MAX_LIVE_SELECTED:])
+
+    def _select_recent(self, current, chain, live=()):
         candidates = [item for item in self.recent_messages.get(current.scope, {}).values()
                       if current.created_at - self.WINDOW <= item.created_at <= current.created_at
                       and item.message_id != current.message_id]
@@ -226,6 +245,7 @@ class ServerBrain:
                         connected.add(item.reply_to)
         selected = []
         chain_ids = {item.message_id for item in chain}
+        live_ids = {item.message_id for item in live}
         for item in candidates:
             linked = item.message_id in connected
             participant = not item.is_bot and (
@@ -235,7 +255,7 @@ class ServerBrain:
             # participates in both discussions. Bot messages need a reply link.
             if item.reply_to is not None and not linked:
                 continue
-            if item.message_id not in chain_ids and (linked or participant):
+            if item.message_id not in chain_ids and item.message_id not in live_ids and (linked or participant):
                 selected.append(item)
         return tuple(selected[-self.MAX_SELECTED:])
 
@@ -264,7 +284,8 @@ class ServerBrain:
         current = ContextMessage.from_message(message)
         self.observe(message)
         chain = await self._reply_chain(message)
-        recent = self._select_recent(current, chain)
+        live = self.select_live_window(current, chain)
+        recent = self._select_recent(current, chain, live)
         guild = message.guild
         context = BrainContext(
             current=current,
@@ -274,7 +295,7 @@ class ServerBrain:
             author_is_admin=bool(getattr(getattr(message.author, "guild_permissions", None), "administrator", False)),
             admins=tuple(member.display_name[:100] for member in getattr(guild, "members", ())
                          if not member.bot and member.guild_permissions.administrator)[:10],
-            reply_chain=chain, recent_messages=recent,
+            reply_chain=chain, surrounding_messages=live, recent_messages=recent,
             verified_rank=await self.get_verified_rank(message),
         )
         key = (*current.scope, current.author_id)
@@ -284,6 +305,6 @@ class ServerBrain:
                                   and current.created_at - self.WINDOW <= timestamp < current.created_at)
         context.curated_lore = self.curated_lore
         context.memories = self.select_cached_memories(current, chain)
-        logger.debug("Context channel=%s parents=%s recent=%s memories=%s", current.channel_id,
-                     len(chain), len(recent), len(context.memories))
+        logger.debug("Context channel=%s parents=%s live=%s recent=%s memories=%s", current.channel_id,
+                     len(chain), len(live), len(recent), len(context.memories))
         return context
