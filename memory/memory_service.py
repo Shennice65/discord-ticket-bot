@@ -9,7 +9,7 @@ class MemoryService:
 
     async def load_memory_cache(self, channel_id: int, limit: int = 250, min_confidence: float = 0.5):
         """Loads recent relevant memories from the DB."""
-        if not getattr(self.bot, "db", None) or not getattr(self.bot.db, "db", None):
+        if getattr(self.bot, "db", None) is None or getattr(self.bot.db, "db", None) is None:
             return []
             
         try:
@@ -26,7 +26,7 @@ class MemoryService:
             return []
 
     async def save_memory(self, guild_id, channel_id, memory_data: dict):
-        if not getattr(self.bot, "db", None) or not getattr(self.bot.db, "db", None):
+        if getattr(self.bot, "db", None) is None or getattr(self.bot.db, "db", None) is None:
             return
             
         try:
