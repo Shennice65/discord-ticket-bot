@@ -416,14 +416,17 @@ class Chat(commands.Cog):
                         return f"Error searching channel: {str(e)}"
                 
                 # Execute primary API call with configured tools and dynamic context.
-                response = await self._api_call_with_fallback(
-                    'generate_content', 
-                    contents=contents, 
-                    config=types.GenerateContentConfig(
-                        system_instruction=dynamic_system_instruction,
-                        tools=[search_channel_for_image],
-                        temperature=0.95
-                    )
+                response = await asyncio.wait_for(
+                    self._api_call_with_fallback(
+                        'generate_content',
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=dynamic_system_instruction,
+                            tools=[search_channel_for_image],
+                            temperature=0.95
+                        )
+                    ),
+                    timeout=90,
                 )
                 
                 # Normalize response markdown and whitespace.
