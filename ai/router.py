@@ -46,6 +46,32 @@ class AIRouter:
             content,
         ))
 
+    def _memory_lookup_name(self, message):
+        """Extract a small human/member name for a scoped cache-miss lookup."""
+        for mentioned in getattr(message, "mentions", ()):
+            if (getattr(mentioned, "id", None) != getattr(self.bot.user, "id", None)
+                    and not getattr(mentioned, "bot", False)):
+                return (getattr(mentioned, "display_name", None)
+                        or getattr(mentioned, "name", None))
+
+        content = (message.content or "").strip()
+        patterns = (
+            r"\bwho\s+(?:is|was)\s+([A-Za-z0-9][A-Za-z0-9 _-]{1,59}?)(?:\?|$)",
+            r"\bwho\s+([A-Za-z0-9][A-Za-z0-9 _-]{1,59}?)\s+is\b",
+            r"\b(?:what\s+do\s+you\s+know\s+about|tell\s+me\s+about|"
+            r"what\s+happened\s+to|why\s+is)\s+([A-Za-z0-9][A-Za-z0-9 _-]{1,59}?)(?:\?|$)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                name = match.group(1).strip(" .,?!")
+                normalized = re.sub(r"\s+", " ", name.casefold())
+                if (normalized in {"this", "that", "them", "him", "her", "who"}
+                        or normalized.startswith(("this person", "that person", "the person"))):
+                    return None
+                return name
+        return None
+
     @staticmethod
     def _tool_declarations(include_image, include_memory):
         declarations = []
@@ -239,7 +265,32 @@ class AIRouter:
                     types.Content(role="model", parts=[types.Part.from_text(text=bot_turn)]),
                 ])
 
+            memory_evidence = None
+            if self._needs_memory_lookup(message, context):
+                lookup_name = self._memory_lookup_name(message)
+                if lookup_name:
+                    stage_started = time.perf_counter()
+                    try:
+                        memory_evidence = await bounded(
+                            self._search_database_memory(message, lookup_name),
+                            timeout=1.5,
+                        )
+                    except Exception as error:
+                        logger.warning(
+                            "AI memory lookup failed message_id=%s error=%s",
+                            message.id, type(error).__name__,
+                        )
+                    logger.info(
+                        "AI stage message_id=%s stage=memory_lookup duration_ms=%d",
+                        message.id, (time.perf_counter() - stage_started) * 1000,
+                    )
+
             parts = []
+            if memory_evidence:
+                parts.append(types.Part.from_text(text=(
+                    "SCOPED_MEMORY_LOOKUP (uncertain community evidence; do not "
+                    "override verified metadata)\n" + str(memory_evidence)[:4000]
+                )))
             if user_text:
                 parts.append(types.Part.from_text(text=(
                     f"CURRENT_DISCORD_USER id={context.current.author_id} "
@@ -275,7 +326,7 @@ class AIRouter:
             
             tool_list = self._tool_declarations(
                 self._is_image_request(user_text),
-                self._needs_memory_lookup(message, context),
+                False,
             )
             config_kwargs = {
                 "system_instruction": prompts.system_instruction(context),

@@ -364,7 +364,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         message.reply.assert_awaited_once_with("hello")
         self.assertEqual("hello", tracker._exchanges[(10, 20, 7)][0].bot_text)
 
-    async def test_tool_execution_is_one_round_and_final_generation_has_no_tools(self):
+    async def test_cache_miss_memory_prefetch_keeps_one_generation(self):
         bot_user = SimpleNamespace(id=1, display_name="Atlas", name="Atlas")
         bot = SimpleNamespace(user=bot_user)
         message = make_message(content="@Atlas who is Polos?", mentions=[bot_user])
@@ -392,23 +392,27 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             build=AsyncMock(return_value=context),
         )
         router = AIRouter(bot, builder)
-        responses = [
-            SimpleNamespace(text="", function_calls=[SimpleNamespace(
-                name="search_database_memory", args={"name": "Polos"})]),
-            SimpleNamespace(text="Polos is Polos", function_calls=[]),
-        ]
+        responses = [SimpleNamespace(text="Polos is Polos", function_calls=[])]
         fake_llm = SimpleNamespace(client=object(), generate_content=AsyncMock(side_effect=responses))
         router._search_database_memory = AsyncMock(return_value="Polos community fact")
         with patch("ai.router.llm", fake_llm):
             await router.handle_message(message, True, None)
 
-        self.assertEqual(2, fake_llm.generate_content.await_count)
+        self.assertEqual(1, fake_llm.generate_content.await_count)
         first_config = fake_llm.generate_content.await_args_list[0].kwargs["config"]
-        final_config = fake_llm.generate_content.await_args_list[1].kwargs["config"]
-        self.assertTrue(first_config["tools"])
-        self.assertEqual([], final_config["tools"])
-        router._search_database_memory.assert_awaited_once_with(message, name="Polos")
+        self.assertEqual([], first_config["tools"])
+        router._search_database_memory.assert_awaited_once_with(message, "Polos")
         message.reply.assert_awaited_once_with("Polos is Polos")
+
+    def test_memory_lookup_name_supports_common_question_forms(self):
+        bot = SimpleNamespace(user=SimpleNamespace(id=1))
+        router = AIRouter(bot, SimpleNamespace())
+        self.assertEqual("Chiz", router._memory_lookup_name(
+            make_message(content="do you know who Chiz is?")))
+        self.assertEqual("CherryBomb", router._memory_lookup_name(
+            make_message(content="tell me about CherryBomb")))
+        self.assertIsNone(router._memory_lookup_name(
+            make_message(content="who is this person above me?")))
 
 
 if __name__ == "__main__":
