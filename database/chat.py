@@ -8,6 +8,22 @@ logger = logging.getLogger(__name__)
 
 
 class ChatContextMixin:
+    async def load_chat_memory_cache(self, channel_id, minimum_confidence=0.5, limit=250):
+        """Load durable memories for the in-process reply cache."""
+        if self.chat_memory is None:
+            return []
+        fields = {"guild_id": 1, "channel_id": 1, "summary": 1,
+                  "record_type": 1, "memory_key": 1, "associated_users": 1,
+                  "source_message_ids": 1, "confidence": 1, "importance": 1,
+                  "first_seen": 1, "last_seen": 1, "timestamp": 1}
+        try:
+            return await self.chat_memory.find(
+                {"channel_id": channel_id, "confidence": {"$gte": minimum_confidence}}, fields
+            ).sort([("importance", -1), ("last_seen", -1)]).limit(limit).to_list(length=limit)
+        except Exception as error:
+            logger.debug("Memory cache refresh unavailable error=%s", type(error).__name__)
+            return []
+
     async def get_chat_context_memories(
         self, guild_id, channel_id, query, embedding=None, source_channel_id=None
     ):

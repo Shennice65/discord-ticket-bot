@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -75,36 +74,69 @@ class ServerBrain:
     MAX_SELECTED = 12
     MAX_REPLY_DEPTH = 3
     LOOKUP_TIMEOUT = 1.0
-    EMBEDDING_TIMEOUT = 1.5
 
     def __init__(self, bot, embed_query, lore_path="lore.txt"):
         self.bot = bot
         self.embed_query = embed_query
         self.lore_path = Path(lore_path)
         self.recent_messages = OrderedDict()
-        self._seeded = set()
         self._exchanges = OrderedDict()
-        self._embedding_cache = OrderedDict()
+        self.curated_lore = ""
+        self._lore_mtime = None
+        self.memory_cache = {}
+        self._memory_cache_channel_id = None
 
-    @staticmethod
-    def needs_memory(content):
-        text = re.sub(r"<@!?\d+>", "", content).strip().casefold()
-        text = re.sub(r"[^\w\s]", "", text).strip()
-        return text not in {"", "hi", "hey", "hello", "yo", "sup", "thanks", "thank you", "ok", "lol", "stfu"}
+    async def refresh_memory_cache(self, channel_id):
+        if not channel_id or not getattr(self.bot, "db", None):
+            self.memory_cache = {}
+            return
+        loader = getattr(self.bot.db, "load_chat_memory_cache", None)
+        if loader is None:
+            return
+        try:
+            records = await loader(channel_id, minimum_confidence=0.5, limit=250)
+        except Exception as error:
+            logger.debug("Memory cache loader failed error=%s", type(error).__name__)
+            return
+        grouped = {}
+        for record in records:
+            guild_id = record.get("guild_id")
+            if guild_id is not None:
+                grouped.setdefault(guild_id, []).append(record)
+        self.memory_cache = grouped
+        self._memory_cache_channel_id = channel_id
 
-    async def _cached_embedding(self, scope, query):
-        key = (*scope, query)
-        cached = self._embedding_cache.get(key)
-        if cached and time.monotonic() - cached[0] < 300:
-            self._embedding_cache.move_to_end(key)
-            return cached[1]
-        embedding = await asyncio.wait_for(self.embed_query(query), self.EMBEDDING_TIMEOUT)
-        if embedding:
-            self._embedding_cache[key] = (time.monotonic(), embedding)
-            self._embedding_cache.move_to_end(key)
-            while len(self._embedding_cache) > 128:
-                self._embedding_cache.popitem(last=False)
-        return embedding
+    def select_cached_memories(self, current, chain=()):
+        records = self.memory_cache.get(current.guild_id, ())
+        if not records:
+            return []
+        query = " ".join([item.content for item in reversed(chain)] + [current.content]).casefold()
+        words = set(re.findall(r"\w{3,}", query))
+        ranked = []
+        for record in records:
+            searchable = " ".join(str(record.get(field, "")) for field in
+                                   ("summary", "memory_key", "associated_users")).casefold()
+            overlap = sum(word in searchable for word in words)
+            score = overlap * 0.5 + float(record.get("confidence", 0) or 0) * 0.3
+            score += float(record.get("importance", 0) or 0) * 0.2
+            ranked.append((score, record))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [record for score, record in ranked[:3] if score > 0]
+
+    async def refresh_lore_cache(self):
+        try:
+            mtime = self.lore_path.stat().st_mtime_ns
+            if mtime == self._lore_mtime:
+                return
+            self.curated_lore = (await asyncio.to_thread(
+                self.lore_path.read_text, encoding="utf-8"
+            ))[:12000]
+            self._lore_mtime = mtime
+        except FileNotFoundError:
+            self.curated_lore = ""
+            self._lore_mtime = None
+        except OSError as error:
+            logger.debug("Curated lore refresh unavailable error=%s", type(error).__name__)
 
     def _remember(self, item):
         bucket = self.recent_messages.setdefault(item.scope, OrderedDict())
@@ -116,8 +148,7 @@ class ServerBrain:
         self.recent_messages[item.scope] = bucket
         self.recent_messages.move_to_end(item.scope)
         while len(self.recent_messages) > self.MAX_CHANNELS:
-            scope, _ = self.recent_messages.popitem(last=False)
-            self._seeded.discard(scope)
+            self.recent_messages.popitem(last=False)
 
     def observe(self, message):
         """Cheap in-memory ingestion only; this does not store durable memory."""
@@ -151,11 +182,7 @@ class ServerBrain:
             return parent
         resolved = getattr(reference, "resolved", None)
         if resolved is None:
-            try:
-                resolved = await asyncio.wait_for(message.channel.fetch_message(parent_id), self.LOOKUP_TIMEOUT)
-            except Exception as error:
-                logger.debug("Reply parent unavailable channel=%s error=%s", scope[1], type(error).__name__)
-                return None
+            return None
         # Includes Discord's DeletedReferencedMessage sentinel.
         if not hasattr(resolved, "author") or resolved.id != parent_id:
             return None
@@ -177,33 +204,9 @@ class ServerBrain:
                 break
             ancestor = self.recent_messages.get(scope, {}).get(parent.reply_to)
             if ancestor is None:
-                try:
-                    fetched = await asyncio.wait_for(message.channel.fetch_message(parent.reply_to), self.LOOKUP_TIMEOUT)
-                    if (getattr(fetched.guild, "id", None), fetched.channel.id) != scope:
-                        break
-                    ancestor = ContextMessage.from_message(fetched)
-                    if ancestor.message_id != parent.reply_to:
-                        break
-                    self._remember(ancestor)
-                except Exception as error:
-                    logger.debug("Reply ancestor unavailable error=%s", type(error).__name__)
-                    break
+                break
             parent = ancestor
         return tuple(chain)
-
-    async def _seed_recent(self, message, current):
-        if current.scope in self._seeded:
-            return
-        # Mark before awaiting so concurrent requests don't refetch a channel.
-        self._seeded.add(current.scope)
-        try:
-            async for previous in message.channel.history(limit=self.MAX_RECENT, before=message):
-                if previous.created_at < current.created_at - self.WINDOW:
-                    break
-                if (getattr(previous.guild, "id", None), previous.channel.id) == current.scope:
-                    self.observe(previous)
-        except Exception as error:
-            logger.debug("Recent history unavailable channel=%s error=%s", current.channel_id, type(error).__name__)
 
     def _select_recent(self, current, chain):
         candidates = [item for item in self.recent_messages.get(current.scope, {}).values()
@@ -257,14 +260,9 @@ class ServerBrain:
         while len(self._exchanges) > 256:
             self._exchanges.popitem(last=False)
 
-    async def build_context(self, message, *, memory_channel_id=0):
+    async def build_context(self, message):
         current = ContextMessage.from_message(message)
         self.observe(message)
-        if self.needs_memory(current.content):
-            try:
-                await asyncio.wait_for(self._seed_recent(message, current), self.LOOKUP_TIMEOUT)
-            except asyncio.TimeoutError:
-                self._seeded.discard(current.scope)
         chain = await self._reply_chain(message)
         recent = self._select_recent(current, chain)
         guild = message.guild
@@ -284,28 +282,8 @@ class ServerBrain:
         context.exchanges = tuple((user, reply) for timestamp, message_id, user, reply in self._exchanges.get(key, ())
                                   if message_id in selected_ids
                                   and current.created_at - self.WINDOW <= timestamp < current.created_at)
-        try:
-            # Preserve hot reload without blocking the Discord event loop.
-            context.curated_lore = (await asyncio.to_thread(self.lore_path.read_text, encoding="utf-8"))[:12000]
-        except FileNotFoundError:
-            pass
-        except OSError as error:
-            logger.warning("Curated lore unavailable error=%s", type(error).__name__)
-        if current.guild_id is not None and memory_channel_id and self.needs_memory(current.content):
-            # Search approved general-channel memories while keeping the
-            # current guild boundary. Short follow-ups include their parent.
-            query = "\n".join([*(item.content[:500] for item in reversed(chain)), current.content])[:3500]
-            try:
-                context.query_embedding = await self._cached_embedding(current.scope, query) if query.strip() else None
-            except Exception as error:
-                logger.warning("Embedding unavailable; using keyword retrieval error=%s", type(error).__name__)
-            try:
-                context.memories = await asyncio.wait_for(self.bot.db.get_chat_context_memories(
-                    current.guild_id, current.channel_id, query, context.query_embedding,
-                    source_channel_id=memory_channel_id,
-                ), self.LOOKUP_TIMEOUT)
-            except Exception as error:
-                logger.warning("Memory retrieval unavailable error=%s", type(error).__name__)
+        context.curated_lore = self.curated_lore
+        context.memories = self.select_cached_memories(current, chain)
         logger.debug("Context channel=%s parents=%s recent=%s memories=%s", current.channel_id,
                      len(chain), len(recent), len(context.memories))
         return context

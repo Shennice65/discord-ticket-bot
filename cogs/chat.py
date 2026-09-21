@@ -11,6 +11,9 @@ import time
 from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
 from discord import app_commands
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Chat(commands.Cog):
     def __init__(self, bot):
@@ -27,15 +30,24 @@ class Chat(commands.Cog):
         # MongoDB config document so it can be changed without redeploying.
         self.memory_channel_id = Config.AI_MEMORY_CHANNEL_ID
         self._memory_channel_config_checked_at = 0.0
+        self.evidence_queue = asyncio.Queue(maxsize=1000)
+        self.ai_chat_enabled = True
+        self.member_role_id = Config.MEMBER_ROLE_ID
         
         # User rate limit tracking (non-admin).
         self.user_cooldowns = {}
         
         self.process_lore_queue.start()
+        self.persist_evidence_queue.start()
+        self.refresh_runtime_config.start()
+        self.refresh_lore_cache.start()
         self.lore_compressor.start()
 
     def cog_unload(self):
         self.process_lore_queue.cancel()
+        self.persist_evidence_queue.cancel()
+        self.refresh_runtime_config.cancel()
+        self.refresh_lore_cache.cancel()
         self.lore_compressor.cancel()
 
     def _is_memory_channel(self, message: discord.Message) -> bool:
@@ -97,15 +109,15 @@ class Chat(commands.Cog):
         return list(response.embeddings[0].values) if response.embeddings else None
 
     async def _record_message_evidence(self, message: discord.Message) -> None:
-        """Persist raw general-channel evidence and enqueue it once for embedding."""
+        """Queue raw general-channel evidence without blocking the reply path."""
         if not self._is_memory_channel(message) or message.author.bot:
             return
         content = (message.content or "").strip()
         if not content or content.startswith(("!", "?")):
             return
 
-        db = getattr(self.bot, "db", None)
-        if db is None or getattr(db, "chat_messages", None) is None:
+        queue = getattr(self, "evidence_queue", None)
+        if queue is None:
             return
 
         reference = getattr(message, "reference", None)
@@ -120,21 +132,73 @@ class Chat(commands.Cog):
             "created_at": message.created_at,
             "reaction_count": sum(reaction.count for reaction in getattr(message, "reactions", [])),
         }
+        if len(content.split()) >= 3:
+            evidence["user_text"] = f"[{message.author.display_name}] {content}"
         try:
-            await db.chat_messages.update_one(
-                {"message_id": message.id}, {"$set": evidence}, upsert=True
-            )
-            if len(content.split()) >= 3:
-                pending = dict(evidence)
-                pending["user_text"] = f"[{message.author.display_name}] {content}"
-                pending_collection = getattr(db, "pending_lore", None)
-                if pending_collection is None:
-                    pending_collection = db.db.pending_lore
-                await pending_collection.update_one(
-                    {"message_id": message.id}, {"$setOnInsert": pending}, upsert=True
-                )
+            queue.put_nowait(evidence)
+        except asyncio.QueueFull:
+            logger.warning("Chat evidence queue full; dropping message_id=%s", message.id)
+
+    async def _refresh_runtime_config(self):
+        await self._refresh_memory_channel_id()
+        await self.server_brain.refresh_memory_cache(self.memory_channel_id)
+        db = getattr(self.bot, "db", None)
+        if not db:
+            return
+        try:
+            self.ai_chat_enabled = await db.get_setting("ai_chat_enabled", True)
+            self.member_role_id = await db.get_setting("MEMBER_ROLE_ID", Config.MEMBER_ROLE_ID)
         except Exception as error:
-            print(f"Chat evidence storage error: {error}")
+            logger.debug("Runtime config refresh unavailable error=%s", type(error).__name__)
+
+    @tasks.loop(minutes=1)
+    async def refresh_runtime_config(self):
+        await self._refresh_runtime_config()
+
+    @tasks.loop(minutes=1)
+    async def refresh_lore_cache(self):
+        await self.server_brain.refresh_lore_cache()
+
+    @tasks.loop(seconds=2)
+    async def persist_evidence_queue(self):
+        db = getattr(self.bot, "db", None)
+        if not db:
+            return
+        batch = []
+        while len(batch) < 25:
+            try:
+                batch.append(self.evidence_queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        if not batch:
+            return
+        try:
+            collections = getattr(db, "db", None)
+            chat_messages = getattr(db, "chat_messages", None)
+            pending_lore = getattr(db, "pending_lore", None)
+            if chat_messages is None and collections is not None:
+                chat_messages = collections.chat_messages
+            if pending_lore is None and collections is not None:
+                pending_lore = collections.pending_lore
+            if chat_messages is None or pending_lore is None:
+                raise RuntimeError("chat evidence collections unavailable")
+            for evidence in batch:
+                await chat_messages.update_one(
+                    {"message_id": evidence["message_id"]}, {"$set": evidence}, upsert=True
+                )
+                if evidence.get("user_text"):
+                    await pending_lore.update_one(
+                        {"message_id": evidence["message_id"]},
+                        {"$setOnInsert": evidence}, upsert=True,
+                    )
+                self.evidence_queue.task_done()
+        except Exception as error:
+            logger.warning("Chat evidence persistence failed; retrying batch error=%s", type(error).__name__)
+            for evidence in batch:
+                try:
+                    self.evidence_queue.put_nowait(evidence)
+                except asyncio.QueueFull:
+                    break
 
     async def _api_call_with_fallback(self, method_name, **kwargs):
         """Calls a Gemini API method with fallback and key rotation asynchronously."""
@@ -164,7 +228,7 @@ class Chat(commands.Cog):
                 client = self.clients[self.current_client_index]
                 method = getattr(client.aio.models, method_name)
                 try:
-                    return await method(**kwargs)
+                    return await asyncio.wait_for(method(**kwargs), timeout=15)
                 except Exception as e:
                     error_str = str(e)
                     print(f"Error {model_name} on key index {self.current_client_index}: {error_str}")
@@ -186,6 +250,7 @@ class Chat(commands.Cog):
         current_status = await self.bot.db.get_setting("ai_chat_enabled", True)
         new_status = not current_status
         await self.bot.db.set_setting("ai_chat_enabled", new_status)
+        self.ai_chat_enabled = new_status
         
         status_text = "ENABLED" if new_status else "DISABLED"
         await interaction.response.send_message(f"AI Chat has been **{status_text}** globally.", ephemeral=True)
@@ -208,6 +273,7 @@ class Chat(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        request_started = time.perf_counter()
         is_bot = message.author.bot
             
         # Intercept ticket routing queries.
@@ -232,17 +298,14 @@ class Chat(commands.Cog):
                 return
             
         # Check if AI chat is globally enabled by admins
-        if getattr(self.bot, 'db', None):
-            ai_enabled = await self.bot.db.get_setting("ai_chat_enabled", True)
-            if not ai_enabled:
-                return
+        if not getattr(self, "ai_chat_enabled", True):
+            return
 
-        # Bot messages are never learned or answered. Raw evidence and its
-        # embedding queue are limited to the configured general channel.
+        # Bot messages are never learned or answered. Raw evidence is queued
+        # only for the configured general channel.
         self.server_brain.observe(message)
         if is_bot:
             return
-        await self._refresh_memory_channel_id()
         await self._record_message_evidence(message)
                 
         bot_mentioned = self.bot.user in message.mentions
@@ -255,9 +318,7 @@ class Chat(commands.Cog):
         is_direct_interaction = bot_mentioned or is_reply_to_bot or is_direct_question
         if not is_dm and not is_direct_interaction:
             # Validate channel visibility constraints.
-            member_role_id = Config.MEMBER_ROLE_ID
-            if not member_role_id and getattr(self.bot, 'db', None):
-                member_role_id = await self.bot.db.get_setting("MEMBER_ROLE_ID", 0)
+            member_role_id = getattr(self, "member_role_id", Config.MEMBER_ROLE_ID)
                 
             if member_role_id:
                 member_role = message.guild.get_role(int(member_role_id))
@@ -271,6 +332,8 @@ class Chat(commands.Cog):
 
         if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
             return
+
+        logger.info("AI timing stage=route seconds=%.3f", time.perf_counter() - request_started)
             
         # --- "LEAVE ON READ" FILTER (ANTI-FLOODING) ---
         # If someone pings the bot with just "lol", ignore it so we don't flood the chat.
@@ -335,10 +398,9 @@ class Chat(commands.Cog):
         # Signal processing state.
         async with message.channel.typing():
             try:
-                context = await self.server_brain.build_context(
-                    message, memory_channel_id=self.memory_channel_id
-                )
-                query_embedding = context.query_embedding
+                context_started = time.perf_counter()
+                context = await self.server_brain.build_context(message)
+                logger.info("AI timing stage=context seconds=%.3f", time.perf_counter() - context_started)
                 contents = []
                 for user, reply in context.exchanges:
                     contents.extend([
@@ -351,6 +413,7 @@ class Chat(commands.Cog):
                     parts.append(types.Part.from_text(text=user_text))
                     
                 # Stream and append image attachments to prompt context.
+                image_started = time.perf_counter()
                 if message.attachments:
                     import aiohttp
                     async with aiohttp.ClientSession() as session:
@@ -362,6 +425,8 @@ class Chat(commands.Cog):
                                         parts.append(
                                             types.Part.from_bytes(data=image_data, mime_type=att.content_type)
                                         )
+                if message.attachments:
+                    logger.info("AI timing stage=images seconds=%.3f", time.perf_counter() - image_started)
                 
                 if not parts:
                     return # Neither text nor image was provided
@@ -418,6 +483,7 @@ class Chat(commands.Cog):
                         return f"Error searching channel: {str(e)}"
                 
                 # Execute primary API call with configured tools and dynamic context.
+                generation_started = time.perf_counter()
                 response = await asyncio.wait_for(
                     self._api_call_with_fallback(
                         'generate_content',
@@ -436,36 +502,20 @@ class Chat(commands.Cog):
                 import re
                 reply_text = re.sub(r'\n+', '\n', reply_text)
                 
-                # Persist exchanges only when the configured learning channel
-                # is the source, so DMs and other channels cannot become lore.
-                if query_embedding and self._is_memory_channel(message) and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
-                    try:
-                        await self.bot.db.chat_memory.insert_one({
-                            "record_type": "exchange",
-                            "guild_id": getattr(message.guild, "id", None),
-                            "channel_id": message.channel.id,
-                            "user_id": message.author.id,
-                            "source_message_ids": [message.id],
-                            "confidence": 1.0,
-                            "importance": 0.5,
-                            "user_text": user_text,
-                            "bot_reply": reply_text,
-                            "embedding": query_embedding,
-                            "timestamp": datetime.now(timezone.utc)
-                        })
-                        print("Saved to chat_memory!")
-                    except Exception as db_err:
-                        print(f"MongoDB Insert Error: {db_err}")
-                
                 # Paginate output to comply with Discord character limits.
                 chunk_size = 1990
                 chunks = [reply_text[i:i+chunk_size] for i in range(0, len(reply_text), chunk_size)]
                 
+                send_started = time.perf_counter()
                 for i, chunk in enumerate(chunks):
                     if i == 0:
                         await message.reply(chunk)
                     else:
                         await message.channel.send(chunk)
+
+                logger.info("AI timing stage=reply seconds=%.3f total=%.3f",
+                            time.perf_counter() - generation_started, time.perf_counter() - request_started)
+                logger.info("AI timing stage=send seconds=%.3f", time.perf_counter() - send_started)
 
                 self.server_brain.remember_exchange(message, user_text or "[Image attachment]", reply_text)
                         
@@ -572,7 +622,7 @@ class Chat(commands.Cog):
                 
         await ctx.author.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
 
-    @tasks.loop(seconds=5.0)
+    @tasks.loop(minutes=1)
     async def process_lore_queue(self):
         """Asynchronously embed and persist queued chat events within rate limit constraints."""
         if not self.client or not getattr(self.bot, 'db', None):

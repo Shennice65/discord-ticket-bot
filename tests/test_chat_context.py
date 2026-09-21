@@ -34,30 +34,6 @@ import asyncio
 
 
 class ChatContextTests(unittest.IsolatedAsyncioTestCase):
-    async def test_embedding_cache_reuses_query_but_isolates_guilds(self):
-        embed = AsyncMock(return_value=[0.1])
-        brain = ServerBrain(SimpleNamespace(), embed)
-        await brain._cached_embedding((1, 2), "who is bot22?")
-        await brain._cached_embedding((1, 2), "who is bot22?")
-        self.assertEqual(embed.await_count, 1)
-        await brain._cached_embedding((3, 2), "who is bot22?")
-        self.assertEqual(embed.await_count, 2)
-
-    async def test_stalled_embedding_is_cancelled(self):
-        async def stalled(_query):
-            await asyncio.Event().wait()
-        brain = ServerBrain(SimpleNamespace(), stalled)
-        brain.EMBEDDING_TIMEOUT = 0.01
-        with self.assertRaises(asyncio.TimeoutError):
-            await brain._cached_embedding((1, 2), "history")
-        self.assertFalse(brain._embedding_cache)
-
-    def test_greetings_skip_memory_but_short_questions_do_not(self):
-        self.assertFalse(ServerBrain.needs_memory("<@123> yo!"))
-        self.assertFalse(ServerBrain.needs_memory("thanks"))
-        self.assertTrue(ServerBrain.needs_memory("who won?"))
-        self.assertTrue(ServerBrain.needs_memory("bot22"))
-
     def setUp(self):
         self.chat = object.__new__(Chat)
 
@@ -101,19 +77,41 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         message.content = "atlas what happened today?"
         self.assertTrue(self.chat._is_direct_question(message))
 
-    async def test_raw_message_is_upserted_and_queued_once(self):
+    async def test_raw_message_is_queued_without_database_io(self):
         message = self.message(content="this is useful context")
         chat_messages = SimpleNamespace(update_one=AsyncMock())
         pending_lore = SimpleNamespace(update_one=AsyncMock())
         self.chat.bot = SimpleNamespace(
             db=SimpleNamespace(chat_messages=chat_messages, db=SimpleNamespace(pending_lore=pending_lore))
         )
+        self.chat.evidence_queue = asyncio.Queue()
         with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
             await self.chat._record_message_evidence(message)
+        chat_messages.update_one.assert_not_awaited()
+        pending_lore.update_one.assert_not_awaited()
+        self.assertEqual(message.id, (await self.chat.evidence_queue.get())["message_id"])
+
+    async def test_evidence_worker_persists_queued_message(self):
+        message = self.message(content="this is useful context")
+        chat_messages = SimpleNamespace(update_one=AsyncMock())
+        pending_lore = SimpleNamespace(update_one=AsyncMock())
+        self.chat.bot = SimpleNamespace(db=SimpleNamespace(chat_messages=chat_messages, pending_lore=pending_lore))
+        self.chat.evidence_queue = asyncio.Queue()
+        await self.chat.evidence_queue.put({"message_id": message.id, "guild_id": 456,
+                                            "channel_id": 123, "content": message.content,
+                                            "user_text": "[member] this is useful context"})
+        await Chat.persist_evidence_queue.coro(self.chat)
         chat_messages.update_one.assert_awaited_once()
         pending_lore.update_one.assert_awaited_once()
-        self.assertEqual(message.id, chat_messages.update_one.await_args.args[0]["message_id"])
-        self.assertEqual(message.id, pending_lore.update_one.await_args.args[0]["message_id"])
+
+    async def test_evidence_worker_requeues_failed_batch(self):
+        chat_messages = SimpleNamespace(update_one=AsyncMock(side_effect=RuntimeError("db down")))
+        self.chat.bot = SimpleNamespace(db=SimpleNamespace(chat_messages=chat_messages))
+        self.chat.evidence_queue = asyncio.Queue(maxsize=3)
+        evidence = {"message_id": 1, "guild_id": 2, "channel_id": 3, "content": "text"}
+        await self.chat.evidence_queue.put(evidence)
+        await Chat.persist_evidence_queue.coro(self.chat)
+        self.assertEqual(1, self.chat.evidence_queue.qsize())
 
     async def test_off_channel_message_is_not_stored(self):
         message = self.message(channel_id=222, content="should stay out of memory")
@@ -232,22 +230,20 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
                                   content="what is my rank?", created_at=now,
                                   reference=SimpleNamespace(message_id=41, channel_id=20), mentions=[], attachments=[])
 
-        async def history(limit, before):
-            yield recent
-            yield parent
-
-        channel.history = history
-        channel.fetch_message = AsyncMock(return_value=parent)
+        current.reference.resolved = recent
+        channel.history = AsyncMock(side_effect=AssertionError("history should not be fetched"))
+        channel.fetch_message = AsyncMock(side_effect=AssertionError("reply parent should be cached"))
         brain = ServerBrain(bot, AsyncMock(return_value=[0.1]))
         brain.observe(parent)
         brain.observe(recent)
-        context = await brain.build_context(current, memory_channel_id=20)
+        context = await brain.build_context(current)
         self.assertEqual([41, 40], [item.message_id for item in context.reply_chain])
         self.assertFalse(any(item.message_id == 1 for item in context.recent_messages))
         self.assertEqual("Gold", context.verified_rank.rank)
-        db.get_chat_context_memories.assert_awaited_once_with(
-            10, 20, "parent question\nsame thread follow-up\nwhat is my rank?", [0.1], source_channel_id=20
-        )
+        db.get_chat_context_memories.assert_not_awaited()
+        brain.embed_query.assert_not_awaited()
+        self.assertEqual(channel.history.await_count, 0)
+        self.assertEqual(channel.fetch_message.await_count, 0)
 
     async def test_server_brain_excludes_other_channel_context(self):
         bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(
@@ -262,8 +258,29 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         brain.observe(make(1, 99, "other channel"))
         current = make(2, 20, "hello")
         current.channel.history = lambda limit, before: _empty_async_generator()
-        context = await brain.build_context(current, memory_channel_id=20)
+        context = await brain.build_context(current)
         self.assertFalse(context.recent_messages)
+
+    async def test_high_confidence_memory_is_served_from_local_cache(self):
+        now = datetime.now(timezone.utc)
+        record = {"guild_id": 10, "channel_id": 20, "record_type": "inside_joke",
+                  "memory_key": "bot curse", "summary": "BOT22 predictions reverse results",
+                  "associated_users": ["BOT22"], "confidence": 0.8, "importance": 0.7}
+        loader = AsyncMock(return_value=[record])
+        bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(
+            load_chat_memory_cache=loader, get_player_rank=AsyncMock(return_value=None)))
+        brain = ServerBrain(bot, AsyncMock())
+        await brain.refresh_memory_cache(20)
+        author = SimpleNamespace(id=7, bot=False, display_name="member", roles=[],
+                                 guild_permissions=SimpleNamespace(administrator=False))
+        channel = SimpleNamespace(id=30, name="chat")
+        message = SimpleNamespace(id=2, author=author, channel=channel,
+                                  guild=SimpleNamespace(id=10, name="Guild", members=[]),
+                                  content="what about the bot curse?", created_at=now,
+                                  reference=None, mentions=[], attachments=[])
+        context = await brain.build_context(message)
+        self.assertEqual("bot curse", context.memories[0]["memory_key"])
+        loader.assert_awaited_once_with(20, minimum_confidence=0.5, limit=250)
 
     def test_prompt_labels_community_memories_as_uncertain(self):
         context = SimpleNamespace(current=SimpleNamespace(author_id=7, author_name="member", content="hello",
