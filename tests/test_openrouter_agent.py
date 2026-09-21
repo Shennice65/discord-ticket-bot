@@ -26,6 +26,12 @@ class OpenRouterAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("answer", sanitize_model_text("answer<thought>hidden</thought>"))
         self.assertEqual("answer", sanitize_model_text("answer</p>"))
         self.assertEqual("first\nsecond", sanitize_model_text("first\n\nsecond"))
+        self.assertEqual(
+            "finally figured it out",
+            sanitize_model_text(
+                "BOT_RESPONSE to_user_id=1 guild_id=2 channel_id=3\nfinally figured it out"
+            ),
+        )
 
     async def test_generate_normalizes_tool_calls_and_model_fallbacks(self):
         provider = OpenRouterLLM()

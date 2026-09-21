@@ -74,7 +74,7 @@ def labeled_exchange(exchange):
     scope = f"guild_id={exchange.guild_id} channel_id={exchange.channel_id}"
     return (
         f"DISCORD_USER id={exchange.author_id} name={exchange.author_name} {scope}\n{exchange.user_text}",
-        f"BOT_RESPONSE to_user_id={exchange.author_id} {scope}\n{exchange.bot_text}",
+        exchange.bot_text,
     )
 
 

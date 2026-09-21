@@ -19,6 +19,18 @@ def sanitize_model_text(text):
     value = re.sub(r"</?(?:thought|thinking|analysis)>", "", value, flags=re.IGNORECASE)
     value = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
     value = re.sub(r"</?(?:p|div|span|section|article)(?:\s[^>]*)?>", "", value, flags=re.IGNORECASE)
+    value = re.sub(
+        r"\bBOT_RESPONSE\s+to_user_id=\d+\s+guild_id=\d+\s+channel_id=\d+\s*",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"\bDISCORD_USER\s+id=\d+\s+name=[^\n]+?\s+guild_id=\d+\s+channel_id=\d+\s*",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
     value = re.sub(r"\n[ \t]*(?:\n[ \t]*)+", "\n", value)
     return value.strip()
 
