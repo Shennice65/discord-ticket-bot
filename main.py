@@ -15,6 +15,7 @@ from database import Database
 from core.container import Container
 from core.services.ranking_service import RankingService
 from core.services.ticket_service import TicketService
+from web.dashboard import start_web_server
 
 
 class BotCommandTree(app_commands.CommandTree):
@@ -71,6 +72,8 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.betting")
         await self.load_extension("cogs.activity")
         print("Cogs loaded. Syncing commands...")
+        
+        asyncio.create_task(start_web_server(self, port=8080))
         
         self.ping_clips_service.start()
         
