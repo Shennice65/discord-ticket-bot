@@ -278,6 +278,7 @@ class Chat(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        print(f"[DEBUG] on_message called for: {message.content} from {message.author}")
         request_started = time.perf_counter()
         is_bot = message.author.bot
             
@@ -302,6 +303,7 @@ class Chat(commands.Cog):
             
         await self._record_message_evidence(message)
         
+        print(f"[DEBUG] Delegating to router (ai_chat_enabled={getattr(self, 'ai_chat_enabled', True)})")
         await self.router.handle_message(
             message,
             getattr(self, "ai_chat_enabled", True),

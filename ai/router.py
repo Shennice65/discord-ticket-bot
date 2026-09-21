@@ -54,7 +54,10 @@ class AIRouter:
                 return
 
         if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
+            print(f"[DEBUG] Dropped: bot_mentioned={bot_mentioned}, is_dm={is_dm}, is_reply_to_bot={is_reply_to_bot}, is_direct_question={is_direct_question}")
             return
+            
+        print(f"[DEBUG] Proceeding with handle_message: {message.content}")
 
         # "LEAVE ON READ" FILTER
         clean_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip().lower()
