@@ -71,7 +71,7 @@ class GeminiLLM:
     def __init__(self):
         self.api_keys = self._clean_keys(getattr(Config, "GEMINI_API_KEYS", ()))
         self.current_client_index = 0
-        self.model = getattr(Config, "GEMINI_MODEL", "gemini-3.8-flash")
+        self.model = getattr(Config, "GEMINI_MODEL", "gemini-3.5-flash-lite")
         self.fallback_models = list(getattr(Config, "GEMINI_FALLBACK_MODELS", ()))
         self.embedding_model = getattr(Config, "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
         self.embedding_dimensions = int(getattr(Config, "GEMINI_EMBEDDING_DIMENSIONS", 256))
@@ -336,5 +336,173 @@ class GeminiLLM:
         return SimpleNamespace(embeddings=[SimpleNamespace(values=value) for value in embeddings])
 
 
+class DeepSeekLLM:
+    """OpenAI-compatible DeepSeek adapter for chat and read-only tool calls."""
+
+    API_URL = "https://api.deepseek.com/chat/completions"
+    ATTEMPT_TIMEOUT = 45
+
+    def __init__(self):
+        self.api_keys = self._clean_keys(getattr(Config, "DEEPSEEK_API_KEYS", ()))
+        self.current_client_index = 0
+        self.model = getattr(Config, "DEEPSEEK_MODEL", "deepseek-flash")
+        self.fallback_models = list(getattr(Config, "DEEPSEEK_FALLBACK_MODELS", ()))
+        self._db_config_checked_at = 0.0
+
+    @staticmethod
+    def _clean_keys(raw_keys):
+        if isinstance(raw_keys, str):
+            raw_keys = raw_keys.split(",")
+        return list(dict.fromkeys(
+            str(value).strip().strip("'\"")
+            for value in (raw_keys or ())
+            if str(value).strip() and str(value).strip() != "your_deepseek_api_key_here"
+        ))
+
+    @property
+    def api_key(self):
+        if not self.api_keys:
+            return ""
+        return self.api_keys[self.current_client_index % len(self.api_keys)]
+
+    @property
+    def client(self):
+        return self if self.api_key else None
+
+    def rotate_key(self):
+        if self.api_keys:
+            self.current_client_index = (self.current_client_index + 1) % len(self.api_keys)
+
+    async def ensure_keys(self, db):
+        now = time.monotonic()
+        if now - self._db_config_checked_at < 300:
+            return bool(self.api_keys)
+        self._db_config_checked_at = now
+        env_keys = self._clean_keys(getattr(Config, "DEEPSEEK_API_KEYS", ()))
+        db_keys = []
+        if db is not None and getattr(db, "db", None) is not None:
+            try:
+                config_doc = await db.db.config.find_one({"_id": "api_keys"})
+                db_keys = self._clean_keys((config_doc or {}).get("DEEPSEEK_API_KEY", ()))
+            except Exception as error:
+                logger.warning("DeepSeek configuration lookup failed error=%s", type(error).__name__)
+        keys = list(dict.fromkeys([*db_keys, *env_keys]))
+        if keys != self.api_keys:
+            self.api_keys = keys
+            self.current_client_index = 0
+        return bool(self.api_keys)
+
+    async def _request(self, model, messages, tools, temperature, max_tokens):
+        if not self.api_key:
+            raise RuntimeError("No DeepSeek API key configured.")
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "stream": False,
+            # Tool choice is supported in non-thinking mode, which is faster
+            # and avoids exposing reasoning content in Discord replies.
+            "thinking": {"type": "disabled"},
+        }
+        if tools:
+            payload["tools"] = list(tools)
+            payload["tool_choice"] = "auto"
+        else:
+            payload["temperature"] = temperature
+        timeout = aiohttp.ClientTimeout(total=self.ATTEMPT_TIMEOUT)
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(self.API_URL, headers=headers, json=payload) as response:
+                body = await response.text()
+                if response.status >= 400:
+                    detail = body
+                    try:
+                        detail = (json.loads(body).get("error") or {}).get("message") or body
+                    except (TypeError, ValueError):
+                        pass
+                    raise RuntimeError(f"DeepSeek {response.status}: {str(detail)[:300]}")
+                try:
+                    return json.loads(body)
+                except ValueError as error:
+                    raise RuntimeError("DeepSeek returned invalid JSON.") from error
+
+    async def generate(self, messages, tools=None, temperature=0.82, max_tokens=1200):
+        models = list(dict.fromkeys([self.model, *self.fallback_models]))
+        last_error = None
+        for model in models:
+            try:
+                response = await self._request(model, messages, tools, temperature, max_tokens)
+                choice = (response.get("choices") or [{}])[0]
+                message = choice.get("message") or {}
+                calls = []
+                for item in message.get("tool_calls") or ():
+                    function = item.get("function") or {}
+                    raw_args = function.get("arguments") or "{}"
+                    try:
+                        arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except (TypeError, ValueError):
+                        arguments = {}
+                    calls.append(ToolCall(item.get("id"), function.get("name"), arguments))
+                assistant_message = {
+                    "role": "assistant",
+                    "content": message.get("content"),
+                    "tool_calls": message.get("tool_calls") or [],
+                }
+                usage = response.get("usage") or {}
+                normalized_usage = {
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                }
+                return GenerationResult(
+                    message.get("content") or "", tuple(calls),
+                    response.get("model") or model, normalized_usage, assistant_message,
+                )
+            except Exception as error:
+                last_error = error
+                if len(self.api_keys) > 1:
+                    self.rotate_key()
+                logger.warning("DeepSeek model exhausted model=%s error=%s", model, type(error).__name__)
+        raise last_error or RuntimeError("All DeepSeek models exhausted.")
+
+    async def generate_content(self, model=None, contents=None, config=None):
+        result = await self.generate([{"role": "user", "content": str(contents or "")}])
+        function_calls = tuple(SimpleNamespace(name=call.name, args=call.arguments) for call in result.tool_calls)
+        return SimpleNamespace(text=result.text, function_calls=function_calls)
+
+
+class HybridLLM:
+    """DeepSeek chat plus Gemini embeddings, retaining the existing llm API."""
+
+    def __init__(self):
+        self.chat = DeepSeekLLM()
+        self.embedding = GeminiLLM()
+
+    @property
+    def api_key(self):
+        return self.chat.api_key
+
+    @property
+    def client(self):
+        return self.chat.client
+
+    async def ensure_keys(self, db):
+        chat_ready = await self.chat.ensure_keys(db)
+        await self.embedding.ensure_keys(db)
+        return chat_ready
+
+    async def generate(self, *args, **kwargs):
+        return await self.chat.generate(*args, **kwargs)
+
+    async def generate_content(self, *args, **kwargs):
+        return await self.chat.generate_content(*args, **kwargs)
+
+    async def embed(self, *args, **kwargs):
+        return await self.embedding.embed(*args, **kwargs)
+
+    async def embed_content(self, *args, **kwargs):
+        return await self.embedding.embed_content(*args, **kwargs)
+
+
 OpenRouterLLM = GeminiLLM
-llm = GeminiLLM()
+llm = HybridLLM()

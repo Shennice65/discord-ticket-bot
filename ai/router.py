@@ -44,7 +44,9 @@ class AIRouter:
     @staticmethod
     def _is_image_request(content):
         return bool(re.search(
-            r"\b(?:image|picture|pic|photo|screenshot)\b|\blook\s+like\b|\bshow\s+me\b",
+            r"\b(?:image|picture|pic|photo|screenshot)\b|\blook\s+like\b|\bshow\s+me\b|"
+            r"\b(?:see|read|translate|describe)\s+(?:the\s+)?(?:image|picture|photo|one\s+above)\b|"
+            r"\b(?:person|user)\s+above\s+(?:saying|doing)\b|\bwhat\s+does\s+.*\s+(?:say|saying)\b",
             (content or "").casefold(),
         ))
 
@@ -53,7 +55,11 @@ class AIRouter:
         """Keep casual conversation out of the retrieval/tool path."""
         return bool(re.search(
             r"\b(rank|history|leaderboard|ticket|rule|lore|clip|image|picture|photo|server|player|"
-            r"recent|match|bet)\b",
+            r"recent|match|bet|remember|incident|happened|before|back\s+then|"
+            r"muted|mute|banned|ban|kicked|kick|warned|warn|punished|punishment|"
+            r"drama|argument|involved|beat|lost|tournament|leave|left|owns|owner)\b|"
+            r"\bwhat\s+happened\b|\bdo\s+you\s+remember\b|\bwhy\s+was\b|"
+            r"\bwho\s+started\b|\bwhat\s+did\b",
             (content or "").casefold(),
         ))
 
@@ -157,7 +163,10 @@ class AIRouter:
     async def _generate(self, messages, tools=None):
         """Call the new adapter while retaining compatibility with old test doubles."""
         if hasattr(llm, "generate"):
-            return await llm.generate(messages, tools=tools, temperature=0.6, max_tokens=1200)
+            return await llm.generate(
+                messages, tools=tools, temperature=0.6,
+                max_tokens=getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600),
+            )
         response = await llm.generate_content(
             model="openrouter",
             contents=json.dumps(messages, ensure_ascii=False),
@@ -234,7 +243,7 @@ class AIRouter:
         if hasattr(llm, "ensure_keys"):
             await llm.ensure_keys(getattr(self.bot, "db", None))
         if not llm.client:
-            await message.reply("Sorry, I had trouble talking to my brain: no OpenRouter API key is configured.")
+            await message.reply("Sorry, I had trouble talking to my brain: no AI provider key is configured.")
             return
 
         request_deadline = time.monotonic() + getattr(Config, "AI_REQUEST_TIMEOUT_SECONDS", 180)
@@ -263,8 +272,12 @@ class AIRouter:
                     await message.reply("Sorry, I couldn't load the conversation context.")
                     return
 
-                messages = [{"role": "system", "content": prompts.system_instruction(context)}]
-                for exchange in context.exchanges:
+                include_extended_context = self._should_offer_tools(user_text)
+                messages = [{
+                    "role": "system",
+                    "content": prompts.system_instruction(context, include_extended=include_extended_context),
+                }]
+                for exchange in context.exchanges[-getattr(Config, "AI_MAX_HISTORY_MESSAGES", 6):]:
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)
                     messages.extend([
                         {"role": "user", "content": user_turn},
@@ -273,7 +286,9 @@ class AIRouter:
 
                 content_parts = [{
                     "type": "text",
-                    "text": prompts.context_text(context) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
+                    "text": prompts.context_text(
+                        context, include_memories=include_extended_context
+                    ) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
                 }]
                 content_parts.extend(await self._load_attachment_parts(message))
                 messages.append({

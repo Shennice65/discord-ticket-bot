@@ -309,7 +309,7 @@ class Chat(commands.Cog):
         from ai.llm import llm
         await llm.ensure_keys(getattr(self.bot, 'db', None))
         if not llm.client:
-            await ctx.author.send("OpenRouter API not connected!")
+            await ctx.author.send("AI provider is not connected!")
             return
             
         msg = await ctx.author.send(f"Fetching last {amount} messages from <#{ctx.channel.id}> to sync lore... This might take a couple minutes to avoid hitting provider limits.")
