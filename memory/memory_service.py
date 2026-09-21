@@ -7,7 +7,7 @@ class MemoryService:
     def __init__(self, bot):
         self.bot = bot
 
-    async def load_memory_cache(self, channel_id: int, limit: int = 250, min_confidence: float = 0.5):
+    async def load_memory_cache(self, channel_id: int, limit: int = 250, min_confidence: float = 0.1):
         """Loads recent relevant memories from the DB."""
         if getattr(self.bot, "db", None) is None or getattr(self.bot.db, "db", None) is None:
             return []
