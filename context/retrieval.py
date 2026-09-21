@@ -30,8 +30,8 @@ class MemoryRetriever:
         self.entity_graph = {}
         self._memory_cache_channel_id = None
 
-    async def refresh_cache(self, channel_id: int):
-        records = await self.memory_service.load_memory_cache(channel_id)
+    async def refresh_cache(self):
+        records = await self.memory_service.load_memory_cache()
         grouped = {}
         graph = {}
         for record in records:
@@ -47,10 +47,9 @@ class MemoryRetriever:
                         
         self.memory_cache = grouped
         self.entity_graph = graph
-        self._memory_cache_channel_id = channel_id
 
     async def select_cached_memories(self, current_msg, chain=(), excluded_terms=()):
-        if current_msg.guild_id is None or not self._memory_cache_channel_id:
+        if current_msg.guild_id is None:
             return []
             
         guild_id = current_msg.guild_id

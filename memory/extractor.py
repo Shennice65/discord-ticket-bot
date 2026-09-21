@@ -108,7 +108,7 @@ class MemoryExtractor:
             if not source_ids:
                 continue
             confidence = candidate["confidence"]
-            query = {"guild_id": records[0].get("guild_id"), "channel_id": records[0].get("channel_id"),
+            query = {"guild_id": records[0].get("guild_id"),
                      "memory_key": candidate["memory_key"]}
             existing = await db.chat_memory.find_one(query)
             if existing:

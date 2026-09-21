@@ -7,7 +7,7 @@ class MemoryService:
     def __init__(self, bot):
         self.bot = bot
 
-    async def load_memory_cache(self, channel_id: int, limit: int = 250, min_confidence: float = 0.1):
+    async def load_memory_cache(self, limit: int = 250, min_confidence: float = 0.1):
         """Loads recent relevant memories from the DB."""
         if getattr(self.bot, "db", None) is None or getattr(self.bot.db, "db", None) is None:
             return []
@@ -16,7 +16,6 @@ class MemoryService:
             collection = self.bot.db.db.chat_memory
             # Note: The old AI data is dropped, this will return empty until new extractor runs
             cursor = collection.find({
-                "channel_id": channel_id,
                 "confidence": {"$gte": min_confidence}
             }).sort("timestamp", -1).limit(limit)
             

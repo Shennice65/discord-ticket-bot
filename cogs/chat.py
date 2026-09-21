@@ -154,7 +154,7 @@ class Chat(commands.Cog):
         except Exception as error:
             logger.warning("Gemini configuration refresh failed error=%s", type(error).__name__)
         await self._refresh_memory_channel_id()
-        await self.retriever.refresh_cache(self.memory_channel_id)
+        await self.retriever.refresh_cache()
         db = getattr(self.bot, "db", None)
         if not db:
             return
