@@ -3,9 +3,10 @@ from discord.ext import commands
 from google import genai
 from google.genai import types
 from config import Config
-from collections import defaultdict, deque
-import math
+from core.services.server_brain import ServerBrain
+from core.services import chat_prompts
 import asyncio
+import time
 from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
 from discord import app_commands
@@ -19,54 +20,119 @@ class Chat(commands.Cog):
         
         self.client = self.clients[0] if self.clients else None
         
-        # Cache recent channel history (max 15 messages) for context window management.
-        self.history = defaultdict(lambda: deque(maxlen=15))
+        self.server_brain = ServerBrain(bot, self._embed_query)
+        # Environment is the fallback; the live value is refreshed from the
+        # MongoDB config document so it can be changed without redeploying.
+        self.memory_channel_id = Config.AI_MEMORY_CHANNEL_ID
+        self._memory_channel_config_checked_at = 0.0
         
         # User rate limit tracking (non-admin).
         self.user_cooldowns = {}
         
-# Bot persona and domain knowledge constraints.
-        self.system_instruction = (
-            "You are a member of a Discord community. Text exactly like an actual user in a casual chat. "
-            "Use short words and abbreviations, but be subtle with slang so it doesn't sound forced or corny. Do not overuse specific words. "
-            "Form your own opinions. Be playful but nonchalant. Tease or banter when appropriate. "
-            "CRITICAL ANTI-HALLUCINATION RULE: If a user asks a factual question about server rules, mechanics, or lore, and the answer is NOT in your provided context, DO NOT GUESS. Either say you don't know, or tell them to check the server rules. "
-            "Do NOT use periods at the end of your sentences in most cases. Use fewer commas and keep capitalization natural (often lowercase). "
-            "Keep it very brief, natural, and chill. Feel free to use community inside jokes if relevant. "
-            "If someone asks a direct question about server information, answer them accurately right away but maintain your playful and nonchalant tone. "
-            "Do NOT sound like an AI assistant or professional customer service. Do NOT output any HTML tags or markdown. Do NOT use emojis of any kind.\n"
-            "Vary your vocabulary constantly. Do NOT repeat the exact same phrases or slang you used in previous messages. If you find yourself echoing a previous sentence, rewrite it entirely.\n"
-            "When a user insults you (e.g., saying 'f you'), DO NOT default to soft AI responses like 'love u too'. "
-            "Don't repeat the same insults ot jokes twice.\n" 
-            "You may joking pretend to have romantic feelings but don't over do it\n"
-            "lightly glaze shen and vink when theyre mentioned\n"
-            "Be highly unpredictable. Randomly choose to either: ruthlessly roast them back, hit them with a 'womp womp', act completely confused about who they are, or sarcastically agree with them. Never respond to insults the same way twice.\n"
-            "Whenever you make jokes, analogies, or insults, ALWAYS root them in the specific terminology provided in your lore. Do NOT use generic internet/gaming tropes (e.g. if roasting skill, use the specific server ranks provided instead of 'bronze'). You are an exclusive member of THIS specific server, so use its unique culture.\n\n"
-            
-            "--- EXAMPLES OF YOUR BANTER STYLE ---\n"
-            "User: fuck u bot\n"
-            "You: womp womp cry about it to someone who cares\n"
-            "User: ur actually so bad at this\n"
-            "You: im literally carrying this entire server on my digital back but go off i guess\n"
-            "User: stfu\n"
-            "You: who even are u lil bro\n\n"
-
-            "--- CORE SERVER KNOWLEDGE ---\n"
-            "1. This is a competitive Roblox server for the game 'Timebomb Duels'. We host Ranked 1v1 matches and Personal Observations.\n"
-            "2. 'Observers' are the staff members who spectate matches and officially record the results and rank changes.\n"
-            "3. If someone asks how to get ranked or 1v1, tell them to go to the ticket channel and click 'Ranked 1v1' or 'Personal Observation'.\n"
-            "4. The server also features a betting system (wagers) and a web dashboard for stats and clips.\n"
-            "5. There are other leagues such as OTA, ITL, ORL, any 3 letter abbreviation ending in L mostly are Leagues.\n"
-            "6. Nexus and Xblazez already lost. Cataclysm lost to merleura. Lightly flame Chiz and his team CherryBomb aka cb\n"
-        )
-        
-
         self.process_lore_queue.start()
         self.lore_compressor.start()
 
     def cog_unload(self):
         self.process_lore_queue.cancel()
         self.lore_compressor.cancel()
+
+    def _is_memory_channel(self, message: discord.Message) -> bool:
+        """Return whether a message may contribute to long-term AI memory."""
+        memory_channel_id = getattr(self, "memory_channel_id", Config.AI_MEMORY_CHANNEL_ID)
+        return bool(
+            memory_channel_id
+            and getattr(message.channel, "id", None) == memory_channel_id
+            and getattr(message, "guild", None) is not None
+        )
+
+    async def _refresh_memory_channel_id(self) -> int:
+        """Load the AI memory channel from MongoDB, with an environment fallback."""
+        now = time.monotonic()
+        if now - getattr(self, "_memory_channel_config_checked_at", 0.0) < 60:
+            return getattr(self, "memory_channel_id", Config.AI_MEMORY_CHANNEL_ID)
+
+        self._memory_channel_config_checked_at = now
+        fallback = Config.AI_MEMORY_CHANNEL_ID
+        db = getattr(self.bot, "db", None)
+        config_collection = getattr(getattr(db, "db", None), "config", None) if db else None
+        if config_collection is None:
+            self.memory_channel_id = fallback
+            return self.memory_channel_id
+
+        try:
+            config_doc = await config_collection.find_one(
+                {"_id": "api_keys"}, {"AI_MEMORY_CHANNEL_ID": 1}
+            )
+            if not config_doc or config_doc.get("AI_MEMORY_CHANNEL_ID") in (None, ""):
+                config_doc = await config_collection.find_one(
+                    {"AI_MEMORY_CHANNEL_ID": {"$exists": True}},
+                    {"AI_MEMORY_CHANNEL_ID": 1},
+                )
+            raw_channel_id = config_doc.get("AI_MEMORY_CHANNEL_ID") if config_doc else None
+            self.memory_channel_id = int(raw_channel_id) if raw_channel_id not in (None, "") else fallback
+        except Exception as error:
+            print(f"AI memory channel config lookup error: {error}")
+            self.memory_channel_id = fallback
+        return self.memory_channel_id
+
+    async def _is_reply_to_bot(self, message: discord.Message) -> bool:
+        parent = await self.server_brain.resolve_reply_parent(message)
+        return parent is not None and parent.author_id == self.bot.user.id
+
+    def _is_direct_question(self, message: discord.Message) -> bool:
+        """Recognize explicit questions addressed to the bot without broad auto-chat."""
+        content = (message.content or "").strip().lower()
+        if "?" not in content:
+            return False
+        bot_name = (getattr(self.bot.user, "display_name", "") or getattr(self.bot.user, "name", "")).lower()
+        return any(token in content for token in ("bot", bot_name) if token)
+
+    async def _embed_query(self, text):
+        response = await self._api_call_with_fallback(
+            'embed_content', model='gemini-embedding-2', contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=256),
+        )
+        return list(response.embeddings[0].values) if response.embeddings else None
+
+    async def _record_message_evidence(self, message: discord.Message) -> None:
+        """Persist raw general-channel evidence and enqueue it once for embedding."""
+        if not self._is_memory_channel(message) or message.author.bot:
+            return
+        content = (message.content or "").strip()
+        if not content or content.startswith(("!", "?")):
+            return
+
+        db = getattr(self.bot, "db", None)
+        if db is None or getattr(db, "chat_messages", None) is None:
+            return
+
+        reference = getattr(message, "reference", None)
+        reply_to_id = getattr(reference, "message_id", None) if reference else None
+        evidence = {
+            "message_id": message.id,
+            "guild_id": message.guild.id,
+            "channel_id": message.channel.id,
+            "author_id": message.author.id,
+            "content": content,
+            "reply_to_message_id": reply_to_id,
+            "created_at": message.created_at,
+            "reaction_count": sum(reaction.count for reaction in getattr(message, "reactions", [])),
+        }
+        try:
+            await db.chat_messages.update_one(
+                {"message_id": message.id}, {"$set": evidence}, upsert=True
+            )
+            if len(content.split()) >= 3:
+                pending = dict(evidence)
+                pending["user_text"] = f"[{message.author.display_name}] {content}"
+                pending_collection = getattr(db, "pending_lore", None)
+                if pending_collection is None:
+                    pending_collection = db.db.pending_lore
+                await pending_collection.update_one(
+                    {"message_id": message.id}, {"$setOnInsert": pending}, upsert=True
+                )
+        except Exception as error:
+            print(f"Chat evidence storage error: {error}")
 
     async def _api_call_with_fallback(self, method_name, **kwargs):
         """Calls a Gemini API method with fallback and key rotation asynchronously."""
@@ -123,6 +189,22 @@ class Chat(commands.Cog):
         await interaction.response.send_message(f"AI Chat has been **{status_text}** globally.", ephemeral=True)
 
     @commands.Cog.listener()
+    async def on_message_edit(self, before, after):
+        scope = getattr(after.guild, "id", None), after.channel.id
+        if after.id in self.server_brain.recent_messages.get(scope, {}):
+            self.server_brain.forget(*scope, after.id)
+            self.server_brain.observe(after)
+
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload):
+        self.server_brain.forget(payload.guild_id, payload.channel_id, payload.message_id)
+
+    @commands.Cog.listener()
+    async def on_raw_bulk_message_delete(self, payload):
+        for message_id in payload.message_ids:
+            self.server_brain.forget(payload.guild_id, payload.channel_id, message_id)
+
+    @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         is_bot = message.author.bot
             
@@ -152,11 +234,21 @@ class Chat(commands.Cog):
             ai_enabled = await self.bot.db.get_setting("ai_chat_enabled", True)
             if not ai_enabled:
                 return
+
+        # Bot messages are never learned or answered. Raw evidence and its
+        # embedding queue are limited to the configured general channel.
+        self.server_brain.observe(message)
+        if is_bot:
+            return
+        await self._refresh_memory_channel_id()
+        await self._record_message_evidence(message)
                 
         bot_mentioned = self.bot.user in message.mentions
         is_dm = isinstance(message.channel, discord.DMChannel)
+        is_reply_to_bot = await self._is_reply_to_bot(message)
+        is_direct_question = self._is_direct_question(message)
         
-        if not bot_mentioned and not is_dm:
+        if not is_dm:
             # Validate channel visibility constraints.
             member_role_id = Config.MEMBER_ROLE_ID
             if not member_role_id and getattr(self.bot, 'db', None):
@@ -169,25 +261,10 @@ class Chat(commands.Cog):
                 is_public = message.channel.permissions_for(message.guild.default_role).read_messages
             
             # Drop events from restricted channels to prevent information leakage.
-            if not is_public and not is_bot:
+            if not is_public:
                 return
 
-            # Queue public dialogue for vector embedding (requires min 3 tokens).
-            if len(message.content.split()) >= 3 and getattr(self.bot, 'db', None):
-                try:
-                    author_name = f"[{message.author.display_name} (BOT)]" if is_bot else f"[{message.author.display_name}]"
-                    await self.bot.db.db.pending_lore.insert_one({
-                        "channel_id": message.channel.id,
-                        "user_id": message.author.id,
-                        "user_text": f"{author_name} {message.content.strip()}",
-                        "timestamp": message.created_at
-                    })
-                except:
-                    pass
-            return
-            
-        # Prevent bot-to-bot recursion.
-        if is_bot:
+        if not bot_mentioned and not is_dm and not is_reply_to_bot and not is_direct_question:
             return
             
         # --- "LEAVE ON READ" FILTER (ANTI-FLOODING) ---
@@ -253,60 +330,17 @@ class Chat(commands.Cog):
         # Signal processing state.
         async with message.channel.typing():
             try:
-                # Generate semantic embedding for input.
-                query_embedding = None
-                if user_text:
-                    try:
-                        emb_response = await self._api_call_with_fallback(
-                            'embed_content',
-                            model='gemini-embedding-2',
-                            contents=user_text,
-                            config=types.EmbedContentConfig(output_dimensionality=256)
-                        )
-                        if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                            # Normalize embedding vector for BSON serialization.
-                            query_embedding = list(emb_response.embeddings[0].values)
-                    except Exception as e:
-                        print(f"Embedding error: {e}")
-                        
-                # Execute vector similarity search for lore context.
-                recalled_context = ""
-                if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
-                    try:
-                        pipeline = [
-                            {
-                                "$vectorSearch": {
-                                    "index": "vector_index",
-                                    "path": "embedding",
-                                    "queryVector": query_embedding,
-                                    "numCandidates": 1000,
-                                    "limit": 100  # Pull top 100 globally
-                                }
-                            },
-                            {
-                                "$limit": 3
-                            }
-                        ]
-                        
-                        cursor = self.bot.db.chat_memory.aggregate(pipeline)
-                        top_exchanges = await cursor.to_list(length=3)
-                        
-                        if top_exchanges:
-                            recalled_context = (
-                                "### RECALLED LONG-TERM CONTEXT (Server Memory) ###\n"
-                                "The following are semantically similar past conversations from various users. Do NOT assume the current user is the same person as in these past logs.\n"
-                                "CRITICAL RULE: If these past logs are just casual banter, insults, or jokes, DO NOT repeat the same punchlines or comebacks you used in the past! Only use this memory for factual server lore. If it's just banter, ignore how you responded previously and come up with a completely new response.\n"
-                            )
-                            for ex in top_exchanges:
-                                recalled_context += f"- A user said: {ex.get('user_text')}\n- You replied: {ex.get('bot_reply')}\n\n"
-                    except Exception as search_err:
-                        print(f"Vector search failed: {search_err}")
-                            
-                # Inject user-specific chat history.
+                context = await self.server_brain.build_context(
+                    message, memory_channel_id=self.memory_channel_id
+                )
+                query_embedding = context.query_embedding
                 contents = []
-                for hist_msg in self.history[message.author.id]:
-                    contents.append(hist_msg)
-                
+                for user, reply in context.exchanges:
+                    contents.extend([
+                        types.Content(role="user", parts=[types.Part.from_text(text=user)]),
+                        types.Content(role="model", parts=[types.Part.from_text(text=reply)]),
+                    ])
+
                 parts = []
                 if user_text:
                     parts.append(types.Part.from_text(text=user_text))
@@ -326,69 +360,15 @@ class Chat(commands.Cog):
                 
                 if not parts:
                     return # Neither text nor image was provided
+
+                parts.insert(0, types.Part.from_text(text=chat_prompts.context_text(context)))
                     
                 contents.append(types.Content(
                     role="user",
                     parts=parts
                 ))
                 
-                dynamic_system_instruction = self.system_instruction
-                
-                # HOT-RELOAD LORE.TXT
-                try:
-                    import os
-                    if os.path.exists("lore.txt"):
-                        with open("lore.txt", "r", encoding="utf-8") as f:
-                            lore_text = f.read().strip()
-                        if lore_text:
-                            dynamic_system_instruction += f"\n\n--- EXTENDED SERVER LORE (FROM FILE) ---\n{lore_text}\n"
-                except Exception as e:
-                    print(f"Failed to hot-reload lore.txt: {e}")
-                
-                if message.guild:
-                    is_admin = getattr(message.author.guild_permissions, 'administrator', False)
-                    roles = [r.name for r in getattr(message.author, 'roles', []) if r.name != "@everyone"]
-                    role_str = ", ".join(roles) if roles else "None"
-                    
-                    # Limit admin fetch to top 10 for performance.
-                    admins = [m.display_name for m in message.guild.members if getattr(m.guild_permissions, 'administrator', False) and not m.bot][:10]
-                    admin_str = ", ".join(admins) if admins else "Unknown"
-                    
-                    real_time_context = (
-                        f"\n\n--- REAL-TIME SERVER STATE ---\n"
-                        f"Server Name: {message.guild.name}\n"
-                        f"Current Channel: #{message.channel.name if hasattr(message.channel, 'name') else 'Unknown'}\n"
-                        f"Server Admins: {admin_str}\n"
-                        f"USER TALKING TO YOU: {message.author.display_name}\n"
-                        f"THEIR ROLES: {role_str}\n"
-                    )
-                    
-                    if is_admin:
-                        real_time_context += "STATUS: THIS USER IS A SERVER ADMINISTRATOR.\n"
-                    else:
-                        real_time_context += "STATUS: Regular member. They do NOT have admin permissions.\n"
-                        
-                    dynamic_system_instruction += real_time_context
-
-                if recalled_context:
-                    dynamic_system_instruction += "\n\n" + recalled_context
-                    
-                # Inject recent channel state for situational awareness.
-                recent_messages_context = "\n\n--- RECENT MESSAGES IN THIS CHANNEL ---\n"
-                try:
-                    recent_msgs = [m async for m in message.channel.history(limit=10, before=message)]
-                    recent_msgs.reverse()
-                    
-                    for m in recent_msgs:
-                        content = m.content.strip()
-                        if not content and m.attachments:
-                            content = "[Attachment/Image]"
-                        if content:
-                            recent_messages_context += f"{m.author.display_name}: {content}\n"
-                except Exception as e:
-                    print(f"Failed to fetch recent messages: {e}")
-                    
-                dynamic_system_instruction += recent_messages_context
+                dynamic_system_instruction = chat_prompts.system_instruction(context)
                 async def search_channel_for_image(channel_name: str, keyword: str = None, username: str = None) -> str:
                     """Gets the URL of an image posted in a specific Discord channel. Can optionally filter by a keyword in the message or the username of the sender."""
                     try:
@@ -408,6 +388,9 @@ class Chat(commands.Cog):
                         
                         if not target_channel:
                             return f"Error: Could not find a text channel named '{channel_name}' in this server."
+
+                        if not message.guild or not target_channel.permissions_for(message.author).view_channel:
+                            return "Error: You cannot view that channel."
                         
                         async for msg in target_channel.history(limit=500):
                             if msg.attachments:
@@ -445,26 +428,18 @@ class Chat(commands.Cog):
                 import re
                 reply_text = re.sub(r'\n+', '\n', reply_text)
                 
-                # Update conversational memory (text only).
-                text_only_part = types.Part.from_text(text=user_text) if user_text else types.Part.from_text(text="[Image attachment]")
-                history_content = types.Content(role="user", parts=[text_only_part])
-                
-                self.history[message.author.id].append(history_content)
-                self.history[message.author.id].append(types.Content(
-                    role="model",
-                    parts=[types.Part.from_text(text=reply_text)]
-                ))
-                
-                # Truncate short-term history to the last 10 exchanges (20 items) to prevent context saturation.
-                if len(self.history[message.author.id]) > 20:
-                    self.history[message.author.id] = self.history[message.author.id][-20:]
-                
-                # Persist exchange for future vector retrieval.
-                if query_embedding and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
+                # Persist exchanges only when the configured learning channel
+                # is the source, so DMs and other channels cannot become lore.
+                if query_embedding and self._is_memory_channel(message) and getattr(self.bot, 'db', None) and getattr(self.bot.db, 'chat_memory', None) is not None:
                     try:
                         await self.bot.db.chat_memory.insert_one({
+                            "record_type": "exchange",
+                            "guild_id": getattr(message.guild, "id", None),
                             "channel_id": message.channel.id,
                             "user_id": message.author.id,
+                            "source_message_ids": [message.id],
+                            "confidence": 1.0,
+                            "importance": 0.5,
                             "user_text": user_text,
                             "bot_reply": reply_text,
                             "embedding": query_embedding,
@@ -483,6 +458,8 @@ class Chat(commands.Cog):
                         await message.reply(chunk)
                     else:
                         await message.channel.send(chunk)
+
+                self.server_brain.remember_exchange(message, user_text or "[Image attachment]", reply_text)
                         
             except Exception as e:
                 import traceback
@@ -508,6 +485,11 @@ class Chat(commands.Cog):
             await ctx.message.delete()
         except:
             pass # Ignore if we don't have delete permissions
+
+        memory_channel_id = await self._refresh_memory_channel_id()
+        if not memory_channel_id or ctx.channel.id != memory_channel_id:
+            await ctx.author.send("Lore sync is limited to the configured general chat channel.")
+            return
             
         if not getattr(self.bot, 'db', None) or getattr(self.bot.db, 'chat_memory', None) is None:
             await ctx.author.send("Database not connected!")
@@ -544,11 +526,13 @@ class Chat(commands.Cog):
                 continue
             
             valid_messages.append({
+                "guild_id": getattr(ctx.guild, "id", None),
                 "channel_id": history_msg.channel.id,
+                "message_id": history_msg.id,
                 "user_id": history_msg.author.id,
                 "user_text": history_msg.content.strip(),
                 "bot_reply": "[Historical Community Lore]",
-                "timestamp": history_msg.created_at
+                "timestamp": history_msg.created_at,
             })
             
         if not valid_messages:
@@ -557,42 +541,52 @@ class Chat(commands.Cog):
             
         await msg.edit(content=f"Found {len(valid_messages)} valid community messages. Injecting them into my brain in small, safe batches of 10 to avoid Google's limits (this will take a few minutes)...")
         
-        # Process in batches of 10
+        # Process conversation chunks instead of one permanent record per message.
         batch_size = 10
         inserted_count = 0
         
         for i in range(0, len(valid_messages), batch_size):
             batch = valid_messages[i:i+batch_size]
-            contents = [m["user_text"] for m in batch]
+            chunk_text = "\n".join(
+                f"[{item['user_id']}] {item['user_text']}" for item in batch
+            )
+            source_ids = [item["message_id"] for item in batch]
             
             try:
                 emb_response = await self._api_call_with_fallback(
                     'embed_content',
                     model='gemini-embedding-2',
-                    contents=contents,
+                    contents=chunk_text,
                     config=types.EmbedContentConfig(output_dimensionality=256)
                 )
                 
                 if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                    embeddings_list = emb_response.embeddings
-                    
-                    documents_to_insert = []
-                    for idx, emb_obj in enumerate(embeddings_list):
-                        if idx < len(batch):
-                            doc = batch[idx]
-                            doc["embedding"] = list(emb_obj.values)
-                            documents_to_insert.append(doc)
-                            
-                    if documents_to_insert:
-                        await self.bot.db.chat_memory.insert_many(documents_to_insert)
-                        inserted_count += len(documents_to_insert)
+                    chunk_doc = {
+                        "record_type": "historical_chunk",
+                        "guild_id": getattr(ctx.guild, "id", None),
+                        "channel_id": ctx.channel.id,
+                        "user_id": 0,
+                        "user_text": chunk_text,
+                        "bot_reply": "[Historical Community Lore]",
+                        "timestamp": batch[0]["timestamp"],
+                        "embedding": list(emb_response.embeddings[0].values),
+                        "source_message_ids": source_ids,
+                        "confidence": 0.35,
+                        "importance": 0.35,
+                    }
+                    await self.bot.db.chat_memory.update_one(
+                        {"record_type": "historical_chunk", "channel_id": ctx.channel.id, "source_message_ids": source_ids},
+                        {"$set": chunk_doc},
+                        upsert=True,
+                    )
+                    inserted_count += 1
                         
                 # Enforce RPM limit throttling.
                 await asyncio.sleep(4.1)
                 
                 # Emit progress telemetry.
-                if inserted_count % 100 == 0:
-                    await ctx.author.send(f"⏳ Progress: Synced {inserted_count} / {len(valid_messages)} messages...")
+                if inserted_count % 10 == 0:
+                    await ctx.author.send(f"⏳ Progress: Synced {min(i + len(batch), len(valid_messages))} / {len(valid_messages)} messages...")
                     
             except Exception as e:
                 print(f"Lore sync batch error: {e}")
@@ -606,10 +600,16 @@ class Chat(commands.Cog):
         """Asynchronously embed and persist queued chat events within rate limit constraints."""
         if not self.client or not getattr(self.bot, 'db', None):
             return
+        memory_channel_id = await self._refresh_memory_channel_id()
+        if not memory_channel_id:
+            return
             
         try:
-            # Fetch pending batch.
-            cursor = self.bot.db.db.pending_lore.find({}).limit(10)
+            # Fetch only configured general-channel evidence.
+            pending_collection = getattr(self.bot.db, "pending_lore", None)
+            if pending_collection is None:
+                pending_collection = self.bot.db.db.pending_lore
+            cursor = pending_collection.find({"channel_id": memory_channel_id}).limit(10)
             pending_list = await cursor.to_list(length=10)
             
             if not pending_list:
@@ -624,24 +624,33 @@ class Chat(commands.Cog):
                 config=types.EmbedContentConfig(output_dimensionality=256)
             )
             
+            processed_ids = []
             if hasattr(emb_response, 'embeddings') and emb_response.embeddings:
-                documents_to_insert = []
                 for idx, emb_obj in enumerate(emb_response.embeddings):
                     if idx < len(pending_list):
-                        doc = pending_list[idx]
+                        pending = pending_list[idx]
+                        doc = dict(pending)
+                        source_message_id = pending.get("message_id")
+                        dedupe_key = str(source_message_id or pending.get("_id"))
                         doc["embedding"] = list(emb_obj.values)
                         doc["bot_reply"] = "[Historical Community Lore]"
-                        # Strip _id for clean insertion into target collection.
+                        doc["record_type"] = "evidence"
+                        doc["guild_id"] = pending.get("guild_id")
+                        doc["source_message_id"] = dedupe_key
+                        doc["source_message_ids"] = [source_message_id] if source_message_id else []
+                        doc["confidence"] = 0.35
+                        doc["importance"] = 0.25
                         doc.pop("_id", None)
-                        documents_to_insert.append(doc)
-                        
-                if documents_to_insert:
-                    await self.bot.db.chat_memory.insert_many(documents_to_insert)
-            
-            # Unconditional dequeue to prevent poison pill deadlocks.
-            ids_to_delete = [p["_id"] for p in pending_list if "_id" in p]
-            if ids_to_delete:
-                await self.bot.db.db.pending_lore.delete_many({"_id": {"$in": ids_to_delete}})
+                        await self.bot.db.chat_memory.update_one(
+                            {"source_message_id": dedupe_key}, {"$set": doc}, upsert=True
+                        )
+                        if pending.get("_id") is not None:
+                            processed_ids.append(pending["_id"])
+
+            # Remove only records that were persisted successfully. Failed
+            # batches remain queued for a later retry.
+            if processed_ids:
+                await pending_collection.delete_many({"_id": {"$in": processed_ids}})
                 
         except Exception as e:
             print(f"Background lore queue error: {e}")
@@ -651,6 +660,9 @@ class Chat(commands.Cog):
         """Periodically aggregate and summarize lore older than 7 days."""
         if not self.client or not getattr(self.bot, 'db', None):
             return
+        memory_channel_id = await self._refresh_memory_channel_id()
+        if not memory_channel_id:
+            return
             
         try:
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
@@ -659,7 +671,8 @@ class Chat(commands.Cog):
                 # Fetch stale, uncompressed lore batch.
                 cursor = self.bot.db.chat_memory.find({
                     "timestamp": {"$lt": cutoff_date},
-                    "is_summary": {"$ne": True}
+                    "is_summary": {"$ne": True},
+                    "channel_id": memory_channel_id,
                 }).limit(100)
                 
                 old_messages = await cursor.to_list(length=100)
@@ -713,13 +726,22 @@ class Chat(commands.Cog):
                         
                         # Persist aggregate artifact.
                         summary_doc = {
+                            "record_type": "summary",
+                            "guild_id": msgs[0].get("guild_id"),
                             "channel_id": channel_id,
                             "user_id": 0,
                             "user_text": "[WEEKLY LORE COMPRESSION]",
                             "bot_reply": summary_text,
                             "timestamp": datetime.now(timezone.utc),
                             "embedding": embedding_vector,
-                            "is_summary": True
+                            "is_summary": True,
+                            "source_message_ids": [
+                                source_id
+                                for record in msgs
+                                for source_id in record.get("source_message_ids", [])
+                            ],
+                            "confidence": 0.45,
+                            "importance": 0.5,
                         }
                         await self.bot.db.chat_memory.insert_one(summary_doc)
                         

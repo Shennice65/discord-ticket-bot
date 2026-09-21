@@ -15,7 +15,8 @@ from .history import HistoryMixin
 from .admin import AdminMixin
 from .clips import ClipsMixin
 from .betting import BettingMixin
+from .chat import ChatContextMixin
 
-class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin):
+class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin, ChatContextMixin):
     def __init__(self):
         super().__init__()

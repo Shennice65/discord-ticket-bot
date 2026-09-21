@@ -15,6 +15,8 @@ class Config:
     NO_PERSONAL_OBS_ROLE_ID = int(os.environ.get('NO_PERSONAL_OBS_ROLE_ID', 0))
     RANK_LOG_CHANNEL_ID = int(os.environ.get('RANK_LOG_CHANNEL_ID', 0))
     RANKING_PANEL_CHANNEL_ID = int(os.environ.get('RANKING_PANEL_CHANNEL_ID', 0))
+    # Fallback only; the live value is read from MongoDB config when available.
+    AI_MEMORY_CHANNEL_ID = int(os.environ.get('AI_MEMORY_CHANNEL_ID', 0))
     TICKET_CATEGORY_ID = int(os.environ.get('TICKET_CATEGORY_ID', 0))
     PHANTOM_ROLE_ID = int(os.environ.get('PHANTOM_ROLE_ID', 0))
     CHAMPION_ROLE_ID = int(os.environ.get('CHAMPION_ROLE_ID', 0))

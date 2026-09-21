@@ -1,0 +1,234 @@
+import sys
+import types as pytypes
+import unittest
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+# One legacy test installs a tiny aiohttp stub before importing discord.py.
+# Restore the installed package so the chat cog can be imported normally.
+if not hasattr(sys.modules.get("aiohttp"), "ClientWebSocketResponse"):
+    sys.modules.pop("aiohttp", None)
+    import aiohttp  # noqa: F401
+
+
+# The repository's test environment does not need a live Gemini SDK for these
+# deterministic context tests. Provide the import surface used by cogs.chat.
+google_module = pytypes.ModuleType("google")
+genai_module = pytypes.ModuleType("google.genai")
+genai_module.Client = object
+types_module = pytypes.ModuleType("google.genai.types")
+types_module.EmbedContentConfig = lambda **kwargs: kwargs
+google_module.genai = genai_module
+genai_module.types = types_module
+sys.modules.setdefault("google", google_module)
+sys.modules.setdefault("google.genai", genai_module)
+sys.modules.setdefault("google.genai.types", types_module)
+
+from cogs.chat import Chat
+from config import Config
+from core.services.server_brain import ServerBrain
+from core.services import chat_prompts
+
+
+class ChatContextTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.chat = object.__new__(Chat)
+
+    def message(self, channel_id=123, guild_id=456, content="hello there", author_id=789):
+        author = SimpleNamespace(id=author_id, bot=False, display_name="member")
+        channel = SimpleNamespace(id=channel_id)
+        return SimpleNamespace(
+            id=999,
+            author=author,
+            channel=channel,
+            guild=SimpleNamespace(id=guild_id),
+            content=content,
+            created_at=datetime.now(timezone.utc),
+            reference=None,
+            reactions=[],
+        )
+
+    def test_learning_is_scoped_to_configured_channel(self):
+        message = self.message(channel_id=222)
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
+            self.assertFalse(self.chat._is_memory_channel(message))
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 222):
+            self.assertTrue(self.chat._is_memory_channel(message))
+
+    async def test_memory_channel_prefers_mongodb_config(self):
+        config_collection = SimpleNamespace(
+            find_one=AsyncMock(return_value={"AI_MEMORY_CHANNEL_ID": "321"})
+        )
+        self.chat.bot = SimpleNamespace(
+            db=SimpleNamespace(db=SimpleNamespace(config=config_collection))
+        )
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
+            channel_id = await self.chat._refresh_memory_channel_id()
+        self.assertEqual(321, channel_id)
+        self.assertEqual(321, self.chat.memory_channel_id)
+
+    def test_direct_question_requires_explicit_bot_address(self):
+        message = self.message(content="what happened today?")
+        self.chat.bot = SimpleNamespace(user=SimpleNamespace(display_name="Atlas", name="Atlas"))
+        self.assertFalse(self.chat._is_direct_question(message))
+        message.content = "atlas what happened today?"
+        self.assertTrue(self.chat._is_direct_question(message))
+
+    async def test_raw_message_is_upserted_and_queued_once(self):
+        message = self.message(content="this is useful context")
+        chat_messages = SimpleNamespace(update_one=AsyncMock())
+        pending_lore = SimpleNamespace(update_one=AsyncMock())
+        self.chat.bot = SimpleNamespace(
+            db=SimpleNamespace(chat_messages=chat_messages, db=SimpleNamespace(pending_lore=pending_lore))
+        )
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
+            await self.chat._record_message_evidence(message)
+        chat_messages.update_one.assert_awaited_once()
+        pending_lore.update_one.assert_awaited_once()
+        self.assertEqual(message.id, chat_messages.update_one.await_args.args[0]["message_id"])
+        self.assertEqual(message.id, pending_lore.update_one.await_args.args[0]["message_id"])
+
+    async def test_off_channel_message_is_not_stored(self):
+        message = self.message(channel_id=222, content="should stay out of memory")
+        chat_messages = SimpleNamespace(update_one=AsyncMock())
+        pending_lore = SimpleNamespace(update_one=AsyncMock())
+        self.chat.bot = SimpleNamespace(
+            db=SimpleNamespace(chat_messages=chat_messages, db=SimpleNamespace(pending_lore=pending_lore))
+        )
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
+            await self.chat._record_message_evidence(message)
+        chat_messages.update_one.assert_not_awaited()
+        pending_lore.update_one.assert_not_awaited()
+
+    async def test_lore_queue_deletes_only_after_persisting(self):
+        pending_id = object()
+        pending = {
+            "_id": pending_id,
+            "message_id": 111,
+            "guild_id": 456,
+            "channel_id": 123,
+            "user_text": "useful message here",
+        }
+
+        class Cursor:
+            def limit(self, _amount):
+                return self
+
+            async def to_list(self, length):
+                return [pending]
+
+        pending_lore = SimpleNamespace(find=lambda _query: Cursor(), delete_many=AsyncMock())
+        memory = SimpleNamespace(update_one=AsyncMock())
+        self.chat.client = object()
+        self.chat.bot = SimpleNamespace(
+            db=SimpleNamespace(db=SimpleNamespace(pending_lore=pending_lore), chat_memory=memory)
+        )
+        self.chat._api_call_with_fallback = AsyncMock(
+            return_value=SimpleNamespace(embeddings=[SimpleNamespace(values=[0.1, 0.2])])
+        )
+
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
+            await Chat.process_lore_queue.coro(self.chat)
+
+        memory.update_one.assert_awaited_once()
+        pending_lore.delete_many.assert_awaited_once_with({"_id": {"$in": [pending_id]}})
+
+    async def test_lore_queue_keeps_item_when_embedding_fails(self):
+        pending = {
+            "_id": object(), "message_id": 111, "guild_id": 456,
+            "channel_id": 123, "user_text": "useful message here",
+        }
+
+        class Cursor:
+            def limit(self, _amount):
+                return self
+
+            async def to_list(self, length):
+                return [pending]
+
+        pending_lore = SimpleNamespace(find=lambda _query: Cursor(), delete_many=AsyncMock())
+        self.chat.client = object()
+        self.chat.bot = SimpleNamespace(
+            db=SimpleNamespace(
+                db=SimpleNamespace(pending_lore=pending_lore),
+                chat_memory=SimpleNamespace(update_one=AsyncMock()),
+            )
+        )
+        self.chat._api_call_with_fallback = AsyncMock(side_effect=RuntimeError("quota"))
+
+        with patch.object(Config, "AI_MEMORY_CHANNEL_ID", 123):
+            await Chat.process_lore_queue.coro(self.chat)
+
+        pending_lore.delete_many.assert_not_awaited()
+
+    async def test_server_brain_groups_reply_chain_and_same_channel_recent_messages(self):
+        now = datetime.now(timezone.utc)
+        bot_user = SimpleNamespace(id=1, display_name="Atlas")
+        db = SimpleNamespace(get_player_rank=AsyncMock(return_value="Gold"),
+                             get_chat_context_memories=AsyncMock(return_value=[]))
+        bot = SimpleNamespace(user=bot_user, db=db)
+        author = SimpleNamespace(id=7, bot=False, display_name="member", roles=[],
+                                 guild_permissions=SimpleNamespace(administrator=False))
+        guild = SimpleNamespace(id=10, name="Guild", members=[])
+        parent = SimpleNamespace(id=40, author=author, channel=None, guild=guild,
+                                 content="parent question", created_at=now - timedelta(minutes=2),
+                                 reference=None, mentions=[], attachments=[])
+        channel = SimpleNamespace(id=20, name="general")
+        parent.channel = channel
+        recent = SimpleNamespace(id=41, author=author, channel=channel, guild=guild,
+                                 content="same thread follow-up", created_at=now - timedelta(minutes=1),
+                                 reference=SimpleNamespace(message_id=40, channel_id=20), mentions=[], attachments=[])
+        current = SimpleNamespace(id=42, author=author, channel=channel, guild=guild,
+                                  content="what is my rank?", created_at=now,
+                                  reference=SimpleNamespace(message_id=41, channel_id=20), mentions=[], attachments=[])
+
+        async def history(limit, before):
+            yield recent
+            yield parent
+
+        channel.history = history
+        channel.fetch_message = AsyncMock(return_value=parent)
+        brain = ServerBrain(bot, AsyncMock(return_value=[0.1]))
+        brain.observe(parent)
+        brain.observe(recent)
+        context = await brain.build_context(current, memory_channel_id=20)
+        self.assertEqual([41, 40], [item.message_id for item in context.reply_chain])
+        self.assertFalse(any(item.message_id == 1 for item in context.recent_messages))
+        self.assertEqual("Gold", context.verified_rank.rank)
+        db.get_chat_context_memories.assert_awaited_once_with(10, 20, "parent question\nsame thread follow-up\nwhat is my rank?", [0.1])
+
+    async def test_server_brain_excludes_other_channel_context(self):
+        bot = SimpleNamespace(user=SimpleNamespace(id=1), db=SimpleNamespace(
+            get_player_rank=AsyncMock(return_value="Gold"), get_chat_context_memories=AsyncMock(return_value=[])))
+        brain = ServerBrain(bot, AsyncMock())
+        now = datetime.now(timezone.utc)
+        def make(mid, channel_id, text):
+            return SimpleNamespace(id=mid, author=SimpleNamespace(id=7, bot=False, display_name="member",
+                roles=[], guild_permissions=SimpleNamespace(administrator=False)), channel=SimpleNamespace(id=channel_id, name="x"),
+                guild=SimpleNamespace(id=10, name="Guild", members=[]), content=text, created_at=now,
+                reference=None, mentions=[], attachments=[])
+        brain.observe(make(1, 99, "other channel"))
+        current = make(2, 20, "hello")
+        current.channel.history = lambda limit, before: _empty_async_generator()
+        context = await brain.build_context(current, memory_channel_id=20)
+        self.assertFalse(context.recent_messages)
+
+    def test_prompt_labels_community_memories_as_uncertain(self):
+        context = SimpleNamespace(current=SimpleNamespace(author_id=7, author_name="member", content="hello",
+            guild_id=10, channel_id=20),
+            server_name="Guild", channel_name="general", author_roles=(), author_is_admin=False, admins=(),
+            reply_chain=(), recent_messages=(), exchanges=(), verified_rank=None,
+            memories=[{"summary": "community claim", "confidence": 0.4, "source_message_ids": [1]}])
+        rendered = chat_prompts.context_text(context)
+        self.assertIn("uncertain_community_memories", rendered)
+        self.assertIn("community claim", rendered)
+
+
+async def _empty_async_generator():
+    if False:
+        yield None
+
+
+if __name__ == "__main__":
+    unittest.main()

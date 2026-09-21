@@ -32,6 +32,8 @@ class ConnectionMixin:
         self.betting_notifications = None
         self.clip_review_notifications = None
         self.chat_memory = None
+        self.chat_messages = None
+        self.pending_lore = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -65,6 +67,8 @@ class ConnectionMixin:
             self.betting_notifications = self.db.betting_notifications
             self.clip_review_notifications = self.db.clip_review_notifications
             self.chat_memory = self.db.chat_memory
+            self.chat_messages = self.db.chat_messages
+            self.pending_lore = self.db.pending_lore
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -131,6 +135,18 @@ class ConnectionMixin:
                 ("clip_review_notifications.delivery", self.clip_review_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
                 ("chat_memory.channel_timestamp", self.chat_memory.create_index([("channel_id", 1), ("timestamp", -1)])),
                 ("chat_memory.timestamp", self.chat_memory.create_index("timestamp")),
+                ("chat_memory.source_message_id", self.chat_memory.create_index(
+                    "source_message_id", unique=True,
+                    name="chat_memory_source_message_unique",
+                    partialFilterExpression={"source_message_id": {"$exists": True}},
+                )),
+                ("chat_messages.message_id", ensure_unique_index(self.chat_messages, "message_id")),
+                ("chat_messages.channel_timestamp", self.chat_messages.create_index([("guild_id", 1), ("channel_id", 1), ("created_at", -1)])),
+                ("pending_lore.message_id", self.pending_lore.create_index(
+                    "message_id", unique=True,
+                    name="pending_message_id_unique",
+                    partialFilterExpression={"message_id": {"$exists": True}},
+                )),
                 ("tickets.channel_id", self.tickets.create_index("channel_id")),
                 ("tickets.status_type_user", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])),
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),
