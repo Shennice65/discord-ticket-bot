@@ -68,6 +68,11 @@ def make_message(message_id=1, channel_id=20, guild_id=10, content="hello", auth
 
 
 class ChatContextTests(unittest.IsolatedAsyncioTestCase):
+    def test_persona_does_not_request_aggressive_or_repeated_roasts(self):
+        self.assertNotIn("MAXIMUM DAMAGE", prompts.SYSTEM_INSTRUCTION)
+        self.assertIn("Never copy a BOT_RESPONSE verbatim", prompts.SYSTEM_INSTRUCTION)
+        self.assertIn("A report that someone else is insulting you", prompts.SYSTEM_INSTRUCTION)
+
     async def test_rank_context_uses_dictionary_shape(self):
         bot = SimpleNamespace(
             user=SimpleNamespace(id=1),

@@ -330,7 +330,7 @@ class AIRouter:
             )
             config_kwargs = {
                 "system_instruction": prompts.system_instruction(context),
-                "temperature": 0.95,
+                "temperature": 0.82,
                 "tools": tool_list,
             }
             if tool_list:
@@ -384,7 +384,7 @@ class AIRouter:
                             min(len(function_calls), 2))
                 final_config = types.GenerateContentConfig(
                     system_instruction=prompts.system_instruction(context),
-                    temperature=0.95,
+                    temperature=0.82,
                     tools=[],
                 )
                 try:
