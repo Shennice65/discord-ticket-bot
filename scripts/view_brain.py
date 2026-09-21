@@ -90,8 +90,20 @@ async def init_app():
 if __name__ == '__main__':
     port = 8081
     print(f"Connecting to MongoDB using URI from .env...")
-    print(f"Starting local dashboard on http://localhost:{port}...")
     
+    # We will run a quick async function to print memories to the console
+    async def print_memories():
+        client = AsyncIOMotorClient(MONGO_URI)
+        db = client[MONGO_DB_NAME]
+        memories = await db.chat_memory.find().sort("timestamp", -1).limit(10).to_list(length=10)
+        print("\n--- TOP 10 RECENT LONG-TERM MEMORIES ---")
+        for m in memories:
+            print(f"[{m.get('memory_key')}] (Conf: {m.get('confidence')}): {m.get('summary')}")
+        print("------------------------------------------\n")
+        
+    asyncio.get_event_loop().run_until_complete(print_memories())
+    
+    print(f"Starting local dashboard on http://localhost:{port}...")
     # Open browser automatically after a short delay
     asyncio.get_event_loop().call_later(1.5, lambda: webbrowser.open(f'http://localhost:{port}'))
     
