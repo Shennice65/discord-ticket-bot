@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import random
@@ -182,10 +183,15 @@ class AIRouter:
         for attachment in getattr(message, "attachments", ()):
             content_type = getattr(attachment, "content_type", "") or ""
             if content_type.startswith("image/"):
-                parts.append({
-                    "type": "image_url",
-                    "image_url": {"url": attachment.url},
-                })
+                try:
+                    data = await attachment.read()
+                    b64 = base64.b64encode(data).decode("utf-8")
+                    parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{content_type};base64,{b64}"},
+                    })
+                except Exception as e:
+                    logger.warning("Failed to read attachment %s: %s", attachment.url, e)
         return parts
 
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
