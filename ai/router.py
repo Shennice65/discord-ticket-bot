@@ -161,12 +161,15 @@ class AIRouter:
             result = f"{result} {parts[0].get('image_url', {}).get('url', '')}"
         return result
 
-    async def _generate(self, messages, tools=None):
+    async def _generate(self, messages, tools=None, max_tokens=None):
         """Call the new adapter while retaining compatibility with old test doubles."""
+        if max_tokens is None:
+            max_tokens = getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
+            
         if hasattr(llm, "generate"):
             return await llm.generate(
                 messages, tools=tools, temperature=0.6,
-                max_tokens=getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600),
+                max_tokens=max_tokens,
             )
         response = await llm.generate_content(
             model="openrouter",
@@ -278,12 +281,25 @@ class AIRouter:
                     await message.reply("Sorry, I couldn't load the conversation context.")
                     return
 
+                db_config = {}
+                if getattr(self.bot, "db", None) and getattr(self.bot.db, "db", None):
+                    try:
+                        db_config = await self.bot.db.db.config.find_one({"_id": "global_config"}) or {}
+                    except Exception as e:
+                        logger.warning("Failed to fetch global_config: %s", e)
+
+                max_history_val = db_config.get("AI_MAX_HISTORY_MESSAGES")
+                max_history = int(max_history_val) if max_history_val is not None else getattr(Config, "AI_MAX_HISTORY_MESSAGES", 2)
+                
+                max_tokens_val = db_config.get("AI_MAX_OUTPUT_TOKENS")
+                max_tokens = int(max_tokens_val) if max_tokens_val is not None else getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
+
                 include_extended_context = self._should_offer_tools(user_text)
                 messages = [{
                     "role": "system",
                     "content": prompts.system_instruction(context, include_extended=include_extended_context),
                 }]
-                for exchange in context.exchanges[-getattr(Config, "AI_MAX_HISTORY_MESSAGES", 6):]:
+                for exchange in context.exchanges[-max_history:] if max_history > 0 else []:
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)
                     messages.extend([
                         {"role": "user", "content": user_turn},
@@ -450,6 +466,10 @@ class AIRouter:
                     usage.get("prompt_tokens") if isinstance(usage, dict) else None,
                     usage.get("completion_tokens") if isinstance(usage, dict) else None,
                     usage.get("total_tokens") if isinstance(usage, dict) else None,
+                )
+                await record_agent_event(
+                    self.bot, event="chat_completed", model=response.model if response else None,
+                    usage=usage
                 )
         finally:
             self._concurrency_limit.release()
