@@ -84,7 +84,7 @@ class ReadOnlyToolRegistry:
             ),
             _tool(
                 "search_server_lore",
-                "Search scoped community memories relevant to the current Discord channel.",
+                "Search community memories, lore, inside jokes, and slang. Use this to find out what terms mean, who people are, or to remember past events.",
                 {"query": {"type": "string", "minLength": 1, "maxLength": 200}},
                 ("query",),
             ),
