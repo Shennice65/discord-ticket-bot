@@ -367,6 +367,11 @@ class AIRouter:
                         except Exception as error:
                             logger.warning("AI generation failed message_id=%s error=%s", message.id, type(error).__name__)
                             await message.reply("Sorry, I had trouble talking to my brain right now.")
+                            try:
+                                owner = self.bot.get_user(Config.MASTER_ADMIN_ID) or await self.bot.fetch_user(Config.MASTER_ADMIN_ID)
+                                await owner.send(f"⚠️ **AI Generation Failed** in {message.jump_url}\nError: `{type(error).__name__}: {str(error)}`")
+                            except Exception as dm_err:
+                                logger.error("Failed to DM owner about AI failure: %s", dm_err)
                             return
 
                         if not response.tool_calls:
