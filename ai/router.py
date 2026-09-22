@@ -281,24 +281,8 @@ class AIRouter:
                     await message.reply("Sorry, I couldn't load the conversation context.")
                     return
 
-                db_config = {}
-                if getattr(self.bot, "db", None) and getattr(self.bot.db, "db", None):
-                    try:
-                        db_config = await self.bot.db.db.config.find_one({"_id": "api_keys"}) or {}
-                    except Exception as e:
-                        logger.warning("Failed to fetch global_config: %s", e)
-
-                try:
-                    max_history_val = db_config.get("AI_MAX_HISTORY_MESSAGES")
-                    max_history = int(max_history_val) if max_history_val is not None else getattr(Config, "AI_MAX_HISTORY_MESSAGES", 2)
-                except Exception:
-                    max_history = getattr(Config, "AI_MAX_HISTORY_MESSAGES", 2)
-                
-                try:
-                    max_tokens_val = db_config.get("AI_MAX_OUTPUT_TOKENS")
-                    max_tokens = int(max_tokens_val) if max_tokens_val is not None else getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
-                except Exception:
-                    max_tokens = getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
+                max_history = 2
+                max_tokens = 200
 
                 include_extended_context = self._should_offer_tools(user_text)
                 messages = [{
