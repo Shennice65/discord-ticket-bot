@@ -285,9 +285,10 @@ class AIRouter:
                 max_tokens = 200
 
                 include_extended_context = self._should_offer_tools(user_text)
+                bot_name = (getattr(self.bot.user, "display_name", "") or getattr(self.bot.user, "name", "this bot"))
                 messages = [{
                     "role": "system",
-                    "content": prompts.system_instruction(context, include_extended=include_extended_context),
+                    "content": prompts.system_instruction(context, include_extended=include_extended_context, bot_name=bot_name),
                 }]
                 for exchange in context.exchanges[-max_history:] if max_history > 0 else []:
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)

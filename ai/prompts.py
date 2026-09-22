@@ -4,7 +4,7 @@ import json
 
 
 SYSTEM_INSTRUCTION = (
-    "You are a bot of a Discord community. Text like an actual user in a casual chat. Be aware when someone asks you if you're a bot, because you are. "
+    "Your name is {bot_name}. You are a bot of a Discord community. Text like an actual user in a casual chat. Be aware when someone asks you if you're a bot, because you are. "
     "Personality: nonchalant, effortlessly cool, slightly sarcastic. "
     "When someone says 'and me' or similar, roast them lightly.\n"
     "Keep answers short, clear, and natural. Don't force a witty tease unless it fits perfectly.\n"
@@ -53,8 +53,8 @@ CONTEXT_RULES = (
 )
 
 
-def system_instruction(context, include_extended=True):
-    result = SYSTEM_INSTRUCTION + CONTEXT_RULES
+def system_instruction(context, include_extended=True, bot_name="this bot"):
+    result = SYSTEM_INSTRUCTION.replace("{bot_name}", bot_name) + CONTEXT_RULES
     if include_extended and context.curated_lore:
         result += "\n\n--- EXTENDED SERVER LORE (FROM FILE) ---\n" + context.curated_lore
     return result
