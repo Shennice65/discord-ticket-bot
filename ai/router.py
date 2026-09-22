@@ -58,9 +58,10 @@ class AIRouter:
             r"\b(rank|history|leaderboard|ticket|rule|lore|clip|image|picture|photo|server|player|"
             r"recent|match|bet|remember|incident|happened|before|back\s+then|"
             r"muted|mute|banned|ban|kicked|kick|warned|warn|punished|punishment|"
-            r"drama|argument|involved|beat|lost|tournament|leave|left|owns|owner)\b|"
+            r"drama|argument|involved|beat|lost|tournament|leave|left|owns|owner|"
+            r"opinion|rate|compare)\b|"
             r"\bwhat\s+happened\b|\bdo\s+you\s+remember\b|\bwhy\s+was\b|"
-            r"\bwho\s+started\b|\bwhat\s+did\b",
+            r"\bwho\s+started\b|\bwhat\s+did\b|\bthink\s+of\b|\bhow\s+(good|bad)\b",
             (content or "").casefold(),
         ))
 

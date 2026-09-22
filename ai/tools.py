@@ -49,6 +49,12 @@ class ReadOnlyToolRegistry:
                 ("user_id",),
             ),
             _tool(
+                "get_player_profile",
+                "Read a player's comprehensive profile including rank, lifetime win rate, win/loss streak, nemesis, recent matches, and community memories. Use this to form opinions or roasts.",
+                {"user_id": {"type": "integer", "description": "Discord user ID"}},
+                ("user_id",),
+            ),
+            _tool(
                 "get_player_history",
                 "Read a player's recent ranked and personal-observation history.",
                 {
@@ -99,6 +105,7 @@ class ReadOnlyToolRegistry:
 
     async def execute(self, name, arguments, message, context):
         handlers = {
+            "get_player_profile": self._get_player_profile,
             "get_player_rank": self._get_player_rank,
             "get_player_history": self._get_player_history,
             "get_leaderboard": self._get_leaderboard,
@@ -138,6 +145,45 @@ class ReadOnlyToolRegistry:
             "player_name": player_name,
             "player_mention": f"<@{user_id}>",
             "rank": rank or "Unranked",
+        }
+
+    async def _get_player_profile(self, args, message, _context):
+        user_id = int(args["user_id"])
+        member = message.guild.get_member(user_id) if getattr(message, "guild", None) else None
+        player_name = (
+            getattr(member, "display_name", None)
+            or getattr(member, "name", None)
+            or f"Discord user {user_id}"
+        )
+        
+        # 1. Rank
+        rank = await self.bot.db.get_player_rank(user_id)
+        
+        # 2. Stats & Nemesis
+        stats = await self.bot.db.get_player_profile_stats(user_id, player_name)
+        
+        # 3. Recent Matches (limit 3)
+        history = await self.bot.db.get_user_history(user_id, player_name, limit=3)
+        recent = []
+        for match in history.get("ranked", []):
+            is_win = (match.get("winner_id") == user_id or 
+                     (str(match.get("winner", "")).lower() == player_name.lower() and player_name))
+            recent.append({
+                "opponent": match.get("opponent_name", "Unknown"),
+                "result": "Win" if is_win else "Loss"
+            })
+            
+        # 4. Lore/Memories about this player
+        query = player_name
+        lore = await self._search_server_lore({"query": query}, message, _context)
+        
+        return {
+            "user_id": user_id,
+            "player_name": player_name,
+            "current_rank": rank or "Unranked",
+            "lifetime_stats": stats,
+            "last_3_matches": recent,
+            "community_memories": lore.get("memories", [])
         }
 
     async def _get_player_history(self, args, message, _context):

@@ -155,6 +155,95 @@ class HistoryMixin:
         losses = matches - wins
         return matches, wins, losses, (wins / matches) * 100 if matches else 0.0
 
+    async def get_player_profile_stats(self, user_id: int, user_name: str = "") -> dict:
+        """Returns comprehensive stats: matches, wins, losses, win_rate, current_streak, nemesis."""
+        matches, wins, losses, win_rate = await self.get_user_ranked_stats(user_id, user_name)
+        
+        if matches == 0:
+            return {
+                "matches": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+                "current_streak": "None", "nemesis": None
+            }
+
+        # 1. Fetch recent matches to calculate streak
+        history = await self.get_user_history(user_id, user_name, limit=20)
+        ranked = history.get("ranked", [])
+        
+        current_streak = 0
+        streak_type = None
+        for match in ranked:
+            is_win = (
+                match.get("winner_id") == user_id or 
+                (str(match.get("winner", "")).lower() == user_name.lower() and user_name)
+            )
+            match_type = "win" if is_win else "loss"
+            
+            if streak_type is None:
+                streak_type = match_type
+                current_streak = 1
+            elif streak_type == match_type:
+                current_streak += 1
+            else:
+                break
+                
+        streak_str = f"{current_streak} {streak_type}{'s' if current_streak != 1 else ''}"
+        if current_streak >= 20 and len(ranked) == 20:
+            streak_str = f"20+ {streak_type}s"
+            
+        # 2. Fetch Nemesis (opponent with most wins against this user)
+        import re
+        nemesis_pipeline = [
+            {"$match": {
+                "status": "closed",
+                "ticket_type": "Ranked 1v1",
+                "$or": [{"user_id": user_id}, {"opponent_id": user_id}],
+            }},
+            {"$lookup": {
+                "from": "ranked_results",
+                "localField": "id",
+                "foreignField": "ticket_id",
+                "as": "result",
+            }},
+            {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}},
+            # Only keep matches where user lost
+            {"$match": {
+                "$nor": [
+                    {"result.winner_id": user_id},
+                    {"result.winner": re.compile(f"^{re.escape(user_name)}$", re.I) if user_name else "___NEVER_MATCH___"}
+                ]
+            }},
+            {"$project": {
+                "opponent": {"$cond": [{"$eq": ["$user_id", user_id]}, "$opponent_id", "$user_id"]},
+                "opponent_name": {"$cond": [{"$eq": ["$user_id", user_id]}, "$opponent_name", "$user_name"]}
+            }},
+            {"$group": {
+                "_id": "$opponent",
+                "opponent_name": {"$first": "$opponent_name"},
+                "wins_against_user": {"$sum": 1}
+            }},
+            {"$sort": {"wins_against_user": -1}},
+            {"$limit": 1}
+        ]
+        
+        nemesis_rows = await self.tickets.aggregate(nemesis_pipeline).to_list(length=1)
+        nemesis = None
+        if nemesis_rows:
+            row = nemesis_rows[0]
+            nemesis = {
+                "user_id": row.get("_id"),
+                "name": row.get("opponent_name"),
+                "losses_to_them": row.get("wins_against_user")
+            }
+            
+        return {
+            "matches": matches,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(win_rate, 1),
+            "current_streak": streak_str,
+            "nemesis": nemesis
+        }
+
     async def get_user_observation_count(self, user_id: int) -> int:
         """Returns the total number of closed Personal Observation tickets for a user."""
         count = await self.tickets.count_documents({
