@@ -288,11 +288,17 @@ class AIRouter:
                     except Exception as e:
                         logger.warning("Failed to fetch global_config: %s", e)
 
-                max_history_val = db_config.get("AI_MAX_HISTORY_MESSAGES")
-                max_history = int(max_history_val) if max_history_val is not None else getattr(Config, "AI_MAX_HISTORY_MESSAGES", 2)
+                try:
+                    max_history_val = db_config.get("AI_MAX_HISTORY_MESSAGES")
+                    max_history = int(max_history_val) if max_history_val is not None else getattr(Config, "AI_MAX_HISTORY_MESSAGES", 2)
+                except Exception:
+                    max_history = getattr(Config, "AI_MAX_HISTORY_MESSAGES", 2)
                 
-                max_tokens_val = db_config.get("AI_MAX_OUTPUT_TOKENS")
-                max_tokens = int(max_tokens_val) if max_tokens_val is not None else getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
+                try:
+                    max_tokens_val = db_config.get("AI_MAX_OUTPUT_TOKENS")
+                    max_tokens = int(max_tokens_val) if max_tokens_val is not None else getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
+                except Exception:
+                    max_tokens = getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
 
                 include_extended_context = self._should_offer_tools(user_text)
                 messages = [{
@@ -396,7 +402,7 @@ class AIRouter:
                 if response is None:
                     for tool_round in range(self.MAX_TOOL_ROUNDS + 1):
                         try:
-                            response = await bounded(self._generate(messages, tools=tool_definitions))
+                            response = await bounded(self._generate(messages, tools=tool_definitions, max_tokens=max_tokens))
                         except Exception as error:
                             logger.warning("AI generation failed message_id=%s error=%s", message.id, type(error).__name__)
                             await message.reply("Sorry, I had trouble talking to my brain right now.")
