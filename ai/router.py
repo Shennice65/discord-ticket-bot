@@ -284,7 +284,7 @@ class AIRouter:
                 db_config = {}
                 if getattr(self.bot, "db", None) and getattr(self.bot.db, "db", None):
                     try:
-                        db_config = await self.bot.db.db.config.find_one({"_id": "global_config"}) or {}
+                        db_config = await self.bot.db.db.config.find_one({"_id": "api_keys"}) or {}
                     except Exception as e:
                         logger.warning("Failed to fetch global_config: %s", e)
 
