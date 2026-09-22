@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime, timedelta, timezone
+import io
 from config import Config
 
 class SysInfoView(discord.ui.View):
@@ -16,21 +17,45 @@ class SysInfoView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.primary, emoji="🔄")
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.primary)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         embed = await self.cog.build_sysinfo_embed()
         await interaction.edit_original_response(embed=embed, view=self)
 
-    @discord.ui.button(label="Clear Context Cache", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="Clear Context Cache", style=discord.ButtonStyle.danger)
     async def clear_cache_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         chat_cog = self.cog.bot.get_cog("Chat")
         if chat_cog and hasattr(chat_cog, "context_builder"):
             chat_cog.context_builder.tracker.recent_messages.clear()
-            await interaction.followup.send("✅ Context cache cleared!", ephemeral=True)
+            await interaction.followup.send("Context cache cleared!", ephemeral=True)
         embed = await self.cog.build_sysinfo_embed()
         await interaction.edit_original_response(embed=embed, view=self)
+
+    @discord.ui.button(label="Brain X-Ray", style=discord.ButtonStyle.secondary)
+    async def xray_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        chat_cog = self.cog.bot.get_cog("Chat")
+        if not chat_cog or not hasattr(chat_cog, "context_builder"):
+            await interaction.followup.send("Chat system unavailable.", ephemeral=True)
+            return
+            
+        dump = []
+        for channel_id, messages in chat_cog.context_builder.tracker.recent_messages.items():
+            dump.append(f"--- Channel {channel_id[1]} (Guild {channel_id[0]}) ---")
+            for msg_id, msg in messages.items():
+                content_preview = msg.content.replace('\n', ' ')
+                dump.append(f"[{msg.author_name}]: {content_preview}")
+            dump.append("")
+            
+        if not dump:
+            text = "Live cache is completely empty."
+        else:
+            text = "\n".join(dump)
+            
+        file = discord.File(io.BytesIO(text.encode("utf-8")), filename="brain_xray.txt")
+        await interaction.followup.send("Here is the exact live cache currently retained in RAM:", file=file, ephemeral=True)
 
 class OwnerCog(commands.Cog):
     def __init__(self, bot):
@@ -115,7 +140,7 @@ class OwnerCog(commands.Cog):
         # DB setup
         db = getattr(self.bot, "db", None)
         collection = getattr(getattr(db, "db", None), "ai_audit", None)
-        memory_collection = getattr(getattr(db, "db", None), "ai_memory", None)
+        memory_collection = getattr(getattr(db, "db", None), "chat_memory", None)
         
         # 1. Active Configuration
         active_provider = getattr(Config, "AI_PROVIDER", "deepseek").title()
@@ -152,7 +177,7 @@ class OwnerCog(commands.Cog):
         if memory_collection is not None:
             total_memories = await memory_collection.count_documents({})
             
-        embed = discord.Embed(title="🤖 AI System Diagnostics", color=discord.Color.blurple())
+        embed = discord.Embed(title="AI System Diagnostics", color=discord.Color.blurple())
         embed.add_field(name="Configuration", value=f"**Provider**: {active_provider}\n**DeepSeek**: `{deepseek_model}`\n**Gemini**: `{gemini_model}`", inline=False)
         embed.add_field(name="24h Usage (ai_audit)", value=f"**Requests**: {total_requests:,}\n**Tokens**: {tokens_used:,}", inline=True)
         embed.add_field(name="Live Cache (RAM)", value=f"**Retained Msgs**: {live_messages:,}\n*(Across all channels)*", inline=True)
