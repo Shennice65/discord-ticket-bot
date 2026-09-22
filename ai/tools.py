@@ -259,16 +259,28 @@ class ReadOnlyToolRegistry:
         }
 
     async def _search_server_lore(self, args, message, context):
+        from config import Config
         query = str(args.get("query", "")).casefold().strip()
         current = context.current
         records = self.context_builder.retriever.memory_cache.get(current.guild_id, [])
         if not records:
             return {"memories": []}
+            
+        ignored_channels_str = await self.bot.db.get_setting("AI_IGNORED_MEMORY_CHANNELS", Config.AI_IGNORED_MEMORY_CHANNELS)
+        ignored_channels = {
+            int(cid.strip()) for cid in str(ignored_channels_str).split(",")
+            if cid.strip().isdigit()
+        }
+        
         channel_id = getattr(message.channel, "id", None)
+        if channel_id in ignored_channels:
+            return {"memories": []}
+
         words = {word for word in query.split() if len(word) >= 3}
         matches = []
         for record in records:
-            if record.get("channel_id") not in (None, channel_id):
+            rec_channel_id = record.get("channel_id")
+            if rec_channel_id is not None and int(rec_channel_id) in ignored_channels:
                 continue
             searchable = " ".join(str(record.get(field, "")) for field in (
                 "summary", "memory_key", "associated_users"
