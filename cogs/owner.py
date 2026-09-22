@@ -46,7 +46,16 @@ class SysInfoView(discord.ui.View):
             dump.append(f"--- Channel {channel_id[1]} (Guild {channel_id[0]}) ---")
             for msg_id, msg in messages.items():
                 content_preview = msg.content.replace('\n', ' ')
-                dump.append(f"[{msg.author_name}]: {content_preview}")
+                
+                reply_text = ""
+                if msg.reply_to:
+                    replied_msg = messages.get(msg.reply_to)
+                    if replied_msg:
+                        reply_text = f" (Replying to {replied_msg.author_name})"
+                    else:
+                        reply_text = " (Replying to [Older Message])"
+                        
+                dump.append(f"[{msg.author_name}]{reply_text}: {content_preview}")
             dump.append("")
             
         if not dump:
