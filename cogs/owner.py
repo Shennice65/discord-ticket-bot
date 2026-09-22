@@ -27,7 +27,7 @@ class SysInfoView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         chat_cog = self.cog.bot.get_cog("Chat")
         if chat_cog and hasattr(chat_cog, "context_builder"):
-            chat_cog.context_builder.tracker.history.clear()
+            chat_cog.context_builder.tracker.recent_messages.clear()
             await interaction.followup.send("✅ Context cache cleared!", ephemeral=True)
         embed = await self.cog.build_sysinfo_embed()
         await interaction.edit_original_response(embed=embed, view=self)
@@ -144,7 +144,7 @@ class OwnerCog(commands.Cog):
         chat_cog = self.bot.get_cog("Chat")
         live_messages = 0
         if chat_cog and hasattr(chat_cog, "context_builder"):
-            for channel_id, messages in chat_cog.context_builder.tracker.history.items():
+            for channel_id, messages in chat_cog.context_builder.tracker.recent_messages.items():
                 live_messages += len(messages)
                 
         # 4. Long-Term Memory
