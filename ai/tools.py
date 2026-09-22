@@ -267,7 +267,7 @@ class ReadOnlyToolRegistry:
         if not records:
             return {"memories": []}
             
-        ignored_channels_str = await self.bot.db.get_setting("AI_IGNORED_MEMORY_CHANNELS", Config.AI_IGNORED_MEMORY_CHANNELS)
+        ignored_channels_str = await self.bot.db.get_setting("AI_IGNORED_MEMORY_CHANNELS", "")
         ignored_channels = {
             int(cid.strip()) for cid in str(ignored_channels_str).split(",")
             if cid.strip().isdigit()
