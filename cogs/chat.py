@@ -368,7 +368,7 @@ class Chat(commands.Cog):
                 
         await ctx.author.send(f"✅ Successfully injected {inserted_count} historical messages into my long-term memory lore!")
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=5)
     async def process_lore_queue(self):
         """Asynchronously embed and persist queued chat events within rate limit constraints."""
         from ai.llm import llm
@@ -387,7 +387,7 @@ class Chat(commands.Cog):
             cursor = pending_collection.find({"channel_id": memory_channel_id}).limit(25)
             pending_list = await cursor.to_list(length=25)
             
-            if not pending_list:
+            if not pending_list or len(pending_list) < 10:
                 return
                 
             succeeded, _stored = await self.memory_extractor.process(self.bot.db, pending_list)

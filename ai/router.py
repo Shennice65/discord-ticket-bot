@@ -397,8 +397,8 @@ class AIRouter:
                             messages.append({
                                 "role": "tool",
                                 "tool_call_id": call.call_id,
-                                "content": json.dumps(result, ensure_ascii=False)[:6000]
-                                if not isinstance(result, str) else result[:6000],
+                                "content": json.dumps(result, ensure_ascii=False)[:2000]
+                                if not isinstance(result, str) else result[:2000],
                             })
 
                 reply_text = self._apply_tool_mentions(

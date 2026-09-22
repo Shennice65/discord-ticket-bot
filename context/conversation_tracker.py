@@ -58,7 +58,7 @@ class ConversationTracker:
     MAX_CHANNELS = 128
     MAX_RECENT = 75
     MAX_SELECTED = 12
-    MAX_LIVE_SELECTED = 75
+    MAX_LIVE_SELECTED = 12
     MAX_REPLY_DEPTH = 3
 
     def __init__(self, bot):
