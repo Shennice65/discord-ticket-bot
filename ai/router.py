@@ -297,6 +297,17 @@ class AIRouter:
                     ) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
                 }]
                 content_parts.extend(await self._load_attachment_parts(message))
+                
+                if hasattr(message, "reference") and message.reference and getattr(message.reference, "message_id", None):
+                    try:
+                        ref_msg = message.reference.resolved
+                        if not ref_msg and isinstance(message.reference.message_id, int):
+                            ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                        if ref_msg:
+                            content_parts.extend(await self._load_attachment_parts(ref_msg))
+                    except Exception as e:
+                        logger.warning("Failed to fetch referenced message %s for attachments: %s", message.reference.message_id, e)
+                        
                 messages.append({
                     "role": "user",
                     "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
