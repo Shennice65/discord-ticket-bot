@@ -275,11 +275,15 @@ class ReadOnlyToolRegistry:
             )).casefold()
             if words and not any(word in searchable for word in words):
                 continue
-            matches.append(record)
+            enriched_record = dict(record)
+            source_ids = enriched_record.get("source_message_ids")
+            if source_ids and current.guild_id and enriched_record.get("channel_id"):
+                enriched_record["discord_jump_url"] = f"https://discord.com/channels/{current.guild_id}/{enriched_record['channel_id']}/{source_ids[0]}"
+            matches.append(enriched_record)
         matches.sort(
-            key=lambda record: (
-                float(record.get("importance", 0) or 0),
-                float(record.get("confidence", 0) or 0),
+            key=lambda rec: (
+                float(rec.get("importance", 0) or 0),
+                float(rec.get("confidence", 0) or 0),
             ),
             reverse=True,
         )
