@@ -152,14 +152,14 @@ class AIRouter:
             result = f"{result} {parts[0].get('image_url', {}).get('url', '')}"
         return result
 
-    async def _generate(self, messages, tools=None, max_tokens=None):
+    async def _generate(self, messages, tools=None, max_tokens=None, temperature=0.6):
         """Call the new adapter while retaining compatibility with old test doubles."""
         if max_tokens is None:
             max_tokens = getattr(Config, "AI_MAX_OUTPUT_TOKENS", 600)
             
         if hasattr(llm, "generate"):
             return await llm.generate(
-                messages, tools=tools, temperature=0.6,
+                messages, tools=tools, temperature=temperature,
                 max_tokens=max_tokens,
             )
         response = await llm.generate_content(
@@ -395,7 +395,9 @@ class AIRouter:
                 if response is None:
                     for tool_round in range(self.MAX_TOOL_ROUNDS + 1):
                         try:
-                            response = await bounded(self._generate(messages, tools=tool_definitions, max_tokens=max_tokens))
+                            response = await bounded(self._generate(
+                                messages, tools=tool_definitions, max_tokens=max_tokens, temperature=profile.temperature
+                            ))
                         except Exception as error:
                             logger.warning("AI generation failed message_id=%s error=%s", message.id, type(error).__name__)
                             await message.reply("Sorry, I had trouble talking to my brain right now.")
@@ -410,7 +412,7 @@ class AIRouter:
                             break
                         if tool_round >= self.MAX_TOOL_ROUNDS:
                             messages.append({"role": "user", "content": "Tool limit reached. Answer using the verified context already available."})
-                            response = await bounded(self._generate(messages, tools=None))
+                            response = await bounded(self._generate(messages, tools=None, temperature=profile.temperature))
                             break
 
                         if response.assistant_message:
