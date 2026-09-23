@@ -126,18 +126,21 @@ TIER_PARAMS = {
         "max_history": 0,
         "tools_enabled": False,
         "temperature": 0.5,
+        "quota_multiplier": 0.5,
     },
     "regular": {
         "max_tokens": 200,
         "max_history": 1,
         "tools_enabled": True,
         "temperature": 0.6,
+        "quota_multiplier": 1.0,
     },
     "core": {
         "max_tokens": 400,
         "max_history": 3,
         "tools_enabled": True,
         "temperature": 0.7,
+        "quota_multiplier": 2.5,
     },
 }
 
@@ -147,7 +150,7 @@ class UserProfile:
 
     __slots__ = (
         "tier", "score", "max_tokens", "max_history",
-        "tools_enabled", "temperature", "style_hint",
+        "tools_enabled", "temperature", "style_hint", "quota_multiplier"
     )
 
     def __init__(self, tier, score, style_hint=""):
@@ -158,6 +161,7 @@ class UserProfile:
         self.max_history = params["max_history"]
         self.tools_enabled = params["tools_enabled"]
         self.temperature = params["temperature"]
+        self.quota_multiplier = params["quota_multiplier"]
         self.style_hint = style_hint
 
 

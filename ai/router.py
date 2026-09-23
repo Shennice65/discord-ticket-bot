@@ -236,13 +236,18 @@ class AIRouter:
             timestamps.append(now)
             self.user_cooldowns[message.author.id] = timestamps
 
+        profile = await self.engagement.get_profile(
+            message.author.id, 
+            message.author if hasattr(message.author, "joined_at") else None
+        )
+
         # Check quota first
         db = getattr(self.bot, "db", None)
         if db and getattr(db, "user_quotas", None) is not None:
             quota_state = await db.get_user_quota(message.author.id)
             limit = quota_state.get("limit_override")
             if limit is None:
-                limit = getattr(Config, "AI_QUOTA_TOKEN_LIMIT", 5000)
+                limit = int(getattr(Config, "AI_QUOTA_TOKEN_LIMIT", 5000) * profile.quota_multiplier)
             if limit >= 0 and quota_state.get("tokens_used", 0) >= limit:
                 quota_reactions = ["💤", "⏰", "🧊", "😶", "🫠", "🤫"]
                 try:
@@ -250,11 +255,6 @@ class AIRouter:
                 except Exception:
                     pass
                 return
-
-        profile = await self.engagement.get_profile(
-            message.author.id, 
-            message.author if hasattr(message.author, "joined_at") else None
-        )
 
         user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
         if not user_text and not message.attachments:
