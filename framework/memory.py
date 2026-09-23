@@ -24,7 +24,7 @@ class MemoryScope:
             return False
             
         record_type = record.get("record_type")
-        if record_type in ("server_lore", "community_term", "inside_joke", "nickname"):
+        if record_type in ("server_lore", "community_term", "inside_joke", "nickname", "relationship", "event"):
             return True
             
         record_channel = record.get("channel_id")

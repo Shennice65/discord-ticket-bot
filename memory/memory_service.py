@@ -23,7 +23,7 @@ class MemoryService:
             
             # Ensure important server-wide lore is always in cache
             lore_cursor = collection.find({
-                "record_type": {"$in": ["server_lore", "community_term", "inside_joke", "nickname"]},
+                "record_type": {"$in": ["server_lore", "community_term", "inside_joke", "nickname", "relationship", "event"]},
                 "confidence": {"$gte": min_confidence}
             })
             lore_records = await lore_cursor.to_list(length=2000)
