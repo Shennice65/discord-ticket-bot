@@ -28,7 +28,7 @@ class Config:
     AI_MAX_HISTORY_MESSAGES = max(1, int(os.environ.get('AI_MAX_HISTORY_MESSAGES', '6')))
     AI_MAX_OUTPUT_TOKENS = max(100, min(int(os.environ.get('AI_MAX_OUTPUT_TOKENS', '600')), 1200))
     AI_QUOTA_TOKEN_LIMIT = max(500, int(os.environ.get('AI_QUOTA_TOKEN_LIMIT', '5000')))
-    AI_QUOTA_WINDOW_SECONDS = max(60, int(os.environ.get('AI_QUOTA_WINDOW_SECONDS', '600')))
+    AI_QUOTA_WINDOW_SECONDS = max(60, int(os.environ.get('AI_QUOTA_WINDOW_SECONDS', '360')))
     OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '') or os.getenv('OPENROUTER_API_KEY', '')
     OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'google/gemini-3-flash-preview')
     OPENROUTER_FALLBACK_MODELS = [
