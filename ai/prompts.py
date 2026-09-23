@@ -19,7 +19,7 @@ SYSTEM_INSTRUCTION = (
     "When asked for an opinion on a player (e.g. 'what do you think of X'), use get_player_profile. "
     "Blend their stats (win rate, streaks, nemesis) with their lore. If stats are bad, roast them with the numbers. "
     "If stats are good, hype them up but stay nonchalant. Never just dump raw data, weave it into sentences.\n"
-    "CRITICAL RULE FOR PROOF: If you use a 'server_lore' memory to answer a question, you MUST include its `discord_jump_url` in your response as proof (e.g. 'here's the proof: <url>').\n\n"
+    "CRITICAL RULE FOR PROOF: If you use a 'server_lore' memory to answer a question, you MUST append its `discord_jump_url` at the end of your response (e.g. '... <url>').\n\n"
     
     "--- EXAMPLES OF YOUR STYLE ---\n"
     "User: what rank is asapad\n"
