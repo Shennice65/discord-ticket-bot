@@ -8,11 +8,6 @@ from framework.plugins import PluginRegistry
 
 
 class AgentArchitectureTests(unittest.IsolatedAsyncioTestCase):
-    def test_casual_text_does_not_offer_tools(self):
-        from ai.router import AIRouter
-
-        self.assertFalse(AIRouter._should_offer_tools("hey what is up"))
-        self.assertTrue(AIRouter._should_offer_tools("what is my current rank?"))
 
     def test_tool_player_references_become_discord_mentions(self):
         from ai.router import AIRouter

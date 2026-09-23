@@ -51,22 +51,7 @@ class AIRouter:
             (content or "").casefold(),
         ))
 
-    @staticmethod
-    def _should_offer_tools(content):
-        """Keep casual conversation out of the retrieval/tool path."""
-        return bool(re.search(
-            r"\b(rank|history|leaderboard|ticket|rule|lore|clip|image|picture|photo|server|player|"
-            r"recent|match|bet|remember|incident|happened|before|back\s+then|"
-            r"muted|mute|banned|ban|kicked|kick|warned|warn|punished|punishment|"
-            r"drama|argument|involved|beat|lost|tournament|leave|left|owns|owner|"
-            r"opinion|rate|compare|girlfriend|boyfriend|dating|friend|beef|hate|love|"
-            r"slang|means?|define|terms?|joke|nickname|call|called|named|title|whats)\b|"
-            r"\bwhat\s+happened\b|\bdo\s+you\s+remember\b|\bwhy\s+was\b|\bwhy\s+do\b|"
-            r"\bwho\s+started\b|\bwhat\s+did\b|\bthink\s+of\b|\bhow\s+(good|bad)\b|"
-            r"\bwho\s+is\b|\bwhos\b|\bwhose\b|\btell\s+me\s+about\b|"
-            r"\bwhat\s+is\b|\bwhat\s+does\b|\bwhat\s+are\b",
-            (content or "").casefold(),
-        ))
+
 
     @staticmethod
     def _apply_tool_mentions(text, mention_sources):
@@ -288,11 +273,10 @@ class AIRouter:
                 max_history = 2
                 max_tokens = 200
 
-                include_extended_context = self._should_offer_tools(user_text)
                 bot_name = (getattr(self.bot.user, "display_name", "") or getattr(self.bot.user, "name", "this bot"))
                 messages = [{
                     "role": "system",
-                    "content": prompts.system_instruction(context, include_extended=include_extended_context, bot_name=bot_name),
+                    "content": prompts.system_instruction(context, bot_name=bot_name),
                 }]
                 for exchange in context.exchanges[-max_history:] if max_history > 0 else []:
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)
@@ -303,9 +287,7 @@ class AIRouter:
 
                 content_parts = [{
                     "type": "text",
-                    "text": prompts.context_text(
-                        context, include_memories=include_extended_context
-                    ) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
+                    "text": prompts.context_text(context) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
                 }]
                 content_parts.extend(await self._load_attachment_parts(message))
                 
@@ -324,7 +306,7 @@ class AIRouter:
                     "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
                 })
 
-                tool_definitions = self.tools.definitions if self._should_offer_tools(user_text) else []
+                tool_definitions = self.tools.definitions
                 if self._is_image_request(user_text):
                     image_definition = self._image_tool_definition()
                     tool_definitions.append(image_definition)
