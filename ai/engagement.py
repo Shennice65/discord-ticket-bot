@@ -252,6 +252,8 @@ class UserEngagementScorer:
         if member is not None:
             joined = getattr(member, "joined_at", None)
             if joined:
+                if joined.tzinfo is None:
+                    joined = joined.replace(tzinfo=timezone.utc)
                 days = (datetime.now(timezone.utc) - joined).days
                 score += min(days / 30, 5.0)  # 150+ days = max 5 pts
 

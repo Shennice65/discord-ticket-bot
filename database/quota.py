@@ -23,6 +23,8 @@ class QuotaMixin:
         window_start = doc.get("window_start")
         if window_start is None:
             return True
+        if window_start.tzinfo is None:
+            window_start = window_start.replace(tzinfo=timezone.utc)
         elapsed = (datetime.now(timezone.utc) - window_start).total_seconds()
         return elapsed >= self._quota_window_seconds()
 
@@ -30,8 +32,11 @@ class QuotaMixin:
         """Return the user's quota state, auto-resetting if the window expired."""
         doc = await self.user_quotas.find_one({"user_id": user_id})
         if doc and not self._window_expired(doc):
+            window_start = doc["window_start"]
+            if window_start.tzinfo is None:
+                window_start = window_start.replace(tzinfo=timezone.utc)
             remaining = self._quota_window_seconds() - (
-                datetime.now(timezone.utc) - doc["window_start"]
+                datetime.now(timezone.utc) - window_start
             ).total_seconds()
             return {
                 "tokens_used": doc.get("tokens_used", 0),
