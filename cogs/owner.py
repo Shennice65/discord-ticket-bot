@@ -280,5 +280,41 @@ class OwnerCog(commands.Cog):
         else:
             await interaction.response.send_message("Database unavailable.", ephemeral=True)
 
+    @app_commands.command(name="check_dms", description="Fetch the bot's direct message history with a specific user")
+    @app_commands.describe(user="The user to inspect")
+    async def check_dms(self, interaction: discord.Interaction, user: discord.User):
+        if not self.is_owner(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            dm_channel = user.dm_channel
+            if dm_channel is None:
+                dm_channel = await user.create_dm()
+                
+            messages = [msg async for msg in dm_channel.history(limit=50)]
+            if not messages:
+                await interaction.followup.send(f"No DM history found with {user.mention}.", ephemeral=True)
+                return
+                
+            messages.reverse()
+            
+            lines = [f"--- DM History with {user.name} ({user.id}) ---"]
+            for msg in messages:
+                ts = msg.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+                lines.append(f"[{ts}] {msg.author.name}: {msg.content}")
+                if msg.attachments:
+                    lines.append(f"  Attachments: {', '.join(a.url for a in msg.attachments)}")
+                    
+            text = "\n".join(lines)
+            file = discord.File(io.BytesIO(text.encode("utf-8")), filename=f"dms_{user.id}.txt")
+            await interaction.followup.send(f"Found {len(messages)} recent messages. Here is the transcript:", file=file, ephemeral=True)
+            
+        except discord.Forbidden:
+            await interaction.followup.send(f"Cannot fetch DMs. {user.mention} has blocked the bot or disabled DMs.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"An error occurred: {e}", ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(OwnerCog(bot))
