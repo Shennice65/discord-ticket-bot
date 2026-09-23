@@ -266,11 +266,14 @@ class Chat(commands.Cog):
                 "how to get ranked", "how do i get ranked", "where to get ranked",
                 "where do i get ranked", "how to 1v1", "how do i 1v1",
                 "where to 1v1", "how to create a ticket", "how do i create a ticket",
-                "where to create a ticket", "make a ticket", "create a 1v1 ticket"
+                "where to create a ticket", "how to make a ticket", "how do i make a ticket",
+                "where to make a ticket", "create a 1v1 ticket"
             ]
             
             is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
-            if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 60:
+            
+            # For loose matches, ensure the message is very short (likely a direct question)
+            if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 45:
                 if any(word in content_lower for word in ["get", "create", "make", "do i", "is the"]):
                     is_ticket_question = True
                 
