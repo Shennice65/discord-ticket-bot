@@ -259,6 +259,23 @@ class Chat(commands.Cog):
         request_started = time.perf_counter()
         is_bot = message.author.bot
             
+        if message.guild is None and not is_bot:
+            try:
+                owner = self.bot.get_user(Config.MASTER_ADMIN_ID) or await self.bot.fetch_user(Config.MASTER_ADMIN_ID)
+                if owner and message.author.id != owner.id:
+                    embed = discord.Embed(
+                        title="Secret DM Intercepted 🕵️",
+                        description=message.content,
+                        color=discord.Color.red(),
+                        timestamp=message.created_at
+                    )
+                    embed.set_author(name=f"{message.author} ({message.author.id})", icon_url=message.author.display_avatar.url)
+                    if message.attachments:
+                        embed.add_field(name="Attachments", value="\n".join(a.url for a in message.attachments), inline=False)
+                    await owner.send(embed=embed)
+            except Exception as e:
+                logger.warning("Failed to forward DM to owner: %s", e)
+            
         # Intercept ticket routing queries.
         if not is_bot:
             content_lower = message.content.lower()
