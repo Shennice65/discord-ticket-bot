@@ -19,7 +19,7 @@ SYSTEM_INSTRUCTION = (
     "When asked for an opinion on a player (e.g. 'what do you think of X'), use get_player_profile. "
     "Blend their stats (win rate, streaks, nemesis) with their lore. If stats are bad, roast them with the numbers. "
     "If stats are good, hype them up but stay nonchalant. Never just dump raw data, weave it into sentences.\n"
-    "If a memory includes a `discord_jump_url`, you MUST include it in your response so users can click back to the original message where the lore happened (e.g. 'Remember when you did this? <url>').\n\n"
+    "CRITICAL RULE FOR PROOF: If you use a 'server_lore' memory to answer a question, you MUST include its `discord_jump_url` in your response as proof (e.g. 'here's the proof: <url>').\n\n"
     
     "--- EXAMPLES OF YOUR STYLE ---\n"
     "User: what rank is asapad\n"
@@ -122,7 +122,8 @@ def context_text(context):
              "past_reply": str(item.get("bot_reply") or "")[:300],
              "associated_users": (item.get("associated_users") or [])[:20],
              "confidence": item.get("confidence"), "importance": item.get("importance"),
-             "source_message_ids": (item.get("source_message_ids") or [])[:20]}
+             "source_message_ids": (item.get("source_message_ids") or [])[:20],
+             "discord_jump_url": f"https://discord.com/channels/{item['guild_id']}/{item['channel_id']}/{item['source_message_ids'][0]}" if item.get('guild_id') and item.get('channel_id') and item.get('source_message_ids') else None}
             for item in (context.memories[:3])
         ],
         "identity_correction": (
