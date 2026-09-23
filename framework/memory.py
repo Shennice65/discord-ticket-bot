@@ -22,5 +22,10 @@ class MemoryScope:
     def matches_record(self, record):
         if self.guild_id is None or record.get("guild_id") != self.guild_id:
             return False
+            
+        record_type = record.get("record_type")
+        if record_type in ("server_lore", "community_term", "inside_joke", "nickname"):
+            return True
+            
         record_channel = record.get("channel_id")
         return record_channel in (None, self.channel_id)
