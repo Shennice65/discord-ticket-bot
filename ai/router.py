@@ -60,10 +60,11 @@ class AIRouter:
             r"muted|mute|banned|ban|kicked|kick|warned|warn|punished|punishment|"
             r"drama|argument|involved|beat|lost|tournament|leave|left|owns|owner|"
             r"opinion|rate|compare|girlfriend|boyfriend|dating|friend|beef|hate|love|"
-            r"slang|mean|define|term|joke|nickname|call|called|named|title)\b|"
+            r"slang|means?|define|terms?|joke|nickname|call|called|named|title|whats)\b|"
             r"\bwhat\s+happened\b|\bdo\s+you\s+remember\b|\bwhy\s+was\b|\bwhy\s+do\b|"
             r"\bwho\s+started\b|\bwhat\s+did\b|\bthink\s+of\b|\bhow\s+(good|bad)\b|"
-            r"\bwho\s+is\b|\bwhos\b|\bwhose\b|\btell\s+me\s+about\b",
+            r"\bwho\s+is\b|\bwhos\b|\bwhose\b|\btell\s+me\s+about\b|"
+            r"\bwhat\s+is\b|\bwhat\s+does\b|\bwhat\s+are\b",
             (content or "").casefold(),
         ))
 
