@@ -9,6 +9,7 @@ import time
 from ai import prompts
 from ai.llm import GenerationResult, ToolCall, llm
 from ai.sidecar import AgentSidecarBridge
+from ai.engagement import UserEngagementScorer
 from ai.tools import ReadOnlyToolRegistry
 from context.context_builder import ContextBuilder
 from config import Config
@@ -25,6 +26,7 @@ class AIRouter:
     def __init__(self, bot, context_builder: ContextBuilder):
         self.bot = bot
         self.context_builder = context_builder
+        self.engagement = UserEngagementScorer(bot)
         self.user_cooldowns = {}
         self._concurrency_limit = asyncio.Semaphore(3)
         self.tools = ReadOnlyToolRegistry(bot, context_builder)
@@ -234,6 +236,26 @@ class AIRouter:
             timestamps.append(now)
             self.user_cooldowns[message.author.id] = timestamps
 
+        # Check quota first
+        db = getattr(self.bot, "db", None)
+        if db and getattr(db, "user_quotas", None) is not None:
+            quota_state = await db.get_user_quota(message.author.id)
+            limit = quota_state.get("limit_override")
+            if limit is None:
+                limit = getattr(Config, "AI_QUOTA_TOKEN_LIMIT", 5000)
+            if limit >= 0 and quota_state.get("tokens_used", 0) >= limit:
+                quota_reactions = ["💤", "⏰", "🧊", "😶", "🫠", "🤫"]
+                try:
+                    await message.add_reaction(random.choice(quota_reactions))
+                except Exception:
+                    pass
+                return
+
+        profile = await self.engagement.get_profile(
+            message.author.id, 
+            message.author if hasattr(message.author, "joined_at") else None
+        )
+
         user_text = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
         if not user_text and not message.attachments:
             user_text = "Hello!"
@@ -270,13 +292,13 @@ class AIRouter:
                     await message.reply("Sorry, I couldn't load the conversation context.")
                     return
 
-                max_history = 2
-                max_tokens = 200
+                max_history = profile.max_history
+                max_tokens = profile.max_tokens
 
                 bot_name = (getattr(self.bot.user, "display_name", "") or getattr(self.bot.user, "name", "this bot"))
                 messages = [{
                     "role": "system",
-                    "content": prompts.system_instruction(context, bot_name=bot_name),
+                    "content": prompts.system_instruction(context, bot_name=bot_name, style_hint=profile.style_hint),
                 }]
                 for exchange in context.exchanges[-max_history:] if max_history > 0 else []:
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)
@@ -448,5 +470,7 @@ class AIRouter:
                     self.bot, event="chat_completed", model=response.model if response else None,
                     usage=usage
                 )
+                if db and getattr(db, "user_quotas", None) is not None and usage.get("total_tokens"):
+                    await db.increment_user_quota(message.author.id, usage["total_tokens"])
         finally:
             self._concurrency_limit.release()

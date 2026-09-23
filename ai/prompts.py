@@ -57,10 +57,12 @@ CONTEXT_RULES = (
 )
 
 
-def system_instruction(context, bot_name="this bot"):
+def system_instruction(context, bot_name="this bot", style_hint=""):
     result = SYSTEM_INSTRUCTION.replace("{bot_name}", bot_name) + CONTEXT_RULES
     if context.curated_lore:
         result += "\n\n--- EXTENDED SERVER LORE (FROM FILE) ---\n" + context.curated_lore
+    if style_hint:
+        result += "\n\n--- RESPONSE STYLE ---\n" + style_hint
     return result
 
 

@@ -40,9 +40,6 @@ class Chat(commands.Cog):
         self.ai_chat_enabled = True
         self.member_role_id = Config.MEMBER_ROLE_ID
         
-        # User rate limit tracking (non-admin).
-        self.user_cooldowns = {}
-        
         self.process_lore_queue.start()
         self.persist_evidence_queue.start()
         self.refresh_runtime_config.start()

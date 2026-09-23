@@ -186,11 +186,20 @@ class OwnerCog(commands.Cog):
         if memory_collection is not None:
             total_memories = await memory_collection.count_documents({})
             
+        quota_stats = None
+        if db and getattr(db, "user_quotas", None) is not None:
+            quota_stats = await db.get_quota_stats()
+            
         embed = discord.Embed(title="AI System Diagnostics", color=discord.Color.blurple())
         embed.add_field(name="Configuration", value=f"**Provider**: {active_provider}\n**DeepSeek**: `{deepseek_model}`\n**Gemini**: `{gemini_model}`", inline=False)
         embed.add_field(name="24h Usage (ai_audit)", value=f"**Requests**: {total_requests:,}\n**Tokens**: {tokens_used:,}", inline=True)
         embed.add_field(name="Live Cache (RAM)", value=f"**Retained Msgs**: {live_messages:,}\n*(Across all channels)*", inline=True)
         embed.add_field(name="Long-Term Memory", value=f"**Semantic Vectors**: {total_memories:,}", inline=True)
+        if quota_stats:
+            active = quota_stats.get('active_users', 0)
+            over = quota_stats.get('users_over_limit', 0)
+            mins = quota_stats.get('window_seconds', 600) // 60
+            embed.add_field(name=f"Quota Window ({mins}m)", value=f"**Active Users**: {active:,}\n**Over Limit**: {over:,}", inline=True)
         
         embed.set_footer(text="Data is refreshed when you click the button below.")
         embed.timestamp = datetime.now(timezone.utc)
@@ -206,6 +215,70 @@ class OwnerCog(commands.Cog):
         embed = await self.build_sysinfo_embed()
         view = SysInfoView(self, interaction)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    quota_group = app_commands.Group(
+        name="quota", 
+        description="Manage AI interaction quotas", 
+        default_permissions=discord.Permissions(administrator=True)
+    )
+
+    @quota_group.command(name="check", description="Check a user's current AI quota window")
+    async def quota_check(self, interaction: discord.Interaction, user: discord.User = None):
+        target = user or interaction.user
+        if not self.is_owner(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        db = getattr(self.bot, "db", None)
+        if not db or getattr(db, "user_quotas", None) is None:
+            await interaction.response.send_message("Quota tracking is offline.", ephemeral=True)
+            return
+
+        state = await db.get_user_quota(target.id)
+        limit = state.get("limit_override")
+        if limit is None:
+            limit = getattr(Config, "AI_QUOTA_TOKEN_LIMIT", 5000)
+            
+        used = state.get("tokens_used", 0)
+        rem_sec = state.get("window_remaining_seconds", 0)
+        
+        msg = f"**Quota for {target.mention}**\n"
+        if limit == -1:
+            msg += f"Tokens Used: `{used:,}` (Unlimited Override)\n"
+        else:
+            msg += f"Tokens Used: `{used:,} / {limit:,}` (in current window)\n"
+        msg += f"Window Resets In: `{rem_sec // 60}m {rem_sec % 60}s`"
+        
+        await interaction.response.send_message(msg, ephemeral=True)
+
+    @quota_group.command(name="reset", description="Force reset a user's quota window")
+    async def quota_reset(self, interaction: discord.Interaction, user: discord.User):
+        if not self.is_owner(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+            
+        db = getattr(self.bot, "db", None)
+        if db and getattr(db, "user_quotas", None) is not None:
+            await db.reset_user_quota(user.id)
+            await interaction.response.send_message(f"Reset quota window for {user.mention}.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Database unavailable.", ephemeral=True)
+
+    @quota_group.command(name="limit", description="Set a custom token limit for a user (-1 for unlimited, 0 to block)")
+    async def quota_limit(self, interaction: discord.Interaction, user: discord.User, limit: int):
+        if not self.is_owner(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+            
+        db = getattr(self.bot, "db", None)
+        if db and getattr(db, "user_quotas", None) is not None:
+            await db.set_user_quota_limit(user.id, limit)
+            chat_cog = self.bot.get_cog("Chat")
+            if chat_cog and hasattr(chat_cog, "router"):
+                chat_cog.router.engagement.invalidate(user.id)
+            await interaction.response.send_message(f"Set custom limit of {limit} for {user.mention}.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Database unavailable.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(OwnerCog(bot))

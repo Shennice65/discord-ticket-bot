@@ -34,6 +34,7 @@ class ConnectionMixin:
         self.chat_memory = None
         self.chat_messages = None
         self.pending_lore = None
+        self.user_quotas = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -69,6 +70,7 @@ class ConnectionMixin:
             self.chat_memory = self.db.chat_memory
             self.chat_messages = self.db.chat_messages
             self.pending_lore = self.db.pending_lore
+            self.user_quotas = self.db.user_quotas
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -153,6 +155,7 @@ class ConnectionMixin:
                     name="pending_message_id_unique",
                     partialFilterExpression={"message_id": {"$exists": True}},
                 )),
+                ("user_quotas.user_id", ensure_unique_index(self.user_quotas, "user_id")),
                 ("tickets.channel_id", self.tickets.create_index("channel_id")),
                 ("tickets.status_type_user", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])),
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),
