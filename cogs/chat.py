@@ -301,6 +301,36 @@ class Chat(commands.Cog):
         status_text = "ENABLED" if new_status else "DISABLED"
         await interaction.response.send_message(f"AI Chat has been **{status_text}** globally.", ephemeral=True)
 
+    @commands.command(name="teachgif")
+    async def teach_gif(self, ctx, tag: str, url: str):
+        """Teach the bot a new GIF for a specific reaction context.
+
+        Valid tags: roast, hype, sadness, laugh, win, loss, reaction, greeting, flex, confused, cringe
+        """
+        if not getattr(self.bot, "db", None):
+            await ctx.send("Database is not connected.")
+            return
+
+        from database.gifs import VALID_CONTEXT_TAGS
+        
+        tag = tag.strip().lower()
+        if tag not in VALID_CONTEXT_TAGS:
+            await ctx.send(f"Invalid tag: `{tag}`. Valid tags are: {', '.join(sorted(VALID_CONTEXT_TAGS))}")
+            return
+
+        success = await self.bot.db.record_gif(
+            guild_id=ctx.guild.id,
+            url=url,
+            context_tag=tag,
+            taught_by=ctx.author.id,
+            source_message_id=ctx.message.id,
+        )
+
+        if success:
+            await ctx.send(f"Thanks! I've added that GIF to my `{tag}` reaction library.")
+        else:
+            await ctx.send("I already know that GIF or the URL doesn't look like a valid animated image!")
+
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
         scope = getattr(after.guild, "id", None), after.channel.id
