@@ -225,7 +225,8 @@ class OwnerCog(commands.Cog):
     @quota_group.command(name="check", description="Check a user's current AI quota window")
     async def quota_check(self, interaction: discord.Interaction, user: discord.User = None):
         target = user or interaction.user
-        if not self.is_owner(interaction.user.id):
+        is_admin = getattr(interaction.user.guild_permissions, "administrator", False) if interaction.guild else False
+        if not (self.is_owner(interaction.user.id) or is_admin):
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
 
@@ -241,13 +242,15 @@ class OwnerCog(commands.Cog):
             
         used = state.get("tokens_used", 0)
         rem_sec = state.get("window_remaining_seconds", 0)
+        all_time_tokens = state.get("lifetime_tokens", 0)
         
         msg = f"**Quota for {target.mention}**\n"
         if limit == -1:
             msg += f"Tokens Used: `{used:,}` (Unlimited Override)\n"
         else:
             msg += f"Tokens Used: `{used:,} / {limit:,}` (in current window)\n"
-        msg += f"Window Resets In: `{rem_sec // 60}m {rem_sec % 60}s`"
+        msg += f"Window Resets In: `{rem_sec // 60}m {rem_sec % 60}s`\n"
+        msg += f"All-Time Tokens Used: `{all_time_tokens:,}`"
         
         await interaction.response.send_message(msg, ephemeral=True)
 
