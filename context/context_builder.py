@@ -24,7 +24,6 @@ class BrainContext:
     reply_chain: tuple[ContextMessage, ...] = ()
     immediate_preceding: ContextMessage | None = None
     surrounding_messages: tuple[ContextMessage, ...] = ()
-    recent_messages: tuple[ContextMessage, ...] = ()
     exchanges: tuple = ()
     memories: list[dict] = None
     verified_rank: dict = None
@@ -72,7 +71,6 @@ class ContextBuilder:
         
         chain = await self.tracker._reply_chain(message)
         live = self.tracker.select_live_window(current, chain)
-        recent = self.tracker._select_recent(current, chain, live)
         
         guild = message.guild
         context = BrainContext(
@@ -86,12 +84,11 @@ class ContextBuilder:
             reply_chain=chain, 
             immediate_preceding=self.tracker.immediate_preceding(current),
             surrounding_messages=live, 
-            recent_messages=recent,
             verified_rank=await self.get_verified_rank(message),
         )
         
         key = (*current.scope, current.author_id)
-        selected_ids = {item.message_id for item in (*chain, *live, *recent)}
+        selected_ids = {item.message_id for item in (*chain, *live)}
         
         context.exchanges = tuple(exchange for exchange in self.tracker._exchanges.get(key, ())
                                   if exchange.message_id in selected_ids
