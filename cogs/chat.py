@@ -331,6 +331,20 @@ class Chat(commands.Cog):
         else:
             await ctx.send("I already know that GIF or the URL doesn't look like a valid animated image!")
 
+    @commands.command(name="removegif")
+    @commands.has_permissions(administrator=True)
+    async def remove_gif(self, ctx, url: str):
+        """[Admin] Remove a GIF from the bot's reaction library."""
+        if not getattr(self.bot, "db", None):
+            await ctx.send("Database is not connected.")
+            return
+
+        success = await self.bot.db.remove_gif(ctx.guild.id, url)
+        if success:
+            await ctx.send("Removed that GIF from the library.")
+        else:
+            await ctx.send("I couldn't find that GIF in the library.")
+
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
         scope = getattr(after.guild, "id", None), after.channel.id
