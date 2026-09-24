@@ -8,7 +8,6 @@ import time
 
 from ai import prompts
 from ai.llm import GenerationResult, ToolCall, llm
-from ai.sidecar import AgentSidecarBridge
 from ai.engagement import UserEngagementScorer
 from ai.tools import ReadOnlyToolRegistry
 from context.context_builder import ContextBuilder
@@ -35,7 +34,6 @@ class AIRouter:
             bot,
             approvals=ApprovalManager(getattr(Config, "AGENT_APPROVAL_TOOLS", ())),
         )
-        self.sidecar = AgentSidecarBridge(bot)
 
     def _is_direct_question(self, content):
         content = (content or "").strip().lower()
@@ -300,7 +298,9 @@ class AIRouter:
                     "role": "system",
                     "content": prompts.system_instruction(context, bot_name=bot_name, style_hint=profile.style_hint, tier=profile.tier),
                 }]
+                active_exchange_ids = set()
                 for exchange in context.exchanges[-max_history:] if max_history > 0 else []:
+                    active_exchange_ids.add(exchange.message_id)
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)
                     messages.extend([
                         {"role": "user", "content": user_turn},
@@ -309,7 +309,7 @@ class AIRouter:
 
                 content_parts = [{
                     "type": "text",
-                    "text": prompts.context_text(context) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
+                    "text": prompts.context_text(context, active_exchange_ids=active_exchange_ids) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
                 }]
                 content_parts.extend(await self._load_attachment_parts(message))
                 
@@ -335,7 +335,6 @@ class AIRouter:
                     self.pipeline.register_external_tool(image_definition, self._run_image_tool)
 
                 response = None
-                sidecar_response = None
                 streamed_reply = None
                 streamed_text = []
                 mention_sources = []
@@ -371,26 +370,6 @@ class AIRouter:
                         streamed_reply = await bounded(message.reply(preview))
                     else:
                         await bounded(streamed_reply.edit(content=preview))
-
-                if getattr(llm, "api_key", "") and getattr(self.sidecar, "enabled", False):
-                    try:
-                        sidecar_response = await bounded(
-                            self.sidecar.run(
-                                messages,
-                                tool_definitions,
-                                execute_agent_tool,
-                                on_delta=on_delta,
-                            ),
-                            timeout=90,
-                        )
-                    except Exception as error:
-                        logger.info("Agent sidecar fallback message_id=%s error=%s", message.id, type(error).__name__)
-                    if sidecar_response:
-                        response = sidecar_response
-                        await record_agent_event(
-                            self.bot, event="agent_completed", model=response.model,
-                            usage=response.usage,
-                        )
 
                 if response is None:
                     for tool_round in range(self.MAX_TOOL_ROUNDS + 1):
