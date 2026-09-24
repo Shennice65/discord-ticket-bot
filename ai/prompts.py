@@ -93,24 +93,24 @@ def labeled_exchange(exchange):
     )
 
 
-def context_text(context):
+def context_text(context, active_exchange_ids=None):
     """Bound the serialized evidence; keep source identity and trust labels."""
+    if active_exchange_ids is None:
+        active_exchange_ids = set()
+
     def message_data(item):
-        created_at = getattr(item, "created_at", None)
         mentioned_ids = tuple(getattr(item, "mentioned_users", ()) or ())
         mentioned_names = tuple(getattr(item, "mentioned_user_names", ()) or ())
         return {
             "message_id": getattr(item, "message_id", None), "author_id": item.author_id,
-            "author_name": item.author_name, "content": item.content[:500],
+            "author_name": item.author_name, "content": item.content[:200],
             "reply_to": getattr(item, "reply_to", None),
             "mentioned_users": [
                 {"id": user_id, "name": mentioned_names[index] if index < len(mentioned_names) else None}
                 for index, user_id in enumerate(mentioned_ids)
             ],
-            "mentioned_user_ids": list(mentioned_ids),
             "is_bot": bool(getattr(item, "is_bot", False)),
             "speaker_type": "bot" if getattr(item, "is_bot", False) else "discord_user",
-            "created_at": created_at.isoformat() if created_at else None,
         }
 
     rank = context.verified_rank
@@ -119,6 +119,9 @@ def context_text(context):
     immediate = getattr(context, "immediate_preceding", None)
     if immediate is None and not hasattr(context, "immediate_preceding"):
         immediate = live[-1] if live else (chain[0] if chain else None)
+        
+    filtered_live = [item for item in live if item.message_id not in active_exchange_ids]
+    
     data = {
         "server": context.server_name, "guild_id": context.current.guild_id,
         "channel": context.channel_name, "channel_id": context.current.channel_id,
@@ -128,8 +131,7 @@ def context_text(context):
         "server_admins": context.admins,
         "reply_chain": [message_data(item) for item in chain],
         "message_immediately_before_current": message_data(immediate) if immediate else None,
-        "recent_channel_messages": [message_data(item) for item in live],
-        "recent_messages": [message_data(item) for item in getattr(context, "recent_messages", ())],
+        "recent_messages": [message_data(item) for item in filtered_live],
         "verified_rank": (
             {"user_id": rank.get("user_id"), "name": rank.get("name"), "rank": rank.get("rank")}
             if isinstance(rank, dict) else
