@@ -311,7 +311,10 @@ class AIRouter:
                     "type": "text",
                     "text": prompts.context_text(context, active_exchange_ids=active_exchange_ids) + "\n\nCURRENT_USER_MESSAGE:\n" + user_text,
                 }]
-                content_parts.extend(await self._load_attachment_parts(message))
+                current_attachments = await self._load_attachment_parts(message)
+                if current_attachments:
+                    content_parts.append({"type": "text", "text": "\n[Attachments from current message]:"})
+                    content_parts.extend(current_attachments)
                 
                 if hasattr(message, "reference") and message.reference and getattr(message.reference, "message_id", None):
                     try:
@@ -319,7 +322,10 @@ class AIRouter:
                         if not ref_msg and isinstance(message.reference.message_id, int):
                             ref_msg = await message.channel.fetch_message(message.reference.message_id)
                         if ref_msg:
-                            content_parts.extend(await self._load_attachment_parts(ref_msg))
+                            ref_attachments = await self._load_attachment_parts(ref_msg)
+                            if ref_attachments:
+                                content_parts.append({"type": "text", "text": f"\n[Attachments from replied-to message {ref_msg.id}]:"})
+                                content_parts.extend(ref_attachments)
                     except Exception as e:
                         logger.warning("Failed to fetch referenced message %s for attachments: %s", message.reference.message_id, e)
                         
