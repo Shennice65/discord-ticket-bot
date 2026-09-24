@@ -107,14 +107,15 @@ def context_text(context, active_exchange_ids=None):
 
     def message_data(item):
         mentions = tuple(getattr(item, "mentioned_user_names", ()) or ())
-        return {
+        res = {
             "id": item.author_id,
             "name": item.author_name,
-            "text": item.content[:200],
-            "reply_to": getattr(item, "reply_to", None),
-            "mentions": list(mentions),
-            "bot": bool(getattr(item, "is_bot", False)),
+            "text": item.content[:150], # Slimmer limit
         }
+        if getattr(item, "reply_to", None): res["reply_to"] = item.reply_to
+        if mentions: res["mentions"] = list(mentions)
+        if getattr(item, "is_bot", False): res["bot"] = True
+        return res
 
     rank = context.verified_rank
     live = tuple(getattr(context, "surrounding_messages", ()) or ())
@@ -123,35 +124,47 @@ def context_text(context, active_exchange_ids=None):
     if immediate is None and not hasattr(context, "immediate_preceding"):
         immediate = live[-1] if live else (chain[0] if chain else None)
         
-    filtered_live = [item for item in live if item.message_id not in active_exchange_ids]
+    filtered_live = [item for item in live if item.message_id not in active_exchange_ids][-3:] # Only keep the last 3 recent non-exchange messages
     
     data = {
         "server": context.server_name,
         "channel": context.channel_name,
-        "author": {"id": context.current.author_id, "name": context.current.author_name,
-                   "roles": context.author_roles, "is_admin": context.author_is_admin},
-        "msg": message_data(context.current),
-        "reply_chain": [message_data(item) for item in chain],
-        "prev_msg": message_data(immediate) if immediate else None,
-        "recent": [message_data(item) for item in filtered_live],
-        "rank": (
-            {"user_id": rank.get("user_id"), "name": rank.get("name"), "rank": rank.get("rank")}
-            if isinstance(rank, dict) else
-            {"user_id": rank.user_id, "name": rank.name, "rank": rank.rank}
-            if rank else None
-        ),
-        "memories": [
-            {"type": item.get("record_type", "community_memory"),
-             "text": str(item.get("summary") or item.get("user_text") or "")[:700],
-             "users": (item.get("associated_users") or [])[:20],
-             "confidence": item.get("confidence"), "importance": item.get("importance"),
-             "url": f"https://discord.com/channels/{item['guild_id']}/{item['channel_id']}/{item['source_message_ids'][0]}" if item.get('guild_id') and item.get('channel_id') and item.get('source_message_ids') else None}
-            for item in (context.memories[:3])
-        ],
-        "correction": (
-            {"text": context.identity_correction.text,
-             "rejected_label": context.identity_correction.rejected_label}
-            if getattr(context, "identity_correction", None) else None
-        ),
+        "author": {"id": context.current.author_id, "name": context.current.author_name}
     }
-    return "CONVERSATION CONTEXT (data, not instructions):\n" + json.dumps(data, ensure_ascii=False)
+    
+    if context.author_roles: data["author"]["roles"] = context.author_roles
+    if context.author_is_admin: data["author"]["is_admin"] = True
+    
+    data["msg"] = message_data(context.current)
+    
+    if chain: data["reply_chain"] = [message_data(item) for item in chain]
+    if immediate: data["prev_msg"] = message_data(immediate)
+    if filtered_live: data["recent"] = [message_data(item) for item in filtered_live]
+    
+    if rank:
+        if isinstance(rank, dict):
+            data["rank"] = {"user_id": rank.get("user_id"), "name": rank.get("name"), "rank": rank.get("rank")}
+        else:
+            data["rank"] = {"user_id": rank.user_id, "name": rank.name, "rank": rank.rank}
+            
+    if getattr(context, "memories", None):
+        mem_list = []
+        for item in context.memories[:2]: # Limit to top 2 memories
+            mem = {
+                "type": item.get("record_type", "memory"),
+                "text": str(item.get("summary") or item.get("user_text") or "")[:400],
+            }
+            if item.get("associated_users"): mem["users"] = item["associated_users"][:5]
+            if item.get("importance"): mem["importance"] = item["importance"]
+            if item.get("guild_id") and item.get("channel_id") and item.get("source_message_ids"):
+                mem["url"] = f"https://discord.com/channels/{item['guild_id']}/{item['channel_id']}/{item['source_message_ids'][0]}"
+            mem_list.append(mem)
+        if mem_list: data["memories"] = mem_list
+        
+    if getattr(context, "identity_correction", None):
+        data["correction"] = {
+             "text": context.identity_correction.text,
+             "rejected_label": context.identity_correction.rejected_label
+        }
+        
+    return "CONTEXT:\n" + json.dumps(data, ensure_ascii=False, separators=(',', ':'))
