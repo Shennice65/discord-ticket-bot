@@ -345,6 +345,27 @@ class Chat(commands.Cog):
         else:
             await ctx.send("I couldn't find that GIF in the library.")
 
+    @commands.command(name="gifstats")
+    async def gif_stats(self, ctx):
+        """Show statistics about the community GIF library."""
+        if not getattr(self.bot, "db", None):
+            await ctx.send("Database is not connected.")
+            return
+
+        stats = await self.bot.db.get_gif_stats(ctx.guild.id)
+        total = stats.get("total", 0)
+        tags = stats.get("tags", {})
+
+        if not total:
+            await ctx.send("I haven't learned any GIFs from this server yet!")
+            return
+
+        lines = [f"**Community GIF Library**", f"Total unique GIFs learned: {total}\n", "**By Context:**"]
+        for tag, count in tags.items():
+            lines.append(f"• {tag}: {count}")
+
+        await ctx.send("\n".join(lines))
+
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
         scope = getattr(after.guild, "id", None), after.channel.id
