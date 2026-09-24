@@ -96,6 +96,14 @@ class ReadOnlyToolRegistry:
                 ("user_id",),
             ),
         ]
+        self._definitions.append(
+            _tool(
+                "search_web",
+                "Search the internet for factual information (e.g. Roblox game mechanics, updates, lore, general facts).",
+                {"query": {"type": "string", "description": "The search query"}},
+                ("query",),
+            )
+        )
         self._definitions.extend(
             value["definition"] for value in self.plugin_tools.values()
         )
@@ -114,6 +122,7 @@ class ReadOnlyToolRegistry:
             "get_server_rules": self._get_server_rules,
             "search_server_lore": self._search_server_lore,
             "search_clips": self._search_clips,
+            "search_web": self._search_web,
         }
         if name in self.plugin_tools:
             handler = self.plugin_tools[name]["handler"]
@@ -306,3 +315,28 @@ class ReadOnlyToolRegistry:
         user_id = int(args["user_id"])
         clips = await self.bot.db.get_user_clips(user_id)
         return {"user_id": user_id, "clips": clips[:10]}
+
+    async def _search_web(self, args, _message, _context):
+        query = args.get("query")
+        if not query:
+            return {"error": "Missing query"}
+        try:
+            import asyncio
+            from duckduckgo_search import DDGS
+            def _do_search():
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, max_results=3))
+            results = await asyncio.to_thread(_do_search)
+            if not results:
+                return {"message": "No results found"}
+            
+            formatted = []
+            for r in results:
+                formatted.append({
+                    "title": r.get("title", ""),
+                    "snippet": str(r.get("body", ""))[:300],
+                    "url": r.get("href", "")
+                })
+            return {"results": formatted}
+        except Exception as e:
+            return {"error": f"Search failed: {str(e)}"}
