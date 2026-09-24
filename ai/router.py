@@ -186,6 +186,44 @@ class AIRouter:
                     logger.warning("Failed to read attachment %s: %s", attachment.url, e)
         return parts
 
+    async def _triage_intent(self, user_text):
+        gemini_key = getattr(Config, "GEMINI_API_KEY", None) or __import__('os').getenv("GEMINI_API_KEY")
+        if not gemini_key:
+            return True
+            
+        try:
+            import aiohttp
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [{
+                    "parts": [{"text": f"Does this message require searching a database, looking up player stats, finding gifs, or web search? Message: {user_text}"}]
+                }],
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "responseMimeType": "application/json",
+                    "responseSchema": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "needs_tools": {"type": "BOOLEAN"}
+                        },
+                        "required": ["needs_tools"]
+                    }
+                }
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                        result = json.loads(text)
+                        return result.get("needs_tools", True)
+                    else:
+                        logger.warning(f"Triage API error: {resp.status} {await resp.text()}")
+                        return True
+        except Exception as e:
+            logger.warning(f"Triage failed: {e}")
+            return True
+
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
         request_started = time.perf_counter()
         if not ai_chat_enabled:
@@ -334,7 +372,8 @@ class AIRouter:
                     "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
                 })
 
-                tool_definitions = list(self.tools.definitions) if profile.tools_enabled else []
+                needs_tools = await self._triage_intent(user_text)
+                tool_definitions = list(self.tools.definitions) if profile.tools_enabled and needs_tools else []
                 if profile.tier != "core" and not context.author_is_admin:
                     tool_definitions = [t for t in tool_definitions if t["function"]["name"] != "search_web"]
                 if self._is_image_request(user_text):
@@ -348,7 +387,7 @@ class AIRouter:
                 mention_sources = []
 
                 def collect_mentions(tool_name, result):
-                    if tool_name not in {"get_player_rank", "get_leaderboard"}:
+                    if tool_name not in {"lookup_player", "get_leaderboard"}:
                         return
                     data = result.get("data") if isinstance(result, dict) else None
                     if not isinstance(data, dict):
