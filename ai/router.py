@@ -357,6 +357,15 @@ class AIRouter:
                     for row in rows or ():
                         if isinstance(row, dict) and row.get("player_mention"):
                             mention_sources.append(row)
+                        elif isinstance(row, str):
+                            import re
+                            m = re.search(r"^(.*?)\s*\(<@(\d+)>\)", row)
+                            if m:
+                                mention_sources.append({
+                                    "player_name": m.group(1).strip(),
+                                    "user_id": int(m.group(2)),
+                                    "player_mention": f"<@{m.group(2)}>"
+                                })
 
                 async def execute_agent_tool(name, arguments):
                     result = await bounded(

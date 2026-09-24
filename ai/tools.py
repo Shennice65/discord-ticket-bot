@@ -236,12 +236,7 @@ class ReadOnlyToolRegistry:
 
         return {
             "players": [
-                {
-                    "user_id": player.get("user_id"),
-                    "player_name": display_name(player),
-                    "player_mention": f"<@{player.get('user_id')}>" if player.get("user_id") else None,
-                    "rank": player.get("rank", ""),
-                }
+                f"{display_name(player)} (<@{player.get('user_id')}>) - Rank: {player.get('rank', 'Unranked')}"
                 for player in ranked[:limit]
             ]
         }
