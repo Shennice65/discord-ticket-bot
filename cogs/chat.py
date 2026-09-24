@@ -112,6 +112,75 @@ class Chat(commands.Cog):
         embeddings = await self._api_call_with_fallback('embed_content', contents=[text])
         return embeddings[0] if embeddings else None
 
+    @staticmethod
+    def _classify_gif_context(text: str) -> str:
+        """Infer an emotional context tag from surrounding message text."""
+        lower = (text or "").lower()
+        roast_words = {"roast", "burn", "ratio", "trash", "bad", "skill issue",
+                       "bozo", "cope", "seethe", "rip", "owned", "destroyed", "clapped"}
+        hype_words = {"hype", "goat", "goated", "cracked", "insane", "fire",
+                      "clutch", "lets go", "let's go", "w ", "dub", "sheesh"}
+        laugh_words = {"lol", "lmao", "lmfao", "dead", "funny", "hilarious"}
+        sad_words = {"sad", "crying", "rip", "pain", "down bad", "unlucky"}
+        win_words = {"gg", "won", "winner", "victory", "champion", "undefeated", "streak"}
+        loss_words = {"lost", "loser", "choked", "washed", "fell off"}
+        flex_words = {"ez", "too easy", "free", "clear", "better", "diff"}
+        confused_words = {"what", "huh", "??", "confused", "bruh moment", "wait"}
+        cringe_words = {"cringe", "yikes", "nah", "bro what", "aint no way", "ain't no way"}
+
+        for words, tag in [
+            (roast_words, "roast"), (hype_words, "hype"), (laugh_words, "laugh"),
+            (sad_words, "sadness"), (win_words, "win"), (loss_words, "loss"),
+            (flex_words, "flex"), (confused_words, "confused"), (cringe_words, "cringe"),
+        ]:
+            if any(word in lower for word in words):
+                return tag
+        return "reaction"  # default fallback
+
+    async def _observe_community_gifs(self, message: discord.Message) -> None:
+        """Passively record GIFs posted by community members."""
+        if message.author.bot or not message.guild:
+            return
+
+        db = getattr(self.bot, "db", None)
+        if not db:
+            return
+
+        gif_urls = []
+
+        # 1. Check attachments for GIFs
+        for attachment in getattr(message, "attachments", ()):
+            content_type = getattr(attachment, "content_type", "") or ""
+            if "gif" in content_type or (attachment.filename or "").lower().endswith(".gif"):
+                gif_urls.append(attachment.url)
+
+        # 2. Check embeds for Tenor/Giphy
+        for embed in getattr(message, "embeds", ()):
+            for candidate in (
+                getattr(embed, "url", None),
+                getattr(getattr(embed, "image", None), "url", None),
+                getattr(getattr(embed, "thumbnail", None), "url", None),
+                getattr(getattr(embed, "video", None), "url", None),
+            ):
+                if candidate and any(
+                    domain in candidate.lower()
+                    for domain in ("tenor.com", "giphy.com")
+                ):
+                    gif_urls.append(candidate)
+                    break  # one URL per embed
+
+        if not gif_urls:
+            return
+
+        context_tag = self._classify_gif_context(message.content)
+        for url in gif_urls[:3]:  # cap at 3 per message
+            await db.record_gif(
+                guild_id=message.guild.id,
+                url=url,
+                context_tag=context_tag,
+                source_message_id=message.id,
+            )
+
     async def _record_message_evidence(self, message: discord.Message) -> None:
         """Queue raw general-channel evidence without blocking the reply path."""
         if not self._is_memory_channel(message) or message.author.bot:
@@ -293,6 +362,7 @@ class Chat(commands.Cog):
                 return
             
         await self._record_message_evidence(message)
+        await self._observe_community_gifs(message)
         
         await self.router.handle_message(
             message,
