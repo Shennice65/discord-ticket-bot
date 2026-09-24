@@ -89,7 +89,7 @@ class OpenRouterAgentTests(unittest.IsolatedAsyncioTestCase):
             ),
             server_name="DM", channel_name="Direct Message", author_roles=(),
             author_is_admin=False, admins=(), reply_chain=(), immediate_preceding=None,
-            surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
+            surrounding_messages=(), exchanges=(), memories=[],
             verified_rank=None, identity_correction=None,
         )
         builder = SimpleNamespace(

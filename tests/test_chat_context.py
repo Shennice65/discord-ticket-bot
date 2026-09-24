@@ -87,7 +87,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             current=SimpleNamespace(message_id=1, author_id=7, author_name="member", content="rank", guild_id=10, channel_id=20,
                                     reply_to=None, mentioned_users=(), created_at=datetime.now(timezone.utc)),
             server_name="Guild", channel_name="general", author_roles=(), author_is_admin=False, admins=(),
-            reply_chain=(), immediate_preceding=None, surrounding_messages=(), recent_messages=(),
+            reply_chain=(), immediate_preceding=None, surrounding_messages=(),
             verified_rank=rank, memories=[], identity_correction=None,
         )
         payload = json.loads(prompts.context_text(context).split("\n", 1)[1])
@@ -266,7 +266,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
                                   created_at=datetime.now(timezone.utc))
         context = SimpleNamespace(current=current, server_name="Guild", channel_name="general", author_roles=(),
                                   author_is_admin=False, admins=(), reply_chain=(bot_message,), immediate_preceding=bot_message,
-                                  surrounding_messages=(), recent_messages=(), verified_rank=None, memories=[],
+                                  surrounding_messages=(), verified_rank=None, memories=[],
                                   identity_correction=IdentityCorrection("I'm not CherryBomb", "CherryBomb"))
         rendered = prompts.context_text(context)
         self.assertIn('"author_id": 1', rendered)
@@ -326,7 +326,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(
             current=current, server_name="Guild", channel_name="general", author_roles=(),
             author_is_admin=False, admins=(), reply_chain=(), immediate_preceding=None,
-            surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
+            surrounding_messages=(), exchanges=(), memories=[],
             verified_rank=None, identity_correction=None,
         )
         builder = SimpleNamespace(
