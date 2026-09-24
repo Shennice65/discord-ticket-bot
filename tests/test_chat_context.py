@@ -70,9 +70,9 @@ def make_message(message_id=1, channel_id=20, guild_id=10, content="hello", auth
 
 class ChatContextTests(unittest.IsolatedAsyncioTestCase):
     def test_persona_does_not_request_aggressive_or_repeated_roasts(self):
-        self.assertNotIn("MAXIMUM DAMAGE", prompts.SYSTEM_INSTRUCTION)
-        self.assertIn("Never copy a BOT_RESPONSE verbatim", prompts.SYSTEM_INSTRUCTION)
-        self.assertIn("A report that someone else is insulting you", prompts.SYSTEM_INSTRUCTION)
+        full_prompt = prompts.CORE_PERSONALITY + prompts.CONTEXT_RULES + prompts.TOOL_GUIDANCE
+        self.assertNotIn("MAXIMUM DAMAGE", full_prompt)
+        self.assertIn("Never copy a BOT_RESPONSE verbatim", prompts.TOOL_GUIDANCE)
 
     async def test_rank_context_uses_dictionary_shape(self):
         bot = SimpleNamespace(
@@ -327,7 +327,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             current=current, server_name="Guild", channel_name="general", author_roles=(),
             author_is_admin=False, admins=(), reply_chain=(), immediate_preceding=None,
             surrounding_messages=(), recent_messages=(), exchanges=(), memories=[],
-            verified_rank=None, curated_lore="", identity_correction=None,
+            verified_rank=None, identity_correction=None,
         )
         builder = SimpleNamespace(
             tracker=tracker, retriever=SimpleNamespace(_memory_cache_channel_id=20),

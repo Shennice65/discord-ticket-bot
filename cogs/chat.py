@@ -43,14 +43,12 @@ class Chat(commands.Cog):
         self.process_lore_queue.start()
         self.persist_evidence_queue.start()
         self.refresh_runtime_config.start()
-        self.refresh_lore_cache.start()
         self.lore_compressor.start()
 
     def cog_unload(self):
         self.process_lore_queue.cancel()
         self.persist_evidence_queue.cancel()
         self.refresh_runtime_config.cancel()
-        self.refresh_lore_cache.cancel()
         self.lore_compressor.cancel()
 
     def _is_memory_channel(self, message: discord.Message) -> bool:
@@ -167,10 +165,6 @@ class Chat(commands.Cog):
     @tasks.loop(minutes=1)
     async def refresh_runtime_config(self):
         await self._refresh_runtime_config()
-
-    @tasks.loop(minutes=1)
-    async def refresh_lore_cache(self):
-        await self.context_builder.refresh_lore_cache()
 
     @tasks.loop(seconds=2)
     async def persist_evidence_queue(self):

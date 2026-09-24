@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from context.conversation_tracker import ContextMessage
 from context.retrieval import MemoryRetriever
 import asyncio
-from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,6 @@ class BrainContext:
     exchanges: tuple = ()
     memories: list[dict] = None
     verified_rank: dict = None
-    curated_lore: str = ""
     identity_correction: IdentityCorrection | None = None
 
 class ContextBuilder:
@@ -44,24 +42,6 @@ class ContextBuilder:
         self.bot = bot
         self.tracker = tracker
         self.retriever = retriever
-        self.lore_path = Path("lore.txt")
-        self.curated_lore = ""
-        self._lore_mtime = None
-
-    async def refresh_lore_cache(self):
-        try:
-            mtime = self.lore_path.stat().st_mtime_ns
-            if mtime == self._lore_mtime:
-                return
-            self.curated_lore = (await asyncio.to_thread(
-                self.lore_path.read_text, encoding="utf-8"
-            ))[:12000]
-            self._lore_mtime = mtime
-        except FileNotFoundError:
-            self.curated_lore = ""
-            self._lore_mtime = None
-        except OSError as error:
-            logger.debug("Curated lore refresh unavailable error=%s", type(error).__name__)
 
     def detect_identity_correction(self, content):
         text = (content or "").strip()
@@ -117,7 +97,6 @@ class ContextBuilder:
                                   if exchange.message_id in selected_ids
                                   and current.created_at - self.tracker.WINDOW <= exchange.created_at < current.created_at)
                                   
-        context.curated_lore = self.curated_lore
         context.identity_correction = self.tracker.identity_correction(
             current, self.detect_identity_correction(current.content)
         )

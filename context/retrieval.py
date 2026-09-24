@@ -70,9 +70,9 @@ class MemoryRetriever:
         entity_matches = []
         guild_graph = self.entity_graph.get(guild_id, {})
         
+        # Use @mentioned names for entity lookup, but NOT the author's own
+        # display name — display names are mutable and could be impersonation.
         mentioned_names = [user.casefold() for user in getattr(current_msg, "mentioned_user_names", []) if user]
-        if getattr(current_msg, "author_name", None):
-            mentioned_names.append(current_msg.author_name.casefold())
             
         current_text = re.sub(r"<@!?\d+>", "", current_msg.content or "").strip().casefold()
         

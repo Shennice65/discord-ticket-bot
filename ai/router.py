@@ -298,7 +298,7 @@ class AIRouter:
                 bot_name = (getattr(self.bot.user, "display_name", "") or getattr(self.bot.user, "name", "this bot"))
                 messages = [{
                     "role": "system",
-                    "content": prompts.system_instruction(context, bot_name=bot_name, style_hint=profile.style_hint),
+                    "content": prompts.system_instruction(context, bot_name=bot_name, style_hint=profile.style_hint, tier=profile.tier),
                 }]
                 for exchange in context.exchanges[-max_history:] if max_history > 0 else []:
                     user_turn, bot_turn = prompts.labeled_exchange(exchange)
@@ -328,7 +328,7 @@ class AIRouter:
                     "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
                 })
 
-                tool_definitions = self.tools.definitions
+                tool_definitions = self.tools.definitions if profile.tools_enabled else []
                 if self._is_image_request(user_text):
                     image_definition = self._image_tool_definition()
                     tool_definitions.append(image_definition)
