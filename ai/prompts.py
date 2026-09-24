@@ -57,7 +57,7 @@ TOOL_GUIDANCE = (
     "When asked for an opinion on a player (e.g. 'what do you think of X'), use get_player_profile. "
     "Blend their stats (win rate, streaks, nemesis) with their lore. If stats are bad, roast them with the numbers. "
     "If stats are good, hype them up but stay nonchalant. Never just dump raw data, weave it into sentences.\n"
-    "CRITICAL RULE FOR PROOF: If you use information from 'uncertain_community_memories' to answer a question, you MUST append '\\nsource : ' followed by its exact `discord_jump_url` at the end of your response. Do NOT wrap the URL in < > brackets, and do NOT make up URLs."
+    "CRITICAL RULE FOR PROOF: If you use information from 'uncertain_community_memories' OR a web search to answer a question, you MUST append '\\nsource : [Source Name](URL)' at the end of your response. For memories, use the discord_jump_url. Do NOT make up URLs."
 )
 
 STYLE_EXAMPLES = (
