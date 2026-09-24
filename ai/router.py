@@ -334,7 +334,9 @@ class AIRouter:
                     "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
                 })
 
-                tool_definitions = self.tools.definitions if profile.tools_enabled else []
+                tool_definitions = list(self.tools.definitions) if profile.tools_enabled else []
+                if profile.tier != "core" and not context.author_is_admin:
+                    tool_definitions = [t for t in tool_definitions if t["function"]["name"] != "search_web"]
                 if self._is_image_request(user_text):
                     image_definition = self._image_tool_definition()
                     tool_definitions.append(image_definition)
