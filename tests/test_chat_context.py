@@ -91,7 +91,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
             verified_rank=rank, memories=[], identity_correction=None,
         )
         payload = json.loads(prompts.context_text(context).split("\n", 1)[1])
-        self.assertEqual("Gold", payload["verified_rank"]["rank"])
+        self.assertEqual("Gold", payload["rank"]["rank"])
 
     async def test_immediate_preceding_is_not_live_window_tail(self):
         now = datetime.now(timezone.utc)
@@ -269,9 +269,9 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
                                   surrounding_messages=(), verified_rank=None, memories=[],
                                   identity_correction=IdentityCorrection("I'm not CherryBomb", "CherryBomb"))
         rendered = prompts.context_text(context)
-        self.assertIn('"author_id": 1', rendered)
-        self.assertIn('"author_id": 44', rendered)
-        self.assertIn('"speaker_type": "bot"', rendered)
+        self.assertIn('"id": 1', rendered)
+        self.assertIn('"id": 44', rendered)
+        self.assertIn('"bot": true', rendered)
         self.assertIn('"rejected_label": "CherryBomb"', rendered)
 
     async def test_tracker_keeps_exchange_identity(self):
