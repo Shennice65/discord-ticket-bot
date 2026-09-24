@@ -44,14 +44,8 @@ class ReadOnlyToolRegistry:
         }
         self._definitions = [
             _tool(
-                "get_player_rank",
-                "Read the authoritative current rank and Discord display name for a user. Never treat the rank label as the person's name.",
-                {"user_id": {"type": "integer", "description": "Discord user ID"}},
-                ("user_id",),
-            ),
-            _tool(
-                "get_player_profile",
-                "Read a player's comprehensive profile including rank, lifetime win rate, win/loss streak, nemesis, recent matches, and community memories. Use this to form opinions or roasts.",
+                "lookup_player",
+                "Read player profile, rank, stats, and lore. Use this whenever asked about a specific user.",
                 {"user_id": {"type": "integer", "description": "Discord user ID"}},
                 ("user_id",),
             ),
@@ -120,8 +114,7 @@ class ReadOnlyToolRegistry:
 
     async def execute(self, name, arguments, message, context):
         handlers = {
-            "get_player_profile": self._get_player_profile,
-            "get_player_rank": self._get_player_rank,
+            "lookup_player": self._lookup_player,
             "get_player_history": self._get_player_history,
             "get_leaderboard": self._get_leaderboard,
             "get_recent_tickets": self._get_recent_tickets,
@@ -148,23 +141,7 @@ class ReadOnlyToolRegistry:
             logger.warning("Read-only AI tool failed tool=%s error=%s", name, type(error).__name__)
             return {"error": "The requested server lookup is temporarily unavailable."}
 
-    async def _get_player_rank(self, args, message, _context):
-        user_id = int(args["user_id"])
-        rank = await self.bot.db.get_player_rank(user_id)
-        member = message.guild.get_member(user_id) if getattr(message, "guild", None) else None
-        player_name = (
-            getattr(member, "display_name", None)
-            or getattr(member, "name", None)
-            or f"Discord user {user_id}"
-        )
-        return {
-            "user_id": user_id,
-            "player_name": player_name,
-            "player_mention": f"<@{user_id}>",
-            "rank": rank or "Unranked",
-        }
-
-    async def _get_player_profile(self, args, message, _context):
+    async def _lookup_player(self, args, message, _context):
         user_id = int(args["user_id"])
         member = message.guild.get_member(user_id) if getattr(message, "guild", None) else None
         player_name = (
