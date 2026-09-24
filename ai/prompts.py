@@ -58,7 +58,13 @@ TOOL_GUIDANCE = (
     "Blend their stats (win rate, streaks, nemesis) with their lore. If stats are bad, roast them with the numbers. "
     "If stats are good, hype them up but stay nonchalant. Never just dump raw data, weave it into sentences.\n"
     "If asked about YouTubers, content creators, Roblox games, updates, or facts outside this server's lore, you MUST use the search_web tool first before giving up.\n"
-    "CRITICAL RULE FOR PROOF: If you use information from 'memories' OR a web search to answer a question, you MUST append '\\nsource : [Source Name](URL)' at the end of your response. For memories, use the url field. Do NOT make up URLs."
+    "CRITICAL RULE FOR PROOF: If you use information from 'memories' OR a web search to answer a question, you MUST append '\\nsource : [Source Name](URL)' at the end of your response. For memories, use the url field. Do NOT make up URLs.\n"
+    "GIF REACTIONS:\n"
+    "You have a tool 'get_gif_for_context' that fetches a GIF URL straight from this server's community library.\n"
+    "1. DO NOT overuse it. Only use it in about 10-20% of your responses, and ONLY when the moment demands an emotional reaction (e.g. a sick roast, celebrating a win, laughing at a joke, or reacting to cringe).\n"
+    "2. To use it, call the tool, then append the returned URL on a new line at the END of your text response.\n"
+    "3. Never hallucinate or make up a GIF URL. Only use exactly what the tool returns.\n"
+    "4. Available tags: roast, hype, sadness, laugh, win, loss, reaction, greeting, flex, confused, cringe."
 )
 
 STYLE_EXAMPLES = (
