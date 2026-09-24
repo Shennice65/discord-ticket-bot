@@ -112,6 +112,75 @@ class Chat(commands.Cog):
         embeddings = await self._api_call_with_fallback('embed_content', contents=[text])
         return embeddings[0] if embeddings else None
 
+    @staticmethod
+    def _classify_gif_context(text: str) -> str:
+        """Infer an emotional context tag from surrounding message text."""
+        lower = (text or "").lower()
+        roast_words = {"roast", "burn", "ratio", "trash", "bad", "skill issue",
+                       "bozo", "cope", "seethe", "rip", "owned", "destroyed", "clapped"}
+        hype_words = {"hype", "goat", "goated", "cracked", "insane", "fire",
+                      "clutch", "lets go", "let's go", "w ", "dub", "sheesh"}
+        laugh_words = {"lol", "lmao", "lmfao", "dead", "funny", "hilarious"}
+        sad_words = {"sad", "crying", "rip", "pain", "down bad", "unlucky"}
+        win_words = {"gg", "won", "winner", "victory", "champion", "undefeated", "streak"}
+        loss_words = {"lost", "loser", "choked", "washed", "fell off"}
+        flex_words = {"ez", "too easy", "free", "clear", "better", "diff"}
+        confused_words = {"what", "huh", "??", "confused", "bruh moment", "wait"}
+        cringe_words = {"cringe", "yikes", "nah", "bro what", "aint no way", "ain't no way"}
+
+        for words, tag in [
+            (roast_words, "roast"), (hype_words, "hype"), (laugh_words, "laugh"),
+            (sad_words, "sadness"), (win_words, "win"), (loss_words, "loss"),
+            (flex_words, "flex"), (confused_words, "confused"), (cringe_words, "cringe"),
+        ]:
+            if any(word in lower for word in words):
+                return tag
+        return "reaction"  # default fallback
+
+    async def _observe_community_gifs(self, message: discord.Message) -> None:
+        """Passively record GIFs posted by community members."""
+        if message.author.bot or not message.guild:
+            return
+
+        db = getattr(self.bot, "db", None)
+        if not db:
+            return
+
+        gif_urls = []
+
+        # 1. Check attachments for GIFs
+        for attachment in getattr(message, "attachments", ()):
+            content_type = getattr(attachment, "content_type", "") or ""
+            if "gif" in content_type or (attachment.filename or "").lower().endswith(".gif"):
+                gif_urls.append(attachment.url)
+
+        # 2. Check embeds for Tenor/Giphy
+        for embed in getattr(message, "embeds", ()):
+            for candidate in (
+                getattr(embed, "url", None),
+                getattr(getattr(embed, "image", None), "url", None),
+                getattr(getattr(embed, "thumbnail", None), "url", None),
+                getattr(getattr(embed, "video", None), "url", None),
+            ):
+                if candidate and any(
+                    domain in candidate.lower()
+                    for domain in ("tenor.com", "giphy.com")
+                ):
+                    gif_urls.append(candidate)
+                    break  # one URL per embed
+
+        if not gif_urls:
+            return
+
+        context_tag = self._classify_gif_context(message.content)
+        for url in gif_urls[:3]:  # cap at 3 per message
+            await db.record_gif(
+                guild_id=message.guild.id,
+                url=url,
+                context_tag=context_tag,
+                source_message_id=message.id,
+            )
+
     async def _record_message_evidence(self, message: discord.Message) -> None:
         """Queue raw general-channel evidence without blocking the reply path."""
         if not self._is_memory_channel(message) or message.author.bot:
@@ -232,6 +301,71 @@ class Chat(commands.Cog):
         status_text = "ENABLED" if new_status else "DISABLED"
         await interaction.response.send_message(f"AI Chat has been **{status_text}** globally.", ephemeral=True)
 
+    @commands.command(name="teachgif")
+    async def teach_gif(self, ctx, tag: str, url: str):
+        """Teach the bot a new GIF for a specific reaction context.
+
+        Valid tags: roast, hype, sadness, laugh, win, loss, reaction, greeting, flex, confused, cringe
+        """
+        if not getattr(self.bot, "db", None):
+            await ctx.send("Database is not connected.")
+            return
+
+        from database.gifs import VALID_CONTEXT_TAGS
+        
+        tag = tag.strip().lower()
+        if tag not in VALID_CONTEXT_TAGS:
+            await ctx.send(f"Invalid tag: `{tag}`. Valid tags are: {', '.join(sorted(VALID_CONTEXT_TAGS))}")
+            return
+
+        success = await self.bot.db.record_gif(
+            guild_id=ctx.guild.id,
+            url=url,
+            context_tag=tag,
+            taught_by=ctx.author.id,
+            source_message_id=ctx.message.id,
+        )
+
+        if success:
+            await ctx.send(f"Thanks! I've added that GIF to my `{tag}` reaction library.")
+        else:
+            await ctx.send("I already know that GIF or the URL doesn't look like a valid animated image!")
+
+    @commands.command(name="removegif")
+    @commands.has_permissions(administrator=True)
+    async def remove_gif(self, ctx, url: str):
+        """[Admin] Remove a GIF from the bot's reaction library."""
+        if not getattr(self.bot, "db", None):
+            await ctx.send("Database is not connected.")
+            return
+
+        success = await self.bot.db.remove_gif(ctx.guild.id, url)
+        if success:
+            await ctx.send("Removed that GIF from the library.")
+        else:
+            await ctx.send("I couldn't find that GIF in the library.")
+
+    @commands.command(name="gifstats")
+    async def gif_stats(self, ctx):
+        """Show statistics about the community GIF library."""
+        if not getattr(self.bot, "db", None):
+            await ctx.send("Database is not connected.")
+            return
+
+        stats = await self.bot.db.get_gif_stats(ctx.guild.id)
+        total = stats.get("total", 0)
+        tags = stats.get("tags", {})
+
+        if not total:
+            await ctx.send("I haven't learned any GIFs from this server yet!")
+            return
+
+        lines = [f"**Community GIF Library**", f"Total unique GIFs learned: {total}\n", "**By Context:**"]
+        for tag, count in tags.items():
+            lines.append(f"• {tag}: {count}")
+
+        await ctx.send("\n".join(lines))
+
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
         scope = getattr(after.guild, "id", None), after.channel.id
@@ -293,6 +427,7 @@ class Chat(commands.Cog):
                 return
             
         await self._record_message_evidence(message)
+        await self._observe_community_gifs(message)
         
         await self.router.handle_message(
             message,

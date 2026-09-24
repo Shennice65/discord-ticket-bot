@@ -40,11 +40,13 @@ class QuotaMixin:
             ).total_seconds()
             return {
                 "tokens_used": doc.get("tokens_used", 0),
+                "lifetime_tokens": doc.get("lifetime_tokens", 0),
                 "limit_override": doc.get("limit_override"),
                 "window_remaining_seconds": max(0, int(remaining)),
             }
         # Window expired or no doc → fresh window
-        return {"tokens_used": 0, "limit_override": None, "window_remaining_seconds": self._quota_window_seconds()}
+        lifetime = doc.get("lifetime_tokens", 0) if doc else 0
+        return {"tokens_used": 0, "lifetime_tokens": lifetime, "limit_override": None, "window_remaining_seconds": self._quota_window_seconds()}
 
     async def increment_user_quota(self, user_id: int, tokens: int) -> dict:
         """Atomically add tokens. Resets the window if it has expired."""
@@ -61,6 +63,7 @@ class QuotaMixin:
                         "window_start": now,
                         "updated_at": now,
                     },
+                    "$inc": {"lifetime_tokens": tokens},
                     "$setOnInsert": {"user_id": user_id},
                 },
                 upsert=True,
@@ -71,7 +74,7 @@ class QuotaMixin:
             result = await self.user_quotas.find_one_and_update(
                 {"user_id": user_id},
                 {
-                    "$inc": {"tokens_used": tokens},
+                    "$inc": {"tokens_used": tokens, "lifetime_tokens": tokens},
                     "$set": {"updated_at": now},
                 },
                 return_document=True,

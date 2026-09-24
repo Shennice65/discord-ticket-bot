@@ -35,6 +35,7 @@ class ConnectionMixin:
         self.chat_messages = None
         self.pending_lore = None
         self.user_quotas = None
+        self.gif_library = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -71,6 +72,7 @@ class ConnectionMixin:
             self.chat_messages = self.db.chat_messages
             self.pending_lore = self.db.pending_lore
             self.user_quotas = self.db.user_quotas
+            self.gif_library = self.db.gif_library
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -156,6 +158,14 @@ class ConnectionMixin:
                     partialFilterExpression={"message_id": {"$exists": True}},
                 )),
                 ("user_quotas.user_id", ensure_unique_index(self.user_quotas, "user_id")),
+                ("gif_library.guild_url", self.gif_library.create_index(
+                    [("guild_id", 1), ("url", 1)], unique=True,
+                    name="gif_library_guild_url_unique",
+                )),
+                ("gif_library.guild_tags", self.gif_library.create_index(
+                    [("guild_id", 1), ("context_tags", 1), ("community_count", -1)],
+                    name="gif_library_context_lookup",
+                )),
                 ("tickets.channel_id", self.tickets.create_index("channel_id")),
                 ("tickets.status_type_user", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])),
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),

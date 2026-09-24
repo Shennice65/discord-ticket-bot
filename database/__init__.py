@@ -17,7 +17,8 @@ from .clips import ClipsMixin
 from .betting import BettingMixin
 from .chat import ChatContextMixin
 from .quota import QuotaMixin
+from .gifs import GifMixin
 
-class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin, ChatContextMixin, QuotaMixin):
+class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin, ChatContextMixin, QuotaMixin, GifMixin):
     def __init__(self):
         super().__init__()
