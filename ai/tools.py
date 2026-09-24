@@ -95,6 +95,12 @@ class ReadOnlyToolRegistry:
                 {"user_id": {"type": "integer", "description": "Discord user ID"}},
                 ("user_id",),
             ),
+            _tool(
+                "get_gif_for_context",
+                "Fetch a community-learned GIF URL matching a specific emotional context. Call this when you want to include a reaction GIF in your response. Valid tags: roast, hype, sadness, laugh, win, loss, reaction, greeting, flex, confused, cringe.",
+                {"context_tag": {"type": "string", "description": "The emotional context tag (e.g., 'roast', 'hype', 'laugh')"}},
+                ("context_tag",),
+            ),
         ]
         self._definitions.append(
             _tool(
@@ -123,6 +129,7 @@ class ReadOnlyToolRegistry:
             "search_server_lore": self._search_server_lore,
             "search_clips": self._search_clips,
             "search_web": self._search_web,
+            "get_gif_for_context": self._get_gif_for_context,
         }
         if name in self.plugin_tools:
             handler = self.plugin_tools[name]["handler"]
@@ -335,3 +342,19 @@ class ReadOnlyToolRegistry:
             return {"results": formatted}
         except Exception as e:
             return {"error": f"Search failed: {str(e)}"}
+
+    async def _get_gif_for_context(self, args, message, _context):
+        context_tag = args.get("context_tag", "reaction")
+        try:
+            guild_id = message.guild.id if getattr(message, "guild", None) else getattr(_context.current, "guild_id", None)
+            if not guild_id:
+                return {"found": False, "message": "Cannot determine guild context for GIF search."}
+            gif_data = await self.bot.db.get_random_gif(guild_id, context_tag)
+            if gif_data and "url" in gif_data:
+                import asyncio
+                asyncio.create_task(self.bot.db.increment_gif_usage(guild_id, gif_data["url"]))
+                return {"gif_url": gif_data["url"], "found": True}
+            else:
+                return {"found": False, "message": f"No community GIFs found for context: {context_tag}"}
+        except Exception as e:
+            return {"error": str(e)}
