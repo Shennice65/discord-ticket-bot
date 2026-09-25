@@ -72,7 +72,7 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
     def test_persona_does_not_request_aggressive_or_repeated_roasts(self):
         full_prompt = prompts.CORE_PERSONALITY + prompts.CONTEXT_RULES + prompts.TOOL_GUIDANCE
         self.assertNotIn("MAXIMUM DAMAGE", full_prompt)
-        self.assertIn("Never copy a BOT_RESPONSE verbatim", prompts.TOOL_GUIDANCE)
+        self.assertIn("Never copy BOT_RESPONSE verbatim", prompts.TOOL_GUIDANCE)
 
     async def test_rank_context_uses_dictionary_shape(self):
         bot = SimpleNamespace(
