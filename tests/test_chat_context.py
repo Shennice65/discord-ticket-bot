@@ -269,10 +269,10 @@ class ChatContextTests(unittest.IsolatedAsyncioTestCase):
                                   surrounding_messages=(), verified_rank=None, memories=[],
                                   identity_correction=IdentityCorrection("I'm not CherryBomb", "CherryBomb"))
         rendered = prompts.context_text(context)
-        self.assertIn('"id": 1', rendered)
-        self.assertIn('"id": 44', rendered)
-        self.assertIn('"bot": true', rendered)
-        self.assertIn('"rejected_label": "CherryBomb"', rendered)
+        self.assertIn('"id":1', rendered)
+        self.assertIn('"id":44', rendered)
+        self.assertIn('"bot":true', rendered)
+        self.assertIn('"rejected_label":"CherryBomb"', rendered)
 
     async def test_tracker_keeps_exchange_identity(self):
         tracker = ConversationTracker(SimpleNamespace(user=SimpleNamespace(id=1)))
