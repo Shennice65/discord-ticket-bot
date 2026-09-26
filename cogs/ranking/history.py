@@ -329,7 +329,7 @@ class ShareClipSelectView(discord.ui.View):
         index = int(self.select.values[0])
         clip_data = self.clips[index]
         content_url = clip_data.get("clip_page_url") or clip_data.get("url", "")
-        if "atlclips.site/clip/" in content_url and content_url.endswith(".mp4"):
+        if content_url and "atlclips.site/clip/" in content_url and content_url.endswith(".mp4"):
             content_url = content_url[:-4]
         
         # Build uploaded date string

@@ -192,7 +192,7 @@ async def delete_clip_from_service(clip_page_url: str, service_base_url: str, ad
 def format_clip_display(clip_data: Dict, current_index: int, total_clips: int) -> str:
     """Format a clip for display in Discord messages, including title, URL, and upload date."""
     content_url = clip_data.get("clip_page_url") or clip_data.get("url", "")
-    if "atlclips.site/clip/" in content_url and content_url.endswith(".mp4"):
+    if content_url and "atlclips.site/clip/" in content_url and content_url.endswith(".mp4"):
         content_url = content_url[:-4]
     
     title = clip_data.get("title", "Untitled Clip")
