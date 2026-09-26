@@ -103,6 +103,18 @@ class ReadOnlyToolRegistry:
                 {"context_tag": {"type": "string", "description": "The emotional context tag (e.g., 'roast', 'hype', 'laugh')"}},
                 ("context_tag",),
             ),
+            _tool(
+                "get_tournament_teams",
+                "Get the list of teams currently participating in the tournament. Use this to find team names.",
+                {},
+                (),
+            ),
+            _tool(
+                "get_tournament_matches",
+                "Get the current tournament bracket and upcoming matches.",
+                {"limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+                (),
+            ),
         ]
         self._definitions.append(
             _tool(
@@ -131,6 +143,8 @@ class ReadOnlyToolRegistry:
             "search_clips": self._search_clips,
             "search_web": self._search_web,
             "get_gif_for_context": self._get_gif_for_context,
+            "get_tournament_teams": self._get_tournament_teams,
+            "get_tournament_matches": self._get_tournament_matches,
         }
         if name in self.plugin_tools:
             handler = self.plugin_tools[name]["handler"]
@@ -370,3 +384,30 @@ class ReadOnlyToolRegistry:
                 return {"found": False, "message": f"No community GIFs found for context: {context_tag}"}
         except Exception as e:
             return {"error": str(e)}
+
+    async def _get_tournament_teams(self, _args, _message, _context):
+        if getattr(self.bot, "db", None) is None or getattr(self.bot.db, "challonge_participants", None) is None:
+            return {"error": "Tournament database not available"}
+        cursor = self.bot.db.challonge_participants.find({}).sort("name", 1)
+        teams = await cursor.to_list(length=100)
+        return {"teams": [team.get("name") for team in teams]}
+
+    async def _get_tournament_matches(self, args, _message, _context):
+        if getattr(self.bot, "db", None) is None or getattr(self.bot.db, "betting_matches", None) is None:
+            return {"error": "Tournament database not available"}
+        limit = max(1, min(int(args.get("limit", 10)), 20))
+        cursor = self.bot.db.betting_matches.find(
+            {"challonge_state": {"$ne": "complete"}}
+        ).sort([("round", 1), ("scheduled_at", 1)]).limit(limit)
+        matches = await cursor.to_list(length=limit)
+        results = []
+        for match in matches:
+            results.append({
+                "team1": match.get("team1_name", "TBD"),
+                "team2": match.get("team2_name", "TBD"),
+                "group": match.get("group"),
+                "round": match.get("round_label") or match.get("round"),
+                "state": match.get("challonge_state"),
+                "scheduled_at": match.get("scheduled_at")
+            })
+        return {"matches": results}
