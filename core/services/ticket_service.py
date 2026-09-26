@@ -6,7 +6,7 @@ class TicketService:
         self.bot = bot
         self.db = db
 
-    async def validate_ranked_request(self, user_id: int, opponent_id: int) -> Tuple[bool, str]:
+    async def validate_ranked_request(self, user_id: int, opponent_id: int, check_cooldowns: bool = True) -> Tuple[bool, str]:
         if opponent_id == user_id:
             return False, "You cannot 1v1 yourself!"
             
@@ -46,24 +46,25 @@ class TicketService:
                 if tiers_order.get(opp_tier, 99) < tiers_order.get(user_tier, 99):
                     return False, f"**{user_tier}** cannot challenge **{opp_tier}** in Ranked 1v1. Request a **Personal Observation** instead."
             
-        cooldown = await self.db.get_ranked_cooldown(user_id)
-        if cooldown > 0:
-            hours = int(cooldown)
-            minutes = int((cooldown - hours) * 60)
-            return False, f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**."
-            
-        rematch_cd = await self.db.get_rematch_cooldown(user_id, opponent_id)
-        if rematch_cd > 0:
-            days = int(rematch_cd / 24)
-            hours = int(rematch_cd % 24)
-            minutes = int((rematch_cd * 60) % 60)
-            
-            time_str = ""
-            if days > 0:
-                time_str += f"{days}d "
-            time_str += f"{hours}h {minutes}m"
-            
-            return False, f"You must wait **{time_str.strip()}** before facing <@{opponent_id}> again!"
+        if check_cooldowns:
+            cooldown = await self.db.get_ranked_cooldown(user_id)
+            if cooldown > 0:
+                hours = int(cooldown)
+                minutes = int((cooldown - hours) * 60)
+                return False, f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**."
+                
+            rematch_cd = await self.db.get_rematch_cooldown(user_id, opponent_id)
+            if rematch_cd > 0:
+                days = int(rematch_cd / 24)
+                hours = int(rematch_cd % 24)
+                minutes = int((rematch_cd * 60) % 60)
+                
+                time_str = ""
+                if days > 0:
+                    time_str += f"{days}d "
+                time_str += f"{hours}h {minutes}m"
+                
+                return False, f"You must wait **{time_str.strip()}** before facing <@{opponent_id}> again!"
             
         return True, ""
 

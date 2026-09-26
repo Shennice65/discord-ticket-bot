@@ -57,6 +57,56 @@ class TicketAdmin(commands.Cog):
         if not interaction.permissions.administrator and interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return
+            
+    @app_commands.command(name="cleaninvalidtickets", description="Close and delete Ranked 1v1 tickets that are out of range or no longer valid")
+    async def clean_invalid_tickets(self, interaction: discord.Interaction):
+        is_admin = interaction.user.guild_permissions.administrator
+        has_observer = any(role.id == Config.OBSERVER_ROLE_ID for role in interaction.user.roles)
+        if not (is_admin or has_observer):
+            await interaction.response.send_message("You must be an Observer or Administrator to use this command.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        ticket_service = self.bot.container.get('TicketService')
+        if not ticket_service:
+            await interaction.followup.send("Ticket service unavailable!")
+            return
+            
+        cursor = self.db.tickets.find({"status": "open", "ticket_type": "Ranked 1v1"})
+        closed_count = 0
+        
+        async for ticket in cursor:
+            user_id = ticket.get("user_id")
+            opponent_id = ticket.get("opponent_id")
+            channel_id = ticket.get("channel_id")
+            
+            if not user_id or not opponent_id or not channel_id:
+                continue
+                
+            is_valid, error_msg = await ticket_service.validate_ranked_request(user_id, opponent_id, check_cooldowns=False)
+            
+            if not is_valid:
+                channel = interaction.guild.get_channel(channel_id)
+                if not channel:
+                    try:
+                        channel = await interaction.guild.fetch_channel(channel_id)
+                    except Exception:
+                        pass
+                        
+                if channel:
+                    try:
+                        await channel.send(f"⚠️ **This match is no longer valid:** {error_msg}\nThis ticket will now be closed automatically.")
+                        await asyncio.sleep(2)
+                        await channel.delete()
+                    except Exception as e:
+                        print(f"Error deleting invalid ticket channel {channel_id}: {e}")
+                        
+                await self.db.close_ticket(channel_id, self.bot.user.id)
+                closed_count += 1
+                
+        await interaction.followup.send(f"Found and cleaned up **{closed_count}** invalid Ranked 1v1 tickets!")
+
         
         await interaction.response.defer(ephemeral=True)
         
