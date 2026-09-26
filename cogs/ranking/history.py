@@ -118,9 +118,10 @@ class History(commands.Cog):
             
             # Snooper alert!
             print(f"[SECURITY LOG] {interaction.user.name} ({interaction.user.id}) tried to view Master Admin history", flush=True)
+            guild_name = interaction.guild.name if interaction.guild else "DMs"
             await send_master_admin_dm(
                 interaction.client,
-                content=f"**SNOOP ALERT:** **{interaction.user.name}** just tried to view your history in {interaction.guild.name} but was blocked.",
+                content=f"**SNOOP ALERT:** **{interaction.user.name}** just tried to view your history in {guild_name} but was blocked.",
             )
             
             return
@@ -128,9 +129,10 @@ class History(commands.Cog):
         # Private logging for the Master Admin
         if interaction.user.id not in [Config.MASTER_ADMIN_ID, Config.SHEN_ID]:
             print(f"[HISTORY LOG] {interaction.user.name} ({interaction.user.id}) checked history of {target_user.name} ({target_user.id})", flush=True)
+            guild_name = interaction.guild.name if interaction.guild else "DMs"
             await send_master_admin_dm(
                 interaction.client,
-                content=f"**{interaction.user.name}** just used `/stats` on **{target_user.name}** in {interaction.guild.name}.",
+                content=f"**{interaction.user.name}** just used `/stats` on **{target_user.name}** in {guild_name}.",
             )
         
         is_admin = can_clear_history(interaction.user)
