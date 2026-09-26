@@ -70,6 +70,30 @@ class ObservationConfirmView(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="Personal Observation request cancelled.", view=None)
 
+class HeadObservationConfirmView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+    
+    @discord.ui.button(label="Yes, Request Head Observation", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Processing...", view=None)
+        try:
+            cog = interaction.client.get_cog('Tickets')
+            if not cog:
+                await interaction.edit_original_response(content="❌ Error: Ticket system cog is currently unavailable.", view=None)
+                return
+            await cog.create_observation_ticket(interaction, head_obs=True)
+        except Exception as e:
+            print(f"Error in HeadObservationConfirmView: {e}")
+            try:
+                await interaction.edit_original_response(content=f"❌ An error occurred: {e}", view=None)
+            except Exception:
+                pass
+    
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="Head Observation request cancelled.", view=None)
+
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -91,6 +115,29 @@ class TicketView(discord.ui.View):
             "**Are you sure you want to request a Personal Observation?**\n\n"
             "This will notify observers to review your gameplay.\n"
             "You can only request this **once every two weeks**.",
+            view=view,
+            ephemeral=True
+        )
+    
+    @discord.ui.button(label="Head Observation", style=discord.ButtonStyle.secondary, custom_id="head_obs")
+    async def head_obs_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        db = interaction.client.db
+        user_rank = await db.get_player_rank(interaction.user.id)
+        
+        if not user_rank:
+            await interaction.response.send_message("You are unranked and cannot request a Head Observation.", ephemeral=True)
+            return
+            
+        from utils.ladder_utils import parse_rank
+        parsed = parse_rank(user_rank)
+        if not parsed or parsed[0] not in ["Elites", "Champions"]:
+            await interaction.response.send_message("Only **Elites** and **Champions** can request a Head Observation.", ephemeral=True)
+            return
+
+        view = HeadObservationConfirmView()
+        await interaction.response.send_message(
+            "**Are you sure you want to request a Head Observation?**\n\n"
+            "This will notify Head Observers and Phantoms to review your gameplay to see if you deserve a higher rank.",
             view=view,
             ephemeral=True
         )

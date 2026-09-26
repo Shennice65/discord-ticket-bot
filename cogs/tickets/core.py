@@ -202,7 +202,7 @@ class Tickets(commands.Cog):
 
         await channel.send(**send_kwargs)
     
-    async def create_observation_ticket(self, interaction: discord.Interaction):
+    async def create_observation_ticket(self, interaction: discord.Interaction, head_obs: bool = False):
         guild = interaction.guild
         user = interaction.user
 
@@ -246,19 +246,22 @@ class Tickets(commands.Cog):
             
             observer_mention = get_observer_mention(guild)
             
+            ticket_type_name = "Head Observation" if head_obs else "Personal Observation"
+            
             overwrites = get_observer_overwrites(guild, {
                 guild.default_role: discord.PermissionOverwrite(read_messages=False),
                 user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            }, ticket_type="Personal Observation")
+            }, ticket_type=ticket_type_name)
             
-            channel_name = f"obs-{user.name}".lower().replace(" ", "-")
+            prefix = "head-obs-" if head_obs else "obs-"
+            channel_name = f"{prefix}{user.name}".lower().replace(" ", "-")
             try:
                 channel = await asyncio.wait_for(
                     guild.create_text_channel(
                         name=channel_name,
                         category=category,
                         overwrites=overwrites,
-                        topic=f"Personal Observation | User: {user.name}"
+                        topic=f"{ticket_type_name} | User: {user.name}"
                     ),
                     timeout=30.0
                 )
@@ -269,7 +272,7 @@ class Tickets(commands.Cog):
                 await interaction.edit_original_response(content=f"Failed to create channel: {e}", view=None)
                 return
             
-            ticket_id = await self.db.create_ticket(channel.id, user.id, "Personal Observation")
+            ticket_id = await self.db.create_ticket(channel.id, user.id, ticket_type_name)
             print(f"Ticket {ticket_id} saved")
             
             total_obs = await self.db.get_user_observation_count(user.id)
@@ -277,7 +280,7 @@ class Tickets(commands.Cog):
             user_stats = f"**Rank**: `{u_rank}`\n**Total Observations**: `{total_obs}`"
             
             embed = TicketEmbeds.ticket_created(
-                "Personal Observation", user, user_stats=user_stats
+                ticket_type_name, user, user_stats=user_stats
             )
             
             send_kwargs = {
@@ -362,7 +365,7 @@ class Tickets(commands.Cog):
         is_obs = is_observer_or_trial(interaction.user, ticket_data['ticket_type'])
         is_owner = interaction.user.id == ticket_data['user_id']
         
-        if ticket_data['ticket_type'] == "Personal Observation":
+        if ticket_data['ticket_type'] in ["Personal Observation", "Head Observation"]:
             has_no_obs = False
             if hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
                 no_obs_role = interaction.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
