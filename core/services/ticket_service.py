@@ -6,23 +6,23 @@ class TicketService:
         self.bot = bot
         self.db = db
 
-    async def validate_ranked_request(self, user_id: int, opponent_id: int) -> Tuple[bool, str, bool]:
+    async def validate_ranked_request(self, user_id: int, opponent_id: int) -> Tuple[bool, str]:
         if opponent_id == user_id:
-            return False, "You cannot 1v1 yourself!", False
+            return False, "You cannot 1v1 yourself!"
             
         can_r1, r1_reason = await self.db.can_player_r1(user_id)
         if not can_r1:
-            return False, r1_reason, False
+            return False, r1_reason
             
         indexes = await self.db.get_global_rank_indexes([user_id, opponent_id])
         idx_user = indexes.get(user_id, -1)
         idx_opp = indexes.get(opponent_id, -1)
         
         if idx_user == -1:
-            return False, "You cannot request a ranked 1v1 while you are unranked!", False
+            return False, "You cannot request a ranked 1v1 while you are unranked!"
             
         if idx_opp == -1:
-            return False, "You cannot request a ranked 1v1 against an unranked player!", False
+            return False, "You cannot request a ranked 1v1 against an unranked player!"
             
         user_rank_str = await self.db.get_player_rank(user_id)
         opp_rank_str = await self.db.get_player_rank(opponent_id)
@@ -39,7 +39,7 @@ class TicketService:
                 
         gap = abs(idx_user - idx_opp)
         if gap > limit:
-            return False, f"You cannot challenge someone more than **{limit} ranks** away from you.", False
+            return False, f"You cannot challenge someone more than **{limit} ranks** away from you."
             
         if user_parsed and opp_parsed:
             user_tier = user_parsed[0]
@@ -48,15 +48,13 @@ class TicketService:
             if user_tier in ["Elites", "Champions"] and opp_tier in ["Champions", "Phantoms"]:
                 tiers_order = {"Phantoms": 0, "Champions": 1, "Elites": 2, "Legends": 3, "Masters": 4, "Novice": 5, "Novices": 5}
                 if tiers_order.get(opp_tier, 99) < tiers_order.get(user_tier, 99):
-                    return False, f"**{user_tier}** cannot challenge **{opp_tier}** in Ranked 1v1. Request a **Personal Observation** instead.", False
-                    
-        is_out_of_range = False
+                    return False, f"**{user_tier}** cannot challenge **{opp_tier}** in Ranked 1v1. Request a **Personal Observation** instead."
             
         cooldown = await self.db.get_ranked_cooldown(user_id)
         if cooldown > 0:
             hours = int(cooldown)
             minutes = int((cooldown - hours) * 60)
-            return False, f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**.", False
+            return False, f"You can only request one ranked match per day! Please wait **{hours}h {minutes}m**."
             
         rematch_cd = await self.db.get_rematch_cooldown(user_id, opponent_id)
         if rematch_cd > 0:
@@ -69,9 +67,9 @@ class TicketService:
                 time_str += f"{days}d "
             time_str += f"{hours}h {minutes}m"
             
-            return False, f"You must wait **{time_str.strip()}** before facing <@{opponent_id}> again!", False
+            return False, f"You must wait **{time_str.strip()}** before facing <@{opponent_id}> again!"
             
-        return True, "", is_out_of_range
+        return True, ""
 
     async def validate_observation_request(self, user_id: int) -> Tuple[bool, str]:
         cooldown = await self.db.get_obs_cooldown(user_id)
@@ -123,15 +121,6 @@ class TicketService:
             if not other_id:
                 continue
                 
-            idx1 = await self.db.get_global_rank_index(user_id)
-            idx2 = await self.db.get_global_rank_index(other_id)
-            
-            out_of_range = False
-            if idx1 != -1 and idx2 != -1:
-                out_of_range = abs(idx1 - idx2) > 5
-                
             msg = f"<@{user_id}>'s rank has been updated to **{new_rank}**!\n"
-            if out_of_range:
-                msg += "⚠️ **Warning:** This matchup is now outside the allowed 5-rank range. You may decide whether to continue or cancel this ticket."
                 
             await channel.send(msg)

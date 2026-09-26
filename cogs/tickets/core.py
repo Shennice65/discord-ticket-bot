@@ -25,7 +25,6 @@ class Tickets(commands.Cog):
     async def on_ready(self):
         print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
-        self.bot.add_view(OutOfRangeAcceptView())
 
     async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User):
         guild = interaction.guild
@@ -50,7 +49,7 @@ class Tickets(commands.Cog):
                 return
         
         ticket_service = self.bot.container.get('TicketService')
-        is_valid, error_msg, is_out_of_range = await ticket_service.validate_ranked_request(user.id, opponent.id)
+        is_valid, error_msg = await ticket_service.validate_ranked_request(user.id, opponent.id)
         if not is_valid:
             await interaction.followup.send(error_msg, ephemeral=True)
             return
@@ -80,43 +79,7 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"Failed to create channel: {e}", ephemeral=True)
             return
         
-        if is_out_of_range:
-            
-            user_rank = await self.db.get_player_rank(user.id)
-            opp_rank = await self.db.get_player_rank(opponent.id)
-            
-            embed = discord.Embed(
-                title="Out-of-Range Challenge",
-                description=(
-                    f"{user.mention} wants to challenge {opponent_member.mention} to a **Ranked 1v1**!\n\n"
-                    f"**{user.display_name}** is ranked **{user_rank or 'Unranked'}**\n"
-                    f"**{opponent_member.display_name}** is ranked **{opp_rank or 'Unranked'}**\n\n"
-                    f"This match is **outside the 5-rank window**.\n"
-                    f"{opponent_member.mention}, do you accept this challenge?"
-                ),
-                color=discord.Color.orange()
-            )
-            embed.set_footer(text="This request expires in 24 hours.")
-            
-            ticket_id = await self.db.create_ranked_ticket_db(
-                channel.id, user.id, 
-                opponent_name=opponent.name, opponent_id=opponent.id,
-                out_of_range=True, status="pending_accept"
-            )
-            print(f"Out-of-range ticket {ticket_id} pending accept")
-            
-            view = TicketEmbeds.add_ranked_site_button(OutOfRangeAcceptView(self), row=1)
-            await channel.send(
-                content=f"{user.mention} {opponent_member.mention}",
-                embed=embed,
-                view=view
-            )
-            
-            await interaction.edit_original_response(
-                content=f"Out-of-range challenge sent! Waiting for {opponent_member.mention} to accept in {channel.mention}.",
-                view=None
-            )
-            return
+
         
         ticket_id = await self.db.create_ranked_ticket_db(
             channel.id, user.id, 
@@ -158,50 +121,7 @@ class Tickets(commands.Cog):
             view=None
         )
     
-    async def _finalize_out_of_range_ticket(self, channel: discord.TextChannel, 
-                                             requester: discord.Member, opponent: discord.Member):
-        await self.db.tickets.update_one(
-            {"channel_id": channel.id, "status": "accepting"},
-            {"$set": {"status": "open"}}
-        )
-        print(f"Out-of-range ticket in {channel.id} finalized and opened")
-        
-        observer_mention = get_observer_mention(channel.guild)
-        
-        u_matches, u_wins, u_losses, u_rate = await self.db.get_user_ranked_stats(requester.id, requester.name)
-        o_matches, o_wins, o_losses, o_rate = await self.db.get_user_ranked_stats(opponent.id, opponent.name)
-        
-        u_rank = await self.db.get_player_rank(requester.id) or "Unranked"
-        o_rank = await self.db.get_player_rank(opponent.id) or "Unranked"
-        
-        embed, tier_file = TicketEmbeds.create_ranked_1v1_ticket_embed(
-            user=requester,
-            opponent_name=opponent.name,
-            u_rank=u_rank,
-            o_rank=o_rank,
-            u_rate=u_rate,
-            o_rate=o_rate,
-            u_matches=u_matches,
-            o_matches=o_matches
-        )
-        embed.add_field(
-            name="Out-of-Range Match",
-            value="This match was accepted outside the 5-rank window.",
-            inline=False
-        )
 
-        send_kwargs = {
-            "content": f"{requester.mention} {opponent.mention} {observer_mention}",
-            "embed": embed
-        }
-        site_view = TicketEmbeds.ranked_site_view()
-        if site_view:
-            send_kwargs["view"] = site_view
-        if tier_file:
-            send_kwargs["file"] = tier_file
-
-        await channel.send(**send_kwargs)
-    
     async def create_observation_ticket(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
