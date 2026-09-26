@@ -76,6 +76,7 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.owner")
         await self.load_extension("cogs.betting")
         await self.load_extension("cogs.activity")
+        await self.load_extension("cogs.engagement_cmds")
         print("Cogs loaded. Syncing commands...")
         
         port = int(os.environ.get("PORT", 8080))
