@@ -465,11 +465,11 @@ class ShareClipView(discord.ui.View):
                 if url_match:
                     clip_url = url_match.group(1)
                     db = interaction.client.db
-                    # Search all players' clips for this URL
-                    async for player in db.db.player_clips.find({"clips.clip_page_url": clip_url}):
+                    # Search all players' clips for this URL (with or without .mp4)
+                    async for player in db.db.player_clips.find({"clips.clip_page_url": {"$in": [clip_url, f"{clip_url}.mp4"]}}):
                         owner_id = player["user_id"]
                         for i, clip in enumerate(player.get("clips", [])):
-                            if clip.get("clip_page_url") == clip_url:
+                            if clip.get("clip_page_url") in (clip_url, f"{clip_url}.mp4"):
                                 clip_index = i
                                 break
                         break

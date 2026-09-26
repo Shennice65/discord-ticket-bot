@@ -396,6 +396,8 @@ class TicketEmbeds:
 
         # Link to the clip page (embeddable) if available, fall back to source
         display_url = clip_page_url or source_url
+        if display_url and "atlclips.site/clip/" in display_url and display_url.endswith(".mp4"):
+            display_url = display_url[:-4]
 
         embed = discord.Embed(
             title=title,
@@ -405,7 +407,8 @@ class TicketEmbeds:
         
         # Show source link if we have a clip page URL (so user can see original)
         if clip_page_url:
-            embed.description = f"**[Watch Clip]({clip_page_url})**"
+            cleaned_clip_url = clip_page_url[:-4] if "atlclips.site/clip/" in clip_page_url and clip_page_url.endswith(".mp4") else clip_page_url
+            embed.description = f"**[Watch Clip]({cleaned_clip_url})**"
         elif display_url:
             embed.description = f"**[Watch Clip]({display_url})**"
 
