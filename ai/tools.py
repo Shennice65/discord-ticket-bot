@@ -46,14 +46,18 @@ class ReadOnlyToolRegistry:
             _tool(
                 "lookup_player",
                 "Read player profile, rank, stats, and lore. Use this whenever asked about a specific user.",
-                {"user_id": {"type": "integer", "description": "Discord user ID. Omit this to look up the person who is currently speaking to you."}},
+                {
+                    "user_id": {"type": "integer", "description": "Discord user ID. Omit this if searching by name or looking up the speaker."},
+                    "username": {"type": "string", "description": "The user's exact name or display name to search for, if user_id is unknown."}
+                },
                 (),
             ),
             _tool(
                 "get_player_history",
                 "Read a player's recent ranked and personal-observation history.",
                 {
-                    "user_id": {"type": "integer", "description": "Discord user ID. Omit this to look up the person who is currently speaking to you."},
+                    "user_id": {"type": "integer", "description": "Discord user ID. Omit this if searching by name or looking up the speaker."},
+                    "username": {"type": "string", "description": "The user's exact name or display name to search for, if user_id is unknown."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 10},
                 },
                 (),
@@ -67,7 +71,8 @@ class ReadOnlyToolRegistry:
                 "get_recent_tickets",
                 "Read recent closed or active tickets for a Discord user.",
                 {
-                    "user_id": {"type": "integer", "description": "Discord user ID. Omit this to look up the person who is currently speaking to you."},
+                    "user_id": {"type": "integer", "description": "Discord user ID. Omit this if searching by name or looking up the speaker."},
+                    "username": {"type": "string", "description": "The user's exact name or display name to search for, if user_id is unknown."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 10},
                 },
                 (),
@@ -86,7 +91,10 @@ class ReadOnlyToolRegistry:
             _tool(
                 "search_clips",
                 "Read clips saved by a Discord user.",
-                {"user_id": {"type": "integer", "description": "Discord user ID. Omit this to look up the person who is currently speaking to you."}},
+                {
+                    "user_id": {"type": "integer", "description": "Discord user ID. Omit this if searching by name or looking up the speaker."},
+                    "username": {"type": "string", "description": "The user's exact name or display name to search for, if user_id is unknown."}
+                },
                 (),
             ),
             _tool(
@@ -137,16 +145,39 @@ class ReadOnlyToolRegistry:
         try:
             result = await handler(arguments or {}, message, context)
             return _json_value(result)
+        except ValueError as error:
+            return {"error": str(error)}
         except Exception as error:
             logger.warning("Read-only AI tool failed tool=%s error=%s", name, type(error).__name__)
             return {"error": "The requested server lookup is temporarily unavailable."}
 
-    async def _lookup_player(self, args, message, _context):
+    async def _resolve_user_id(self, args, message, _context):
         raw_user_id = args.get("user_id")
-        if raw_user_id is None:
-            user_id = getattr(_context.current, "author_id", getattr(message.author, "id", 0))
-        else:
-            user_id = int(raw_user_id)
+        if raw_user_id is not None:
+            return int(raw_user_id)
+            
+        username = args.get("username")
+        if username:
+            username_lower = str(username).lower()
+            if getattr(message, "guild", None):
+                for member in message.guild.members:
+                    if username_lower in member.name.lower() or (member.display_name and username_lower in member.display_name.lower()):
+                        return member.id
+            
+            db = getattr(self.bot, "db", None)
+            if db and db.db is not None:
+                roblox_user = await db.db.roblox_usernames.find_one({
+                    "username": {"$regex": f"^{username}$", "$options": "i"}
+                })
+                if roblox_user and "_id" in roblox_user:
+                    return roblox_user["_id"]
+                    
+            raise ValueError(f"Could not find any user in the server matching the name '{username}'.")
+                    
+        return getattr(_context.current, "author_id", getattr(message.author, "id", 0))
+
+    async def _lookup_player(self, args, message, _context):
+        user_id = await self._resolve_user_id(args, message, _context)
         member = message.guild.get_member(user_id) if getattr(message, "guild", None) else None
         player_name = (
             getattr(member, "display_name", None)
@@ -185,11 +216,7 @@ class ReadOnlyToolRegistry:
         }
 
     async def _get_player_history(self, args, message, _context):
-        raw_user_id = args.get("user_id")
-        if raw_user_id is None:
-            user_id = getattr(_context.current, "author_id", getattr(message.author, "id", 0))
-        else:
-            user_id = int(raw_user_id)
+        user_id = await self._resolve_user_id(args, message, _context)
         member = message.guild.get_member(user_id) if message.guild else None
         user_name = getattr(member, "display_name", "")
         limit = max(1, min(int(args.get("limit", 5)), 10))
@@ -234,11 +261,7 @@ class ReadOnlyToolRegistry:
         }
 
     async def _get_recent_tickets(self, args, message, _context):
-        raw_user_id = args.get("user_id")
-        if raw_user_id is None:
-            user_id = getattr(_context.current, "author_id", getattr(message.author, "id", 0))
-        else:
-            user_id = int(raw_user_id)
+        user_id = await self._resolve_user_id(args, message, _context)
         limit = max(1, min(int(args.get("limit", 5)), 10))
         query = {"$or": [{"user_id": user_id}, {"opponent_id": user_id}]}
         if not message.guild or not getattr(self.bot.db, "tickets", None):
@@ -303,11 +326,7 @@ class ReadOnlyToolRegistry:
         return {"memories": matches[:5]}
 
     async def _search_clips(self, args, _message, _context):
-        raw_user_id = args.get("user_id")
-        if raw_user_id is None:
-            user_id = getattr(_context.current, "author_id", getattr(_message.author, "id", 0))
-        else:
-            user_id = int(raw_user_id)
+        user_id = await self._resolve_user_id(args, _message, _context)
         clips = await self.bot.db.get_user_clips(user_id)
         return {"user_id": user_id, "clips": clips[:10]}
 
