@@ -202,7 +202,7 @@ class Tickets(commands.Cog):
 
         await channel.send(**send_kwargs)
     
-    async def create_observation_ticket(self, interaction: discord.Interaction, head_obs: bool = False):
+    async def create_observation_ticket(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
 
@@ -244,17 +244,24 @@ class Tickets(commands.Cog):
                 await interaction.edit_original_response(content="Ticket category not configured or not found!", view=None)
                 return
             
-            ticket_type_name = "Head Observation" if head_obs else "Personal Observation"
+            user_rank = await self.db.get_player_rank(user.id)
+            is_head_obs = False
+            if user_rank:
+                from utils.ladder_utils import parse_rank
+                parsed = parse_rank(user_rank)
+                if parsed and parsed[0] in ["Elites", "Champions", "Phantoms"]:
+                    is_head_obs = True
             
-            observer_mention = get_observer_mention(guild, ticket_type=ticket_type_name)
+            ticket_type_name = "Personal Observation"
+            
+            observer_mention = get_observer_mention(guild, is_head_obs=is_head_obs)
             
             overwrites = get_observer_overwrites(guild, {
                 guild.default_role: discord.PermissionOverwrite(read_messages=False),
                 user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            }, ticket_type=ticket_type_name)
+            }, ticket_type=ticket_type_name, is_head_obs=is_head_obs)
             
-            prefix = "head-obs-" if head_obs else "obs-"
-            channel_name = f"{prefix}{user.name}".lower().replace(" ", "-")
+            channel_name = f"obs-{user.name}".lower().replace(" ", "-")
             try:
                 channel = await asyncio.wait_for(
                     guild.create_text_channel(
@@ -365,7 +372,7 @@ class Tickets(commands.Cog):
         is_obs = is_observer_or_trial(interaction.user, ticket_data['ticket_type'])
         is_owner = interaction.user.id == ticket_data['user_id']
         
-        if ticket_data['ticket_type'] in ["Personal Observation", "Head Observation"]:
+        if ticket_data['ticket_type'] == "Personal Observation":
             has_no_obs = False
             if hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
                 no_obs_role = interaction.guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)

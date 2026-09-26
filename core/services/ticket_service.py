@@ -48,7 +48,7 @@ class TicketService:
             if user_tier in ["Elites", "Champions"] and opp_tier in ["Champions", "Phantoms"]:
                 tiers_order = {"Phantoms": 0, "Champions": 1, "Elites": 2, "Legends": 3, "Masters": 4, "Novice": 5, "Novices": 5}
                 if tiers_order.get(opp_tier, 99) < tiers_order.get(user_tier, 99):
-                    return False, f"**{user_tier}** cannot challenge **{opp_tier}** in Ranked 1v1. Request a **Head Observation** instead.", False
+                    return False, f"**{user_tier}** cannot challenge **{opp_tier}** in Ranked 1v1. Request a **Personal Observation** instead.", False
                     
         is_out_of_range = False
             

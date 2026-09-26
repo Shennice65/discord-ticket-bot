@@ -31,10 +31,10 @@ def validate_and_format_rank(rank_str: str) -> Optional[str]:
     if tier_input in tiers:
         return f"{tiers[tier_input]} {number}"
     return None
-def get_observer_mention(guild: discord.Guild, ticket_type: str = None) -> str:
+def get_observer_mention(guild: discord.Guild, ticket_type: str = None, is_head_obs: bool = False) -> str:
     mentions = []
     
-    if ticket_type == "Head Observation":
+    if is_head_obs:
         head_obs_role = guild.get_role(Config.HEAD_OBSERVER_ROLE_ID) if hasattr(Config, 'HEAD_OBSERVER_ROLE_ID') else None
         if head_obs_role:
             mentions.append(head_obs_role.mention)
@@ -87,14 +87,14 @@ def is_observer_or_trial(member: discord.Member, ticket_type: str = None) -> boo
     return True
 
 
-def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict, ticket_type: str = None) -> dict:
+def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict, ticket_type: str = None, is_head_obs: bool = False) -> dict:
     overwrites = base_overwrites.copy()
     
     special_user = guild.get_member(442188857014747136)
     if special_user:
         overwrites[special_user] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
-    if ticket_type == "Head Observation":
+    if is_head_obs:
         head_obs_role = guild.get_role(Config.HEAD_OBSERVER_ROLE_ID) if hasattr(Config, 'HEAD_OBSERVER_ROLE_ID') else None
         if head_obs_role:
             overwrites[head_obs_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
