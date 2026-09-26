@@ -90,7 +90,7 @@ class HistoryMixin:
                 seen_ticket_ids.add(tid)
                 deduped.append(doc)
         ranked_raw = deduped
-        ranked_raw.sort(key=lambda x: x.get("closed_at", ""), reverse=True)
+        ranked_raw.sort(key=lambda x: x.get("closed_at") or "", reverse=True)
         
         if limit > 0:
             ranked_raw = ranked_raw[:limit]

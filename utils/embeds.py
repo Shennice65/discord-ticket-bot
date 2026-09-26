@@ -295,13 +295,13 @@ class TicketEmbeds:
         
         if history['ranked']:
             for i, entry in enumerate(history['ranked'][:10], 1):
-                date = entry['closed_at'][:10] if entry['closed_at'] else "Unknown"
+                date = entry.get('closed_at', 'Unknown')[:10] if entry.get('closed_at') else "Unknown"
                 
                 if 'winner_id' in entry and entry['winner_id'] is not None:
                     is_win = (entry['winner_id'] == user.id)
                 else:
-                    winner_str = entry.get('winner', '').lower()
-                    is_win = (winner_str == user.name.lower())
+                    winner_str = entry.get('winner') or ''
+                    is_win = (winner_str.lower() == user.name.lower())
                     
                 result_text = "WON" if is_win else "LOST"
                 
@@ -343,7 +343,7 @@ class TicketEmbeds:
         
         if history['observations']:
             for i, entry in enumerate(history['observations'][:10], 1):
-                date = entry['closed_at'][:10] if entry['closed_at'] else "Unknown"
+                date = entry.get('closed_at', 'Unknown')[:10] if entry.get('closed_at') else "Unknown"
                 
                 start_rank = entry.get('starting_rank') or "Unranked"
                 end_rank = entry.get('ending_rank') or "Unranked"
