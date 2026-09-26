@@ -8,15 +8,17 @@ class EngagementCommands(commands.Cog):
         self.bot = bot
         self.scorer = UserEngagementScorer(bot)
 
-    @app_commands.command(name="vibecheck", description="See what the AI thinks of your chat style!")
-    async def vibecheck(self, interaction: discord.Interaction):
+    @app_commands.command(name="vibecheck", description="See what the AI thinks of a user's chat style!")
+    @app_commands.describe(user="The user to vibe check (leave blank to check yourself)")
+    async def vibecheck(self, interaction: discord.Interaction, user: discord.Member = None):
+        target = user or interaction.user
         await interaction.response.defer()
         
-        fingerprint = await self.scorer._get_fingerprint(interaction.user.id)
-        profile = await self.scorer.get_profile(interaction.user.id, interaction.user)
+        fingerprint = await self.scorer._get_fingerprint(target.id)
+        profile = await self.scorer.get_profile(target.id, target)
         
         embed = discord.Embed(
-            title=f"Vibe Check: {interaction.user.display_name}",
+            title=f"Vibe Check: {target.display_name}",
             color=discord.Color.purple()
         )
         
