@@ -31,8 +31,22 @@ def validate_and_format_rank(rank_str: str) -> Optional[str]:
     if tier_input in tiers:
         return f"{tiers[tier_input]} {number}"
     return None
-def get_observer_mention(guild: discord.Guild) -> str:
+def get_observer_mention(guild: discord.Guild, ticket_type: str = None) -> str:
     mentions = []
+    
+    if ticket_type == "Head Observation":
+        head_obs_role = guild.get_role(Config.HEAD_OBSERVER_ROLE_ID) if hasattr(Config, 'HEAD_OBSERVER_ROLE_ID') else None
+        if head_obs_role:
+            mentions.append(head_obs_role.mention)
+            
+        phantom_role = guild.get_role(Config.PHANTOM_ROLE_ID) if hasattr(Config, 'PHANTOM_ROLE_ID') else None
+        if phantom_role:
+            mentions.append(phantom_role.mention)
+            
+        if not mentions:
+            mentions.append("@HeadObservers")
+        return " ".join(mentions)
+        
     observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
     if observer_role:
         mentions.append(observer_role.mention)
@@ -80,13 +94,24 @@ def get_observer_overwrites(guild: discord.Guild, base_overwrites: dict, ticket_
     if special_user:
         overwrites[special_user] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
-    observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
-    if observer_role:
-        overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-    if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID') and Config.TRIAL_OBSERVER_ROLE_ID:
-        trial_role = guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
-        if trial_role:
-            overwrites[trial_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    if ticket_type == "Head Observation":
+        head_obs_role = guild.get_role(Config.HEAD_OBSERVER_ROLE_ID) if hasattr(Config, 'HEAD_OBSERVER_ROLE_ID') else None
+        if head_obs_role:
+            overwrites[head_obs_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            
+        phantom_role = guild.get_role(Config.PHANTOM_ROLE_ID) if hasattr(Config, 'PHANTOM_ROLE_ID') else None
+        if phantom_role:
+            overwrites[phantom_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            
+    else:
+        observer_role = guild.get_role(Config.OBSERVER_ROLE_ID)
+        if observer_role:
+            overwrites[observer_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        if hasattr(Config, 'TRIAL_OBSERVER_ROLE_ID') and Config.TRIAL_OBSERVER_ROLE_ID:
+            trial_role = guild.get_role(Config.TRIAL_OBSERVER_ROLE_ID)
+            if trial_role:
+                overwrites[trial_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                
     if ticket_type and "obs" in ticket_type.lower() and hasattr(Config, 'NO_PERSONAL_OBS_ROLE_ID') and Config.NO_PERSONAL_OBS_ROLE_ID:
         no_obs_role = guild.get_role(Config.NO_PERSONAL_OBS_ROLE_ID)
         if no_obs_role:

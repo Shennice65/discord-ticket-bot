@@ -61,7 +61,9 @@ class Config:
     # Fallback only; the live value is read from MongoDB config when available.
     AI_MEMORY_CHANNEL_ID = int(os.environ.get('AI_MEMORY_CHANNEL_ID', 0))
     TICKET_CATEGORY_ID = int(os.environ.get('TICKET_CATEGORY_ID', 0))
+
     PHANTOM_ROLE_ID = int(os.environ.get('PHANTOM_ROLE_ID', 0))
+    HEAD_OBSERVER_ROLE_ID = int(os.environ.get('HEAD_OBSERVER_ROLE_ID', 0))
     CHAMPION_ROLE_ID = int(os.environ.get('CHAMPION_ROLE_ID', 0))
     ELITE_ROLE_ID = int(os.environ.get('ELITE_ROLE_ID', 0))
     LEGEND_ROLE_ID = int(os.environ.get('LEGEND_ROLE_ID', 0))

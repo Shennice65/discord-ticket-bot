@@ -244,9 +244,9 @@ class Tickets(commands.Cog):
                 await interaction.edit_original_response(content="Ticket category not configured or not found!", view=None)
                 return
             
-            observer_mention = get_observer_mention(guild)
-            
             ticket_type_name = "Head Observation" if head_obs else "Personal Observation"
+            
+            observer_mention = get_observer_mention(guild, ticket_type=ticket_type_name)
             
             overwrites = get_observer_overwrites(guild, {
                 guild.default_role: discord.PermissionOverwrite(read_messages=False),
