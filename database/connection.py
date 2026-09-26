@@ -27,7 +27,6 @@ class ConnectionMixin:
         self.wallet_transactions = None
         self.betting_matches = None
         self.betting_wagers = None
-        self.challonge_participants = None
         self.betting_admin_audit = None
         self.betting_notifications = None
         self.clip_review_notifications = None
@@ -64,7 +63,6 @@ class ConnectionMixin:
             self.wallet_transactions = self.db.wallet_transactions
             self.betting_matches = self.db.betting_matches
             self.betting_wagers = self.db.betting_wagers
-            self.challonge_participants = self.db.challonge_participants
             self.betting_admin_audit = self.db.betting_admin_audit
             self.betting_notifications = self.db.betting_notifications
             self.clip_review_notifications = self.db.clip_review_notifications
@@ -109,18 +107,7 @@ class ConnectionMixin:
                 ("undo_logs.target_id_timestamp", self.undo_logs.create_index([("target_id", 1), ("timestamp", -1)])),
             ]
 
-            async def ensure_challonge_match_index():
-                existing = (await self.betting_matches.index_information()).get("challonge_match_id_1")
-                if existing and not existing.get("partialFilterExpression"):
-                    await self.betting_matches.drop_index("challonge_match_id_1")
-                await self.betting_matches.create_index(
-                    "challonge_match_id",
-                    unique=True,
-                    partialFilterExpression={"challonge_match_id": {"$exists": True}},
-                )
-
             index_operations.extend([
-                ("betting_matches.challonge_match_id", ensure_challonge_match_index()),
                 ("betting_wagers.match_id_user_id", self.betting_wagers.create_index(
                     [("match_id", 1), ("user_id", 1)], unique=True,
                 )),
@@ -131,9 +118,6 @@ class ConnectionMixin:
                 ("betting_matches.state_scheduled_at", self.betting_matches.create_index([("state", 1), ("scheduled_at", 1)])),
                 ("betting_matches.source_phase_group", self.betting_matches.create_index([("source", 1), ("phase", 1), ("group", 1)])),
                 ("betting_wagers.match_id_status", self.betting_wagers.create_index([("match_id", 1), ("status", 1)])),
-                ("challonge_participants.tournament_participant", self.challonge_participants.create_index(
-                    [("tournament_id", 1), ("challonge_participant_id", 1)], unique=True,
-                )),
                 ("betting_admin_audit.match_id_created_at", self.betting_admin_audit.create_index([("match_id", 1), ("created_at", -1)])),
                 ("betting_notifications.delivery", self.betting_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
                 ("clip_review_notifications.delivery", self.clip_review_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
