@@ -24,7 +24,33 @@ class TicketService:
         if idx_opp == -1:
             return False, "You cannot request a ranked 1v1 against an unranked player!", False
             
-        is_out_of_range = abs(idx_user - idx_opp) > 5
+        user_rank_str = await self.db.get_player_rank(user_id)
+        opp_rank_str = await self.db.get_player_rank(opponent_id)
+        
+        from utils.ladder_utils import parse_rank
+        user_parsed = parse_rank(user_rank_str) if user_rank_str else None
+        opp_parsed = parse_rank(opp_rank_str) if opp_rank_str else None
+        
+        limit = 5
+        if user_parsed:
+            user_tier, user_num = user_parsed
+            if user_tier in ["Masters", "Novices", "Novice"] or (user_tier == "Legends" and user_num >= 9):
+                limit = 7
+                
+        gap = abs(idx_user - idx_opp)
+        if gap > limit:
+            return False, f"You cannot challenge someone more than **{limit} ranks** away from you.", False
+            
+        if user_parsed and opp_parsed:
+            user_tier = user_parsed[0]
+            opp_tier = opp_parsed[0]
+            
+            if user_tier in ["Elites", "Champions"] and opp_tier in ["Champions", "Phantoms"]:
+                tiers_order = {"Phantoms": 0, "Champions": 1, "Elites": 2, "Legends": 3, "Masters": 4, "Novice": 5, "Novices": 5}
+                if tiers_order.get(opp_tier, 99) < tiers_order.get(user_tier, 99):
+                    return False, f"**{user_tier}** cannot challenge **{opp_tier}** in Ranked 1v1. Request a **Head Observation** instead.", False
+                    
+        is_out_of_range = False
             
         cooldown = await self.db.get_ranked_cooldown(user_id)
         if cooldown > 0:
@@ -34,9 +60,16 @@ class TicketService:
             
         rematch_cd = await self.db.get_rematch_cooldown(user_id, opponent_id)
         if rematch_cd > 0:
-            hours = int(rematch_cd)
-            minutes = int((rematch_cd - hours) * 60)
-            return False, f"You must wait **{hours}h {minutes}m** before facing <@{opponent_id}> again!", False
+            days = int(rematch_cd / 24)
+            hours = int(rematch_cd % 24)
+            minutes = int((rematch_cd * 60) % 60)
+            
+            time_str = ""
+            if days > 0:
+                time_str += f"{days}d "
+            time_str += f"{hours}h {minutes}m"
+            
+            return False, f"You must wait **{time_str.strip()}** before facing <@{opponent_id}> again!", False
             
         return True, "", is_out_of_range
 

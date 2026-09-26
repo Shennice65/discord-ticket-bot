@@ -609,7 +609,7 @@ class LadderMixin:
             val = ticket["closed_at"]
             closed_at = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
             time_passed = (datetime.utcnow() - closed_at).total_seconds()
-            cooldown_seconds = 24 * 3600  # 24 hours
+            cooldown_seconds = 7 * 24 * 3600  # 7 days
             if time_passed < cooldown_seconds:
                 return (cooldown_seconds - time_passed) / 3600.0
             return 0.0
