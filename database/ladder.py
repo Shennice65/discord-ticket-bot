@@ -344,29 +344,7 @@ class LadderMixin:
             return False  # Never ranked — not "self-unranked"
         return bool(player.get("unranked_at"))
         
-    async def can_player_r1(self, user_id: int) -> tuple:
-        """Check if a formerly-ranked player can do R1s. Returns (allowed, reason)."""
-        from utils.ladder_utils import get_sort_key
-        player = await self.player_ranks.find_one({"user_id": user_id})
-        if not player:
-            return True, ""  # Never ranked, no restriction
-            
-        original_rank = player.get("original_rank")
-        if not original_rank:
-            return True, ""  # Was never unranked, no restriction
-            
-        current_rank = player.get("rank", "")
-        if not current_rank:
-            return False, "You are currently unranked. You cannot request R1s until you are ranked back to your original rank."
-            
-        # Check if current rank is at or above (lower index = better) original rank
-        current_key = get_sort_key(current_rank)
-        original_key = get_sort_key(original_rank)
-        if current_key <= original_key:
-            return True, ""  # They are at or above their original rank
-        else:
-            return False, f"You must reach your original rank (**{original_rank}**) or higher before you can request R1s. You are currently **{current_rank}**."
-            
+
     async def remove_player_from_ladder(self, user_id: int, is_undo: bool = False, movement_source: str = "admin_removal") -> bool:
         from utils.ladder_utils import TIERS, parse_rank
         

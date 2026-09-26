@@ -10,10 +10,6 @@ class TicketService:
         if opponent_id == user_id:
             return False, "You cannot 1v1 yourself!"
             
-        can_r1, r1_reason = await self.db.can_player_r1(user_id)
-        if not can_r1:
-            return False, r1_reason
-            
         indexes = await self.db.get_global_rank_indexes([user_id, opponent_id])
         idx_user = indexes.get(user_id, -1)
         idx_opp = indexes.get(opponent_id, -1)
