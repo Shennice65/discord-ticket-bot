@@ -95,11 +95,39 @@ class AIDashboard:
         """
         return web.Response(text=html, content_type='text/html')
 
+    async def post_roblox_match(self, request):
+        try:
+            data = await request.json()
+            roblox_cog = self.bot.get_cog("RobloxStats")
+            if roblox_cog:
+                await roblox_cog.process_new_match(data)
+                return web.json_response({"status": "success"})
+            else:
+                return web.json_response({"error": "RobloxStats cog not loaded"}, status=503)
+        except Exception as e:
+            traceback.print_exc()
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def post_roblox_live(self, request):
+        try:
+            data = await request.json()
+            roblox_cog = self.bot.get_cog("RobloxStats")
+            if roblox_cog:
+                await roblox_cog.process_live_update(data)
+                return web.json_response({"status": "success"})
+            else:
+                return web.json_response({"error": "RobloxStats cog not loaded"}, status=503)
+        except Exception as e:
+            traceback.print_exc()
+            return web.json_response({"error": str(e)}, status=500)
+
 async def start_web_server(bot, port=8080):
     dashboard = AIDashboard(bot)
     app = web.Application()
     app.router.add_get('/', dashboard.index)
     app.router.add_get('/api/data', dashboard.get_data)
+    app.router.add_post('/api/roblox/match-stats', dashboard.post_roblox_match)
+    app.router.add_post('/api/roblox/live-update', dashboard.post_roblox_live)
     
     runner = web.AppRunner(app)
     await runner.setup()
