@@ -78,6 +78,7 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.betting")
         await self.load_extension("cogs.activity")
         await self.load_extension("cogs.engagement_cmds")
+        await self.load_extension("cogs.roblox_stats")
         print("Cogs loaded. Syncing commands...")
         
         port = int(os.environ.get("PORT", 8080))
@@ -205,7 +206,7 @@ class TicketBot(commands.Bot):
 
 async def main():
     discord.utils.setup_logging()
-    keep_alive()
+    # keep_alive() # Disabled to prevent port 8080 conflict with web/dashboard.py
     bot = TicketBot()
     # Ensure aiohttp's Discord session is closed if startup fails before login
     # completes (for example, when DNS or the network is temporarily down).

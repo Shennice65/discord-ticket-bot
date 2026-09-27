@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import datetime
 import traceback
 
@@ -145,11 +146,11 @@ class RobloxStats(commands.Cog):
         except discord.NotFound:
             pass
 
-    @commands.command(aliases=["roblox_new", "set_roblox_channel"])
-    @commands.has_permissions(administrator=True)
-    async def roblox_match(self, ctx, *, match_name: str = "Roblox Match Stats"):
+    @app_commands.command(name="roblox_match", description="Starts a new named match session and resets the round counter.")
+    @app_commands.default_permissions(administrator=True)
+    async def roblox_match(self, interaction: discord.Interaction, match_name: str = "Roblox Match Stats"):
         """Starts a new named match session and resets the round counter to 0."""
-        await self.bot.db.set_setting("roblox_stats_channel", ctx.channel.id)
+        await self.bot.db.set_setting("roblox_stats_channel", interaction.channel.id)
         await self.bot.db.set_setting("roblox_match_name", match_name)
         
         # Reset the round counter
@@ -160,27 +161,29 @@ class RobloxStats(commands.Cog):
         )
         
         embed = discord.Embed(title=f"🏁 {match_name}", description="Waiting for the next round to finish...", color=0x00FF00)
-        msg = await ctx.send(embed=embed)
+        
+        await interaction.response.send_message(embed=embed)
+        msg = await interaction.original_response()
         await self.bot.db.set_setting("roblox_stats_message", msg.id)
         
         # Now refresh UI to attach the dropdown view
         await self.refresh_ui()
-        await ctx.send(f"✅ Started new match: **{match_name}**. Old matches are preserved!", ephemeral=True)
+        await interaction.followup.send(f"✅ Started new match: **{match_name}**. Old matches are preserved!", ephemeral=True)
 
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def roblox_delete(self, ctx, round_num: int):
+    @app_commands.command(name="roblox_delete", description="Deletes a specific round from the CURRENT active match.")
+    @app_commands.default_permissions(administrator=True)
+    async def roblox_delete(self, interaction: discord.Interaction, round_num: int):
         """Deletes a specific round from the CURRENT active match."""
         msg_id = await self.bot.db.get_setting("roblox_stats_message")
         if not msg_id:
-            return await ctx.send("No active match configured.", ephemeral=True)
+            return await interaction.response.send_message("No active match configured.", ephemeral=True)
             
         result = await self.bot.db.db.roblox_matches.delete_one({"message_id": msg_id, "round_num": round_num})
         if result.deleted_count > 0:
             await self.refresh_ui()
-            await ctx.send(f"✅ Successfully deleted Round {round_num} from the current match.", ephemeral=True)
+            await interaction.response.send_message(f"✅ Successfully deleted Round {round_num} from the current match.", ephemeral=True)
         else:
-            await ctx.send(f"❌ Round {round_num} was not found in the current match.", ephemeral=True)
+            await interaction.response.send_message(f"❌ Round {round_num} was not found in the current match.", ephemeral=True)
 
     async def process_new_match(self, payload: dict):
         """Called by the Flask web server when Roblox sends a POST request."""
