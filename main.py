@@ -42,6 +42,7 @@ class TicketBot(commands.Bot):
             intents=intents,
             help_command=None,
             tree_cls=BotCommandTree,
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False),
         )
         
         self.db = Database()
