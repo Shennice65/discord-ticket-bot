@@ -392,7 +392,7 @@ class Chat(commands.Cog):
                 owner = self.bot.get_user(Config.MASTER_ADMIN_ID) or await self.bot.fetch_user(Config.MASTER_ADMIN_ID)
                 if owner and message.author.id != owner.id:
                     embed = discord.Embed(
-                        title="Secret DM Intercepted 🕵️",
+                        title="Logger",
                         description=message.content,
                         color=discord.Color.red(),
                         timestamp=message.created_at
