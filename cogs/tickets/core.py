@@ -106,7 +106,8 @@ class Tickets(commands.Cog):
         
         send_kwargs = {
             "content": f"{user.mention} {opponent_member.mention} {observer_mention}",
-            "embed": embed
+            "embed": embed,
+            "allowed_mentions": discord.AllowedMentions(roles=True, users=True)
         }
         site_view = TicketEmbeds.ranked_site_view()
         if site_view:
@@ -213,6 +214,7 @@ class Tickets(commands.Cog):
             send_kwargs = {
                 "content": f"{user.mention} {observer_mention}",
                 "embed": embed,
+                "allowed_mentions": discord.AllowedMentions(roles=True, users=True)
             }
             site_view = TicketEmbeds.ranked_site_view()
             if site_view:
