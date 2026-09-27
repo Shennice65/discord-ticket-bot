@@ -33,8 +33,8 @@ local function updatePlayerNametag(player)
 end
 
 -- IMPORTANT: Set this to your Discord bot's IP/URL and Port!
-local BOT_API_URL = "https://clip-hosting-o361.onrender.com/api/roblox/match-stats"
-local BOT_LIVE_URL = "https://clip-hosting-o361.onrender.com/api/roblox/live-update"
+local BOT_API_URL = "https://atlclips.site/api/roblox/match-stats"
+local BOT_LIVE_URL = "https://atlclips.site/api/roblox/live-update"
 
 local MatchStats = {}
 local RoundActive = false
@@ -197,25 +197,30 @@ end
 local function sendLiveUpdateToDiscord(killfeedMsg)
 	local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 	if httpRequest then
-		httpRequest({
+		local response = httpRequest({
 			Url = BOT_LIVE_URL,
 			Method = "POST",
 			Headers = { ["Content-Type"] = "application/json" },
 			Body = HttpService:JSONEncode({ stats = getSortedStats(), killfeed_message = killfeedMsg })
 		})
+		print("[LIVE UPDATE HTTP RESPONSE]:", response and response.StatusCode, response and response.Body)
+	else
+	    warn("No httpRequest function found! Cannot send webhook.")
 	end
 end
 
 local function sendMatchStatsToDiscord()
 	local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 	if httpRequest then
-		httpRequest({
+		local response = httpRequest({
 			Url = BOT_API_URL,
 			Method = "POST",
 			Headers = { ["Content-Type"] = "application/json" },
 			Body = HttpService:JSONEncode({ stats = getSortedStats() })
 		})
-		print("[WEBHOOK] Final Stats sent to Bot Database!")
+		print("[MATCH STATS HTTP RESPONSE]:", response and response.StatusCode, response and response.Body)
+	else
+	    warn("No httpRequest function found! Cannot send webhook.")
 	end
 end
 

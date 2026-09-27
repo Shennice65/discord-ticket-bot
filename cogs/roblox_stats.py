@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import datetime
 import traceback
@@ -69,6 +69,65 @@ class RobloxStats(commands.Cog):
         self.bot = bot
         # Register a dummy view with the select so custom_id routing works on restart
         self.bot.add_view(RobloxMatchView(self, [], register_only=True))
+        self.live_update_loop.start()
+
+    def cog_unload(self):
+        self.live_update_loop.cancel()
+
+    @tasks.loop(seconds=3.0)
+    async def live_update_loop(self):
+        try:
+            channel_id = await self.bot.db.get_setting("roblox_stats_channel")
+            msg_id = await self.bot.db.get_setting("roblox_stats_message")
+            match_name = await self.bot.db.get_setting("roblox_match_name") or "Roblox Match Stats"
+            
+            if not channel_id or not msg_id:
+                return
+                
+            live_doc = await self.bot.db.db.bot_settings.find_one({"key": "roblox_live_stats"})
+            if not live_doc:
+                return
+                
+            last_timestamp = await self.bot.db.get_setting("roblox_live_last_timestamp")
+            current_timestamp = live_doc.get("timestamp")
+            
+            if last_timestamp == current_timestamp:
+                return 
+                
+            await self.bot.db.set_setting("roblox_live_last_timestamp", current_timestamp)
+            
+            stats = live_doc.get("stats", [])
+            killfeed_msg = live_doc.get("killfeed_message", "")
+            
+            table_desc = self.format_team_tables(stats)
+            if killfeed_msg:
+                description = f"**LIVE KILLFEED:** {killfeed_msg}\n\n" + table_desc
+            else:
+                description = table_desc
+                
+            embed = discord.Embed(
+                title=f"LIVE MATCH: {match_name}",
+                description=description,
+                color=0xFF0000,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                return
+                
+            msg = await channel.fetch_message(msg_id)
+            
+            # Grab current view
+            matches = await self.get_all_matches(msg_id)
+            view = RobloxMatchView(self, matches)
+            
+            await msg.edit(embed=embed, view=view)
+            
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            pass
 
     async def get_match(self, round_num: int):
         return await self.bot.db.db.roblox_matches.find_one({"round_num": round_num})
