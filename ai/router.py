@@ -211,7 +211,7 @@ class AIRouter:
                 }
             }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
+                async with session.post(url, json=payload, timeout=10) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
@@ -372,7 +372,10 @@ class AIRouter:
                     "content": content_parts if len(content_parts) > 1 else content_parts[0]["text"],
                 })
 
-                needs_tools = await self._triage_intent(user_text)
+                try:
+                    needs_tools = await bounded(self._triage_intent(user_text), timeout=10)
+                except Exception:
+                    needs_tools = True
                 tool_definitions = list(self.tools.definitions) if profile.tools_enabled and needs_tools else []
                 if profile.tier != "core" and not context.author_is_admin:
                     tool_definitions = [t for t in tool_definitions if t["function"]["name"] != "search_web"]
@@ -465,7 +468,13 @@ class AIRouter:
 
                         for call in response.tool_calls:
                             tool_started = time.perf_counter()
-                            result = await execute_agent_tool(call.name, call.arguments)
+                            try:
+                                result = await execute_agent_tool(call.name, call.arguments)
+                            except asyncio.TimeoutError:
+                                result = f"Error: Tool {call.name} timed out."
+                            except Exception as e:
+                                result = f"Error: Tool {call.name} failed with {type(e).__name__}."
+                            
                             logger.info("AI stage message_id=%s stage=tool tool=%s duration_ms=%d",
                                         message.id, call.name, (time.perf_counter() - tool_started) * 1000)
                             messages.append({
@@ -509,5 +518,16 @@ class AIRouter:
                 )
                 if db and getattr(db, "user_quotas", None) is not None and usage.get("total_tokens"):
                     await db.increment_user_quota(message.author.id, usage["total_tokens"])
+        except asyncio.TimeoutError:
+            try:
+                await message.reply("Sorry, my request timed out while thinking. Please try again!", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
+            except Exception:
+                pass
+        except Exception as error:
+            logger.warning("AI unhandled exception message_id=%s error=%s", message.id, type(error).__name__)
+            try:
+                await message.reply("Sorry, something went wrong while processing your request.", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
+            except Exception:
+                pass
         finally:
             self._concurrency_limit.release()
