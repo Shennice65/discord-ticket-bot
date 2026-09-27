@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import discord
 import json
 import logging
 import random
