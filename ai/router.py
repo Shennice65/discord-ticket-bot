@@ -299,7 +299,7 @@ class AIRouter:
         if hasattr(llm, "ensure_keys"):
             await llm.ensure_keys(getattr(self.bot, "db", None))
         if not llm.client:
-            await message.reply("Sorry, I had trouble talking to my brain: no AI provider key is configured.")
+            await message.reply("Sorry, I had trouble talking to my brain: no AI provider key is configured.", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
             return
 
         request_deadline = time.monotonic() + getattr(Config, "AI_REQUEST_TIMEOUT_SECONDS", 180)
@@ -316,7 +316,7 @@ class AIRouter:
         try:
             await bounded(self._concurrency_limit.acquire(), timeout=45)
         except asyncio.TimeoutError:
-            await message.reply("Sorry, I'm a bit overwhelmed right now. Please try again in a minute!")
+            await message.reply("Sorry, I'm a bit overwhelmed right now. Please try again in a minute!", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
             return
 
         try:
@@ -325,7 +325,7 @@ class AIRouter:
                     context = await bounded(self.context_builder.build(message))
                 except Exception as error:
                     logger.warning("AI context failed message_id=%s error=%s", message.id, type(error).__name__)
-                    await message.reply("Sorry, I couldn't load the conversation context.")
+                    await message.reply("Sorry, I couldn't load the conversation context.", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
                     return
 
                 max_history = profile.max_history
@@ -423,9 +423,9 @@ class AIRouter:
                     if not preview:
                         return
                     if streamed_reply is None:
-                        streamed_reply = await bounded(message.reply(preview))
+                        streamed_reply = await bounded(message.reply(preview, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True)))
                     else:
-                        await bounded(streamed_reply.edit(content=preview))
+                        await bounded(streamed_reply.edit(content=preview, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True)))
 
                 if response is None:
                     for tool_round in range(self.MAX_TOOL_ROUNDS + 1):
@@ -435,7 +435,7 @@ class AIRouter:
                             ))
                         except Exception as error:
                             logger.warning("AI generation failed message_id=%s error=%s", message.id, type(error).__name__)
-                            await message.reply("Sorry, I had trouble talking to my brain right now.")
+                            await message.reply("Sorry, I had trouble talking to my brain right now.", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
                             try:
                                 owner = self.bot.get_user(Config.MASTER_ADMIN_ID) or await self.bot.fetch_user(Config.MASTER_ADMIN_ID)
                                 await owner.send(f"⚠️ **AI Generation Failed** in {message.jump_url}\nError: `{type(error).__name__}: {str(error)}`")
@@ -479,7 +479,7 @@ class AIRouter:
                     (response.text if response else "").strip(), mention_sources
                 )
                 if not reply_text:
-                    await message.reply("Sorry, I couldn't produce a reply this time.")
+                    await message.reply("Sorry, I couldn't produce a reply this time.", allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
                     return
 
                 pages = [reply_text[i:i + 2000] for i in range(0, len(reply_text), 2000)]
@@ -487,12 +487,12 @@ class AIRouter:
                     if index == 0:
                         if streamed_reply is not None:
                             if page != "".join(streamed_text).strip()[:2000]:
-                                await bounded(streamed_reply.edit(content=page))
+                                await bounded(streamed_reply.edit(content=page, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True)))
                         else:
-                            await bounded(message.reply(page))
+                            await bounded(message.reply(page, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True)))
                         self.context_builder.tracker.remember_exchange(message, user_text, reply_text)
                     else:
-                        await bounded(message.channel.send(page))
+                        await bounded(message.channel.send(page, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True)))
                 usage = response.usage if response else {}
                 logger.info(
                     "AI stage message_id=%s stage=send model=%s total_ms=%d prompt_tokens=%s completion_tokens=%s total_tokens=%s",
