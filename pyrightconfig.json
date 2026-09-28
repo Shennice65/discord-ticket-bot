@@ -1,0 +1,12 @@
+{
+  "executionEnvironments": [
+    {
+      "root": "clips",
+      "venvPath": "clips",
+      "venv": ".venv"
+    },
+    {
+      "root": "."
+    }
+  ]
+}
