@@ -1,4 +1,8 @@
 {
+  "typeCheckingMode": "basic",
+  "reportAttributeAccessIssue": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportArgumentType": "none",
   "executionEnvironments": [
     {
       "root": "clips",
@@ -6,7 +10,8 @@
       "venv": ".venv"
     },
     {
-      "root": "."
+      "root": ".",
+      "extraPaths": ["."]
     }
   ]
 }

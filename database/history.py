@@ -15,7 +15,7 @@ class HistoryMixin:
         # Use two separate pipelines for user_id and opponent_id to avoid 
         # MongoDB's notoriously poor performance with $or combined with $sort.
         # This guarantees it will use the compound indexes we created.
-        ranked_pipeline_user = [
+        ranked_pipeline_user: list[dict[str, Any]] = [
             {"$match": {
                 "status": "closed",
                 "ticket_type": "Ranked 1v1",
@@ -31,7 +31,7 @@ class HistoryMixin:
             {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
         ]
         
-        ranked_pipeline_opp = [
+        ranked_pipeline_opp: list[dict[str, Any]] = [
             {"$match": {
                 "status": "closed",
                 "ticket_type": "Ranked 1v1",
@@ -47,7 +47,7 @@ class HistoryMixin:
             {"$unwind": {"path": "$result", "preserveNullAndEmptyArrays": False}}
         ]
         
-        obs_pipeline = [
+        obs_pipeline: list[dict[str, Any]] = [
             {"$match": {
                 "status": "closed",
                 "ticket_type": "Personal Observation",

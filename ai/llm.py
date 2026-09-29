@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import re
 import time
 from types import SimpleNamespace
+from typing import Any
 
 import aiohttp
 
@@ -121,7 +124,7 @@ class GeminiLLM:
         return bool(self.api_keys)
 
     @staticmethod
-    def _text_parts(content):
+    def _text_parts(content) -> list[dict[str, Any]]:
         if isinstance(content, str):
             return [{"text": content}]
         parts = []

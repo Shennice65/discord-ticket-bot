@@ -39,10 +39,6 @@ def get_observer_mention(guild: discord.Guild, ticket_type: str = None, is_head_
         if head_obs_role:
             mentions.append(head_obs_role.mention)
             
-        phantom_role = guild.get_role(Config.PHANTOM_ROLE_ID) if hasattr(Config, 'PHANTOM_ROLE_ID') else None
-        if phantom_role:
-            mentions.append(phantom_role.mention)
-            
         if not mentions:
             mentions.append("@HeadObservers")
         return " ".join(mentions)
