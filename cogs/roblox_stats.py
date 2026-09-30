@@ -305,5 +305,22 @@ class RobloxStats(commands.Cog):
         except discord.NotFound:
             pass
 
+    @app_commands.command(name="link_roblox", description="Link your Roblox account to Discord!")
+    async def link_roblox(self, interaction: discord.Interaction):
+        # Pass the Discord ID in the link so the web server knows who is logging in
+        discord_id = interaction.user.id
+        login_link = f"https://atlclips.site/api/roblox/login?discord_id={discord_id}"
+        
+        # Create a button for them to click
+        view = discord.ui.View()
+        button = discord.ui.Button(label="Login with Roblox", style=discord.ButtonStyle.link, url=login_link)
+        view.add_item(button)
+
+        await interaction.response.send_message(
+            "Click the button below to securely link your Roblox account! We only request permission to view your username.",
+            view=view,
+            ephemeral=True
+        )
+
 async def setup(bot):
     await bot.add_cog(RobloxStats(bot))
