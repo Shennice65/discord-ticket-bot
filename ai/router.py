@@ -226,6 +226,8 @@ class AIRouter:
             return True
 
     async def handle_message(self, message, ai_chat_enabled, member_role_id):
+        return # Hard disable AI for now
+        
         request_started = time.perf_counter()
         if not ai_chat_enabled:
             return
