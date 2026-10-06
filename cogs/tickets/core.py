@@ -26,6 +26,30 @@ class Tickets(commands.Cog):
         print(f"Tickets cog loaded")
         self.bot.add_view(TicketView())
 
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot:
+            return
+            
+        content_lower = message.content.lower()
+        exact_phrases = [
+            "how to get ranked", "how do i get ranked", "where to get ranked",
+            "where do i get ranked", "how to 1v1", "how do i 1v1",
+            "where to 1v1", "how to create a ticket", "how do i create a ticket",
+            "where to create a ticket", "how to make a ticket", "how do i make a ticket",
+            "where to make a ticket", "create a 1v1 ticket"
+        ]
+        
+        is_ticket_question = any(phrase in content_lower for phrase in exact_phrases)
+        
+        if not is_ticket_question and ("how" in content_lower or "where" in content_lower) and ("ticket" in content_lower or "rank" in content_lower) and len(content_lower) < 45:
+            if any(word in content_lower for word in ["get", "create", "make", "do i", "is the"]):
+                is_ticket_question = True
+            
+        if is_ticket_question:
+            await message.reply("Looking to get ranked or 1v1? Head over to <#1488835022055018576> to create a ticket!")
+            return
+
     async def create_ranked_ticket(self, interaction: discord.Interaction, opponent: discord.User):
         guild = interaction.guild
         user = interaction.user

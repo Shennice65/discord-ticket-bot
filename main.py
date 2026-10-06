@@ -66,7 +66,7 @@ class TicketBot(commands.Bot):
         self.add_view(ShareClipView())
         
         print("Loading cogs...")
-        await self.load_extension("cogs.chat")
+        # await self.load_extension("cogs.chat")
         await self.load_extension("cogs.tickets.core")
         await self.load_extension("cogs.tickets.admin")
         await self.load_extension("cogs.tickets.tasks")
@@ -77,7 +77,7 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.owner")
         await self.load_extension("cogs.betting")
         await self.load_extension("cogs.activity")
-        await self.load_extension("cogs.engagement_cmds")
+        # await self.load_extension("cogs.engagement_cmds")
         await self.load_extension("cogs.roblox_stats")
         print("Cogs loaded. Syncing commands...")
         
