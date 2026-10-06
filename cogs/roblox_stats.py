@@ -71,7 +71,7 @@ class RobloxStats(commands.Cog):
         self.bot.add_view(RobloxMatchView(self, [], register_only=True))
         self.live_update_loop.start()
 
-    def cog_unload(self):
+    async def cog_unload(self):
         self.live_update_loop.cancel()
 
     @tasks.loop(seconds=3.0)

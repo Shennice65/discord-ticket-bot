@@ -31,7 +31,7 @@ def validate_and_format_rank(rank_str: str) -> Optional[str]:
     if tier_input in tiers:
         return f"{tiers[tier_input]} {number}"
     return None
-def get_observer_mention(guild: discord.Guild, ticket_type: str = None, is_head_obs: bool = False) -> str:
+def get_observer_mention(guild: discord.Guild, ticket_type: str | None = None, is_head_obs: bool = False) -> str:
     mentions = []
     
     if is_head_obs:
@@ -55,7 +55,7 @@ def get_observer_mention(guild: discord.Guild, ticket_type: str = None, is_head_
     return " ".join(mentions)
 
 
-def is_observer_or_trial(member: discord.Member, ticket_type: str = None) -> bool:
+def is_observer_or_trial(member: discord.Member, ticket_type: str | None = None) -> bool:
     if member.id == 442188857014747136:
         return True
         
