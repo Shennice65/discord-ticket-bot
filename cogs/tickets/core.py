@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from config import Config
@@ -20,6 +20,9 @@ class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = bot.db
+        # Tracks the last time the bot replied to a ranked question per channel.
+        # Key: channel_id (int), Value: datetime of last reply
+        self._ranked_question_cooldowns: dict[int, datetime] = {}
         
     @commands.Cog.listener()
     async def on_ready(self):
@@ -47,6 +50,11 @@ class Tickets(commands.Cog):
                 is_ticket_question = True
             
         if is_ticket_question:
+            now = datetime.utcnow()
+            last_reply = self._ranked_question_cooldowns.get(message.channel.id)
+            if last_reply and (now - last_reply) < timedelta(minutes=5):
+                return  # Still on cooldown, ignore
+            self._ranked_question_cooldowns[message.channel.id] = now
             await message.reply("Looking to get ranked or 1v1? Head over to <#1488835022055018576> to create a ticket!")
             return
 
