@@ -1,7 +1,6 @@
 import discord
 import re
 import unicodedata
-from config import Config
 from typing import List, Optional, Tuple
 from utils.ranking_utils import parse_rank
 from utils.podium_generator import get_podium_image

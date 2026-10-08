@@ -1,12 +1,3 @@
-import os
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-from config import Config
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import UpdateOne
-import asyncio
-
-
 from .connection import ConnectionMixin
 from .settings import SettingsMixin
 from .ladder import LadderMixin
@@ -15,10 +6,9 @@ from .history import HistoryMixin
 from .admin import AdminMixin
 from .clips import ClipsMixin
 from .betting import BettingMixin
-from .chat import ChatContextMixin
-from .quota import QuotaMixin
-from .gifs import GifMixin
+from .security import SecurityMixin
 
-class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin, ChatContextMixin, QuotaMixin, GifMixin):
+
+class Database(ConnectionMixin, SettingsMixin, LadderMixin, TicketsMixin, HistoryMixin, AdminMixin, ClipsMixin, BettingMixin, SecurityMixin):
     def __init__(self):
         super().__init__()

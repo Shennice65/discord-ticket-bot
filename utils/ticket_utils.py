@@ -1,15 +1,8 @@
 import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-import asyncio
-import os
 import re
-from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 
 from config import Config
-from database import Database
-from utils.embeds import TicketEmbeds
 
 
 def validate_and_format_rank(rank_str: str) -> Optional[str]:

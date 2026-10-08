@@ -242,7 +242,7 @@ class TicketEmbeds:
                 status += f"\nRe-rank locked for **{d}d {h}h {m}m**"
                 status += f"\nR1s blocked until back to **{unrank_info['original_rank']}**"
             else:
-                status += f"\nRe-rank cooldown expired"
+                status += "\nRe-rank cooldown expired"
             embed.add_field(
                 name="UNRANKED PLAYER",
                 value=status,

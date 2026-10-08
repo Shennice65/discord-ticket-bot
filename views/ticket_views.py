@@ -1,16 +1,6 @@
 import discord
-from pymongo import ReturnDocument
-from discord.ext import commands, tasks
-from discord import app_commands
-import asyncio
-import os
-import re
-from datetime import datetime
-from typing import Optional, List
 
-from config import Config
 from database import Database
-from utils.embeds import TicketEmbeds
 
 
 from utils.ticket_utils import validate_and_format_rank

@@ -36,7 +36,7 @@ async def diagnose_user(db, user_id: int, do_fix: bool = False):
     }).sort("closed_at", -1).to_list(length=None)
     
     if not opp_tickets:
-        print(f"  No opponent-side tickets found. History is clean.")
+        print("  No opponent-side tickets found. History is clean.")
         return 0
     
     print(f"  Found {len(opp_tickets)} ticket(s) where user is the opponent.\n")
@@ -73,7 +73,7 @@ async def diagnose_user(db, user_id: int, do_fix: bool = False):
             if result.get('note'):
                 print(f"    Note:               {result.get('note')}")
         else:
-            print(f"    Result:             NO RESULT FOUND")
+            print("    Result:             NO RESULT FOUND")
         
         if suspicious:
             reasons = []
@@ -99,7 +99,7 @@ async def diagnose_user(db, user_id: int, do_fix: bool = False):
         print(f"\n  Done! {len(suspect_tickets)} ticket(s) fixed.")
         print(f"  These matches will no longer appear in User {user_id}'s history.")
     elif suspect_tickets and not do_fix:
-        print(f"\n  To fix these, run:")
+        print("\n  To fix these, run:")
         print(f"    python scripts/check_ticket_conflicts.py {user_id} --fix")
     
     return len(suspect_tickets)
@@ -156,8 +156,8 @@ async def scan_all(db):
         print(f"\nAffected users ({len(affected_users)}):")
         for uid, tids in affected_users.items():
             print(f"  User {uid}: {len(tids)} suspect ticket(s) — IDs: {tids}")
-        print(f"\nRun with a specific user ID to fix:")
-        print(f"  python scripts/check_ticket_conflicts.py <USER_ID> --fix")
+        print("\nRun with a specific user ID to fix:")
+        print("  python scripts/check_ticket_conflicts.py <USER_ID> --fix")
     else:
         print("✓ No conflicts found! All tickets look clean.")
 

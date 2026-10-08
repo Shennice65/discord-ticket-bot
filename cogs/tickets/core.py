@@ -2,12 +2,9 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
-import re
 from datetime import datetime, timedelta
-from typing import Optional
 
 from config import Config
-from database import Database
 from utils.embeds import TicketEmbeds
 from utils.admin_alerts import check_and_alert_alt_risk
 
@@ -26,7 +23,7 @@ class Tickets(commands.Cog):
         
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"Tickets cog loaded")
+        print("Tickets cog loaded")
         self.bot.add_view(TicketView())
 
     @commands.Cog.listener()

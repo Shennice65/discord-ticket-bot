@@ -6,7 +6,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import Database
-from datetime import datetime
 
 async def check_novices():
     db = Database()

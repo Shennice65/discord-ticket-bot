@@ -1,11 +1,8 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import re
-from typing import List, Optional
 from datetime import datetime
 
-from database import Database
 from config import Config
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
@@ -97,7 +94,7 @@ class RankingAdmin(commands.Cog):
             if ticket_service:
                 await ticket_service.check_and_notify_rank_change(user.id, actual_rank)
         else:
-            await interaction.followup.send(f"Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
+            await interaction.followup.send("Failed to set rank. Please ensure the rank is formatted correctly (e.g., `Legends 3`, `Champions 12`).", ephemeral=True)
 
     @app_commands.command(name="unrank", description="Unrank a player and remove their tier role")
     @app_commands.describe(user="The player to unrank")
@@ -186,7 +183,7 @@ class RankingAdmin(commands.Cog):
         from utils.ladder_utils import parse_rank
         parsed = parse_rank(rank)
         if not parsed:
-            await interaction.response.send_message(f"Invalid rank format. Please use a format like `Legends 3`.", ephemeral=True)
+            await interaction.response.send_message("Invalid rank format. Please use a format like `Legends 3`.", ephemeral=True)
             return
             
         formatted_rank = f"{parsed[0]} {parsed[1]}"

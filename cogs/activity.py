@@ -1,13 +1,10 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import asyncio
 import re
 from datetime import datetime, timedelta
-from typing import Optional, List
 
 from config import Config
-from database import Database
 from utils.ladder_utils import TIERS, parse_rank
 
 ACTIVITY_TIERS = tuple(TIERS)
