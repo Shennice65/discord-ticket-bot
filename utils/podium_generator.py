@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 from typing import List, Tuple, Optional
 import aiohttp
-from PIL import Image, ImageDraw, ImageFont, ImageChops
+from PIL import Image, ImageDraw, ImageFont
 
 CACHE_DIR = "assets/cache"
 os.makedirs(CACHE_DIR, exist_ok=True)

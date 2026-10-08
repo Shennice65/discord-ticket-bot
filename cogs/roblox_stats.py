@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import datetime
 import traceback
 
 class RobloxMatchSelect(discord.ui.Select):
@@ -126,7 +125,7 @@ class RobloxStats(commands.Cog):
             
         except discord.NotFound:
             pass
-        except Exception as e:
+        except Exception:
             pass
 
     async def get_match(self, round_num: int):

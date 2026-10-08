@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import MagicMock
-import discord
 from utils.embeds import TicketEmbeds
 
 class TestRankedTicketCreation(unittest.TestCase):

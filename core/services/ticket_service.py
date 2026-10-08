@@ -1,5 +1,4 @@
-import discord
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple
 
 class TicketService:
     def __init__(self, bot, db):

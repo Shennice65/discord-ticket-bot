@@ -1,9 +1,5 @@
-import os
-from datetime import datetime
-from typing import Optional, List, Dict, Any
 from config import Config
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import UpdateOne
 import asyncio
 
 
@@ -30,11 +26,6 @@ class ConnectionMixin:
         self.betting_admin_audit = None
         self.betting_notifications = None
         self.clip_review_notifications = None
-        self.chat_memory = None
-        self.chat_messages = None
-        self.pending_lore = None
-        self.user_quotas = None
-        self.gif_library = None
         self.security_incidents = None
         self.security_snapshots = None
         self.security_msg_backup = None
@@ -70,11 +61,6 @@ class ConnectionMixin:
             self.betting_admin_audit = self.db.betting_admin_audit
             self.betting_notifications = self.db.betting_notifications
             self.clip_review_notifications = self.db.clip_review_notifications
-            self.chat_memory = self.db.chat_memory
-            self.chat_messages = self.db.chat_messages
-            self.pending_lore = self.db.pending_lore
-            self.user_quotas = self.db.user_quotas
-            self.gif_library = self.db.gif_library
             self.security_incidents = self.db.security_incidents
             self.security_snapshots = self.db.security_snapshots
             self.security_msg_backup = self.db.security_msg_backup
@@ -129,35 +115,6 @@ class ConnectionMixin:
                 ("betting_admin_audit.match_id_created_at", self.betting_admin_audit.create_index([("match_id", 1), ("created_at", -1)])),
                 ("betting_notifications.delivery", self.betting_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
                 ("clip_review_notifications.delivery", self.clip_review_notifications.create_index([("status", 1), ("next_attempt_at", 1), ("created_at", 1)])),
-                ("chat_memory.channel_timestamp", self.chat_memory.create_index([("channel_id", 1), ("timestamp", -1)])),
-                ("chat_memory.timestamp", self.chat_memory.create_index("timestamp")),
-                ("chat_memory.source_message_id", self.chat_memory.create_index(
-                    "source_message_id", unique=True,
-                    name="chat_memory_source_message_unique",
-                    partialFilterExpression={"source_message_id": {"$exists": True}},
-                )),
-                ("chat_memory.memory_key", self.chat_memory.create_index(
-                    [("guild_id", 1), ("channel_id", 1), ("memory_key", 1)],
-                    unique=True,
-                    name="chat_memory_memory_key_unique",
-                    partialFilterExpression={"memory_key": {"$exists": True}},
-                )),
-                ("chat_messages.message_id", ensure_unique_index(self.chat_messages, "message_id")),
-                ("chat_messages.channel_timestamp", self.chat_messages.create_index([("guild_id", 1), ("channel_id", 1), ("created_at", -1)])),
-                ("pending_lore.message_id", self.pending_lore.create_index(
-                    "message_id", unique=True,
-                    name="pending_message_id_unique",
-                    partialFilterExpression={"message_id": {"$exists": True}},
-                )),
-                ("user_quotas.user_id", ensure_unique_index(self.user_quotas, "user_id")),
-                ("gif_library.guild_url", self.gif_library.create_index(
-                    [("guild_id", 1), ("url", 1)], unique=True,
-                    name="gif_library_guild_url_unique",
-                )),
-                ("gif_library.guild_tags", self.gif_library.create_index(
-                    [("guild_id", 1), ("context_tags", 1), ("community_count", -1)],
-                    name="gif_library_context_lookup",
-                )),
                 ("tickets.channel_id", self.tickets.create_index("channel_id")),
                 ("tickets.status_type_user", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("user_id", 1)])),
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),

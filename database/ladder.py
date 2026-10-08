@@ -1,10 +1,6 @@
-import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from config import Config
-from motor.motor_asyncio import AsyncIOMotorClient
+from typing import Optional, List, Dict
 from pymongo import UpdateOne
-import asyncio
 
 
 def is_unranked_rank(rank: object) -> bool:

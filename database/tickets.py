@@ -1,11 +1,6 @@
-import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from config import Config
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import UpdateOne
+from typing import Optional, Dict
 from pymongo import ReturnDocument
-import asyncio
 
 
 class TicketsMixin:

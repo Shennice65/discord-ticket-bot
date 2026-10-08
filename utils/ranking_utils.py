@@ -1,11 +1,6 @@
 import discord
-from discord.ext import commands
-from discord import app_commands
 import re
-from typing import List, Optional
-from datetime import datetime
 
-from database import Database
 from config import Config
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]

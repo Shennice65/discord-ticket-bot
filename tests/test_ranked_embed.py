@@ -1,7 +1,5 @@
 import unittest
 from unittest.mock import MagicMock
-import os
-import discord
 from utils.embeds import TicketEmbeds
 
 class TestRankedEmbed(unittest.TestCase):

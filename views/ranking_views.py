@@ -1,14 +1,8 @@
 import discord
-from discord.ext import commands
-from discord import app_commands
-import re
-from typing import List, Optional
-from datetime import datetime
 
 import asyncio
 import aiohttp
 
-from database import Database
 from config import Config
 from utils.embeds import TicketEmbeds
 
@@ -161,9 +155,9 @@ class LeaderboardLauncherView(discord.ui.View):
                 entries.append((name_display, stat))
                 
             if not entries:
-                msg = f"**Top Winrate Leaderboard**\n*No players found with at least 5 matches.*"
+                msg = "**Top Winrate Leaderboard**\n*No players found with at least 5 matches.*"
             else:
-                msg = f"**📈 Top Winrate Leaderboard (Minimum 5 matches)**\n\n"
+                msg = "**📈 Top Winrate Leaderboard (Minimum 5 matches)**\n\n"
                 for i, (name_display, stat) in enumerate(entries, 1):
                     win_rate = stat.get('win_rate', 0)
                     wins = stat.get('wins', 0)

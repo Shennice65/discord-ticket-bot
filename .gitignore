@@ -28,6 +28,5 @@ ENV/
 Thumbs.db
 .uv-cache/
 .uv-python/
-.pytest-cache/
-agent-sidecar/node_modules/
+.pytest_cache/
 .agents/

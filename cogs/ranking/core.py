@@ -1,18 +1,14 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import re
-from typing import List, Optional
-from datetime import datetime
+from typing import Optional
 
-from database import Database
 from config import Config
 
 TIERS = ["Phantoms", "Champions", "Elites", "Legends", "Masters", "Novice"]
 
 from views.ranking_views import *
 from utils.ranking_utils import *
-from utils.embeds import TicketEmbeds
 
 class Ranking(commands.Cog):
     def __init__(self, bot):

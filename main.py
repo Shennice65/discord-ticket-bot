@@ -10,13 +10,11 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from config import Config
-from utils.keep_alive import keep_alive
 from database import Database
 from core.container import Container
 from core.services.ranking_service import RankingService
 from core.services.ticket_service import TicketService
 from web.dashboard import start_web_server
-from framework.plugins import PluginRegistry
 
 
 class BotCommandTree(app_commands.CommandTree):
@@ -46,7 +44,6 @@ class TicketBot(commands.Bot):
         )
         
         self.db = Database()
-        self.plugin_registry = PluginRegistry()
         
         self.container = Container()
         self.container.register('Database', self.db)
@@ -58,15 +55,11 @@ class TicketBot(commands.Bot):
         if not await self.db.init():
             raise RuntimeError("MongoDB initialization failed; refusing to start the bot")
 
-        loaded_plugins = self.plugin_registry.load_directory()
-        print(f"Loaded {loaded_plugins} bot plugin(s).")
-        
         # Initialize persistent view components.
         from views.history_views import ShareClipView
         self.add_view(ShareClipView())
         
         print("Loading cogs...")
-        # await self.load_extension("cogs.chat")
         await self.load_extension("cogs.tickets.core")
         await self.load_extension("cogs.tickets.admin")
         await self.load_extension("cogs.tickets.tasks")
@@ -77,7 +70,6 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.owner")
         await self.load_extension("cogs.betting")
         await self.load_extension("cogs.activity")
-        # await self.load_extension("cogs.engagement_cmds")
         await self.load_extension("cogs.roblox_stats")
         await self.load_extension("cogs.security.antinuke")
         await self.load_extension("cogs.security.antiraid")
@@ -110,12 +102,6 @@ class TicketBot(commands.Bot):
         print(f"Bot is in {len(self.guilds)} guilds")
         print("------")
 
-    async def close(self):
-        chat = self.get_cog("Chat")
-        sidecar = getattr(getattr(chat, "router", None), "sidecar", None)
-        if sidecar is not None:
-            await sidecar.stop()
-        await super().close()
         
     @tasks.loop(minutes=14)
     async def ping_clips_service(self):
@@ -209,7 +195,6 @@ class TicketBot(commands.Bot):
 
 async def main():
     discord.utils.setup_logging()
-    # keep_alive() # Disabled to prevent port 8080 conflict with web/dashboard.py
     bot = TicketBot()
     # Ensure aiohttp's Discord session is closed if startup fails before login
     # completes (for example, when DNS or the network is temporarily down).

@@ -3,14 +3,11 @@ from discord.ext import commands
 from discord import app_commands
 import asyncio
 import os
-from datetime import datetime
 
 from config import Config
-from database import Database
 from utils.embeds import TicketEmbeds
 
 from views.ticket_views import TicketView
-from utils.ticket_utils import get_observer_mention
 
 
 class TicketAdmin(commands.Cog):
