@@ -35,6 +35,10 @@ class ConnectionMixin:
         self.pending_lore = None
         self.user_quotas = None
         self.gif_library = None
+        self.security_incidents = None
+        self.security_snapshots = None
+        self.security_msg_backup = None
+        self.security_lockdown = None
         self.ladder_lock = asyncio.Lock()
     
     async def init(self):
@@ -71,6 +75,10 @@ class ConnectionMixin:
             self.pending_lore = self.db.pending_lore
             self.user_quotas = self.db.user_quotas
             self.gif_library = self.db.gif_library
+            self.security_incidents = self.db.security_incidents
+            self.security_snapshots = self.db.security_snapshots
+            self.security_msg_backup = self.db.security_msg_backup
+            self.security_lockdown = self.db.security_lockdown
             
             # Simple ping to test connection
             await self.db.command('ping')
@@ -155,6 +163,10 @@ class ConnectionMixin:
                 ("tickets.status_type_closed_at", self.tickets.create_index([("status", 1), ("ticket_type", 1), ("closed_at", -1)])),
                 ("tickets.user_history", self.tickets.create_index([("user_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])),
                 ("tickets.opponent_history", self.tickets.create_index([("opponent_id", 1), ("status", 1), ("ticket_type", 1), ("closed_at", -1)])),
+                ("security_incidents.id", ensure_unique_index(self.security_incidents, "id")),
+                ("security_snapshots.id", ensure_unique_index(self.security_snapshots, "id")),
+                ("security_msg_backup.message_id", ensure_unique_index(self.security_msg_backup, "message_id")),
+                ("security_msg_backup.channel_created_at", self.security_msg_backup.create_index([("channel_id", 1), ("created_at", -1)])),
             ])
             for label, operation in index_operations:
                 await ensure_index(label, operation)

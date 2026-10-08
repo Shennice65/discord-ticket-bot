@@ -79,6 +79,9 @@ class TicketBot(commands.Bot):
         await self.load_extension("cogs.activity")
         # await self.load_extension("cogs.engagement_cmds")
         await self.load_extension("cogs.roblox_stats")
+        await self.load_extension("cogs.security.antinuke")
+        await self.load_extension("cogs.security.antiraid")
+        await self.load_extension("cogs.security.commands")
         print("Cogs loaded. Syncing commands...")
         
         port = int(os.environ.get("PORT", 8080))

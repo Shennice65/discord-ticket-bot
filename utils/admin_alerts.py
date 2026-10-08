@@ -18,6 +18,27 @@ async def send_master_admin_dm(bot, *, content: str | None = None, embed: discor
         return False
 
 
+async def send_security_alert(bot, *, embed: discord.Embed, view: discord.ui.View | None = None, guild: discord.Guild | None = None) -> int:
+    """DM a security alert to the master admin, Shen and the guild owner. Returns how many DMs were delivered."""
+    recipient_ids = {Config.MASTER_ADMIN_ID, Config.SHEN_ID}
+    if guild is not None:
+        recipient_ids.add(guild.owner_id)
+    delivered = 0
+    for user_id in recipient_ids:
+        if not user_id:
+            continue
+        try:
+            user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+            kwargs = {"embed": embed}
+            if view is not None:
+                kwargs["view"] = view
+            await user.send(**kwargs)
+            delivered += 1
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            continue
+    return delivered
+
+
 async def send_player_review(bot, *, content: str | None = None, embed: discord.Embed | None = None) -> bool:
     """Send a player-review message to the channel configured in the database."""
     try:
