@@ -211,3 +211,61 @@ async def test_no_pick_when_draft_is_over():
         cog.ui_loop.cancel()
         cog.draft_loop.cancel()
         await bot.close()
+
+
+# ---- verify button ---------------------------------------------------------
+def test_lobby_view_has_join_and_verify_buttons_but_not_while_busy():
+    view = build_lobby_view(session("LOBBY"), cog=MagicMock())
+    ids = [getattr(c, "custom_id", None) for c in view.children]
+    assert view.children[0].url and "scrim_verify" in ids  # Verify sits next to Join Private Server
+    assert next(c for c in view.children if c.custom_id == "scrim_verify").label == "Verify with Roblox"
+    busy = build_lobby_view(session("LIVE"), cog=MagicMock())
+    assert all(getattr(c, "custom_id", None) != "scrim_verify" for c in busy.children)
+    no_cog = build_lobby_view(session("LOBBY"))
+    assert len(no_cog.children) == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_button_gives_each_user_their_own_signed_link():
+    from utils.oauth_state import verify_state
+
+    service = SimpleNamespace(oauth_link_for_discord=AsyncMock(return_value=None))
+    bot, cog = await make_cog(service)
+    bot.db = SimpleNamespace(db=SimpleNamespace(config=SimpleNamespace(find_one=AsyncMock(return_value={"ROBLOX_WEBHOOK_SECRET": "s3cret"}))))
+    try:
+        user = interaction(4242)
+        await cog.handle_verify(user)
+        kwargs = user.response.send_message.call_args.kwargs
+        assert kwargs["ephemeral"] is True
+        url = kwargs["view"].children[0].url
+        state = url.split("state=")[1]
+        assert verify_state(state, "s3cret") == 4242  # signed for this user only
+    finally:
+        cog.ui_loop.cancel()
+        cog.draft_loop.cancel()
+        cog.bridge_loop.cancel()
+        await bot.close()
+
+
+@pytest.mark.asyncio
+async def test_verify_button_tells_verified_users_and_reports_missing_config():
+    service = SimpleNamespace(oauth_link_for_discord=AsyncMock(return_value={"username": "vinkdc"}))
+    bot, cog = await make_cog(service)
+    try:
+        user = interaction(1)
+        await cog.handle_verify(user)
+        message = user.response.send_message.call_args.args[0]
+        assert "already verified as **vinkdc**" in message and user.response.send_message.call_args.kwargs["ephemeral"]
+
+        service.oauth_link_for_discord = AsyncMock(return_value=None)  # not verified, and no signing secret anywhere
+        with patch.dict("os.environ", {}, clear=False):
+            for name in ("ROBLOX_OAUTH_STATE_SECRET", "ROBLOX_WEBHOOK_SECRET"):
+                __import__("os").environ.pop(name, None)
+            other = interaction(2)
+            await cog.handle_verify(other)
+        assert "not configured" in other.response.send_message.call_args.args[0]
+    finally:
+        cog.ui_loop.cancel()
+        cog.draft_loop.cancel()
+        cog.bridge_loop.cancel()
+        await bot.close()

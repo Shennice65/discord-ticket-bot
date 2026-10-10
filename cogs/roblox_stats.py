@@ -1,11 +1,9 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import os
 import traceback
 
-from config import Config
-from utils.oauth_state import resolve_state_secret, sign_state
+from utils.roblox_link import build_login_link
 
 class RobloxMatchSelect(discord.ui.Select):
     def __init__(self, cog, matches):
@@ -311,13 +309,10 @@ class RobloxStats(commands.Cog):
     @app_commands.command(name="link_roblox", description="Link your Roblox account to Discord!")
     async def link_roblox(self, interaction: discord.Interaction):
         # The signed state proves this link was issued to this Discord user; a bare discord_id could be forged.
-        config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"}) or {}
-        secret = resolve_state_secret(os.environ, config_doc)
-        if not secret:
+        login_link = await build_login_link(self.bot.db, interaction.user.id)
+        if not login_link:
             await interaction.response.send_message("Roblox linking is not configured yet. Tell an admin.", ephemeral=True)
             return
-        state = sign_state(interaction.user.id, secret)
-        login_link = f"{Config.CLIPS_SERVICE_URL.rstrip('/')}/api/roblox/login?state={state}"
         
         # Create a button for them to click
         view = discord.ui.View()

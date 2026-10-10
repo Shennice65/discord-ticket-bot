@@ -371,3 +371,12 @@ async def test_bloxlink_cached_accounts_do_not_count_as_verified(env):
     assert await svc.verified_ids([555, 666]) == [666]
     assert await svc.discord_id_for_roblox(555) is None
     assert await svc.discord_id_for_roblox(666) == 6
+
+
+@pytest.mark.asyncio
+async def test_oauth_link_for_discord_only_returns_real_links(env):
+    db, _, svc = env
+    await db.roblox_usernames.insert_one({"_id": 7, "roblox_id": "70", "username": "bloxlinked"})
+    await db.roblox_oauth_links.insert_one({"_id": 8, "roblox_id": "80", "username": "verified"})
+    assert await svc.oauth_link_for_discord(7) is None
+    assert (await svc.oauth_link_for_discord(8))["username"] == "verified"

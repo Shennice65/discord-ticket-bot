@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 from config import Config
 from core.services.scrim_bridge import drain_inbox, ensure_indexes
 from core.services.scrim_service import CONFIG_SPEC, ScrimService, is_valid_private_link
+from utils.roblox_link import build_login_link
 
 PHASE_COLORS = {
     "LOBBY": 0x3498DB,
@@ -19,7 +20,7 @@ PHASE_COLORS = {
     "BREAK": 0x95A5A6,
 }
 TEAMS = ("Black", "White")
-VERIFY_HINT = "Not verified? Run /link_roblox in Discord first, or you will be kicked."
+VERIFY_HINT = "Not verified? Press Verify with Roblox below (or run /link_roblox), or you will be kicked."
 
 
 def format_stat_table(stats: List[dict]) -> str:
@@ -150,6 +151,25 @@ class DraftView(discord.ui.View):
         self.add_item(DraftSelect(cog, options))
 
 
+class VerifyButton(discord.ui.Button):
+    """Gives the clicker their own signed Roblox login link (it cannot be a plain link button: it is per user)."""
+
+    def __init__(self, cog):
+        self.cog = cog
+        super().__init__(label="Verify with Roblox", style=discord.ButtonStyle.success, custom_id="scrim_verify")
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.cog.handle_verify(interaction)
+
+
+class VerifyView(discord.ui.View):
+    """Registered once so the Verify button keeps working on old lobby messages after a bot restart."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.add_item(VerifyButton(cog))
+
+
 BUSY_LABELS = {"CAPTAINS": "Captain selection", "DRAFT": "Draft in progress", "LIVE": "Match in progress", "POSTGAME": "Match in progress"}
 
 
@@ -162,6 +182,8 @@ def build_lobby_view(session: dict, cog=None) -> Optional[discord.ui.View]:
         view.add_item(discord.ui.Button(label=BUSY_LABELS[phase], style=discord.ButtonStyle.secondary, disabled=True))
     else:
         view.add_item(discord.ui.Button(label="Join Private Server", style=discord.ButtonStyle.link, url=session["link"]))
+        if cog is not None:
+            view.add_item(VerifyButton(cog))
     draft = session.get("draft")
     if phase == "DRAFT" and cog is not None and draft and not draft.get("done") and draft.get("pool"):
         options = [
@@ -212,6 +234,7 @@ class Scrim(commands.Cog):
         self._last_message_id = None
         self._in_draft = False
         bot.add_view(DraftView(self))
+        bot.add_view(VerifyView(self))
         self.ui_loop.start()
         self.draft_loop.start()
         self.bridge_loop.start()
@@ -408,6 +431,27 @@ class Scrim(commands.Cog):
         await self._edit_lobby(session, offline)
         self._last_sig = lobby_signature(session, offline)
         self._last_message_id = session.get("message_id")
+
+    async def handle_verify(self, interaction: discord.Interaction):
+        link = await self.service.oauth_link_for_discord(interaction.user.id)
+        if link:
+            name = link.get("username") or "your Roblox account"
+            return await interaction.response.send_message(
+                f"You are already verified as **{name}**. Press Join Private Server. "
+                "(Wrong account? Run /link_roblox to link a different one.)",
+                ephemeral=True,
+            )
+        login_link = await build_login_link(self.bot.db, interaction.user.id)
+        if not login_link:
+            return await interaction.response.send_message("Roblox linking is not configured yet. Tell an admin.", ephemeral=True)
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Login with Roblox", style=discord.ButtonStyle.link, url=login_link))
+        await interaction.response.send_message(
+            "Click below to log in with Roblox and verify. This link expires in 10 minutes and only works for you. "
+            "Once it says you are linked, press Join Private Server.",
+            view=view,
+            ephemeral=True,
+        )
 
     async def handle_pick(self, interaction: discord.Interaction, player_id: int):
         session = await self.service.get_session()

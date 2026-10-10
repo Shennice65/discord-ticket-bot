@@ -443,6 +443,10 @@ class ScrimService:
             ok, _, updated = await self._apply_pick(chosen["id"], draft["turn"], auto=True)
             return updated["picks"][-1] if ok and updated else None
 
+    async def oauth_link_for_discord(self, discord_id: int) -> Optional[dict]:
+        """The Roblox OAuth link of a Discord user, or None if they have not verified."""
+        return await self.db.roblox_oauth_links.find_one({"_id": int(discord_id)})
+
     async def discord_id_for_roblox(self, roblox_id: int) -> Optional[int]:
         doc = await self.db.roblox_oauth_links.find_one({"roblox_id": {"$in": [roblox_id, str(roblox_id)]}})
         try:
