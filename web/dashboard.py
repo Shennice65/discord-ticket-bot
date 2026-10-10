@@ -1,7 +1,10 @@
+import hmac
 import os
 import aiohttp
 from aiohttp import web
 import traceback
+
+from config import Config
 
 class Dashboard:
     def __init__(self, bot):
@@ -10,7 +13,17 @@ class Dashboard:
     async def index(self, request):
         return web.Response(text="OK")
 
+    def _roblox_authorized(self, request):
+        # Fail closed: without a configured secret, no match data is accepted.
+        secret = Config.ROBLOX_WEBHOOK_SECRET
+        provided = request.headers.get("X-Roblox-Secret", "")
+        if not secret or not provided:
+            return False
+        return hmac.compare_digest(provided.encode(), secret.encode())
+
     async def post_roblox_match(self, request):
+        if not self._roblox_authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
         try:
             data = await request.json()
             roblox_cog = self.bot.get_cog("RobloxStats")
@@ -24,6 +37,8 @@ class Dashboard:
             return web.json_response({"error": str(e)}, status=500)
 
     async def post_roblox_live(self, request):
+        if not self._roblox_authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
         try:
             data = await request.json()
             roblox_cog = self.bot.get_cog("RobloxStats")
@@ -32,6 +47,21 @@ class Dashboard:
                 return web.json_response({"status": "success"})
             else:
                 return web.json_response({"error": "RobloxStats cog not loaded"}, status=503)
+        except Exception as e:
+            traceback.print_exc()
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def post_scrim_sync(self, request):
+        if not self._roblox_authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+        try:
+            data = await request.json()
+            if not isinstance(data, dict):
+                return web.json_response({"error": "Invalid payload"}, status=400)
+            scrim_cog = self.bot.get_cog("Scrim")
+            if not scrim_cog:
+                return web.json_response({"error": "Scrim cog not loaded"}, status=503)
+            return web.json_response(await scrim_cog.process_scrim_sync(data))
         except Exception as e:
             traceback.print_exc()
             return web.json_response({"error": str(e)}, status=500)
@@ -102,6 +132,7 @@ async def start_web_server(bot, port=8080):
     app.router.add_get('/', dashboard.index)
     app.router.add_post('/api/roblox/match-stats', dashboard.post_roblox_match)
     app.router.add_post('/api/roblox/live-update', dashboard.post_roblox_live)
+    app.router.add_post('/api/scrim/sync', dashboard.post_scrim_sync)
     
     # Roblox OAuth Routes
     app.router.add_get('/api/roblox/login', dashboard.roblox_login)

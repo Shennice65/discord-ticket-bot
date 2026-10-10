@@ -1,7 +1,11 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+import os
 import traceback
+
+from config import Config
+from utils.oauth_state import resolve_state_secret, sign_state
 
 class RobloxMatchSelect(discord.ui.Select):
     def __init__(self, cog, matches):
@@ -306,9 +310,14 @@ class RobloxStats(commands.Cog):
 
     @app_commands.command(name="link_roblox", description="Link your Roblox account to Discord!")
     async def link_roblox(self, interaction: discord.Interaction):
-        # Pass the Discord ID in the link so the web server knows who is logging in
-        discord_id = interaction.user.id
-        login_link = f"https://atlclips.site/api/roblox/login?discord_id={discord_id}"
+        # The signed state proves this link was issued to this Discord user; a bare discord_id could be forged.
+        config_doc = await self.bot.db.db.config.find_one({"_id": "api_keys"}) or {}
+        secret = resolve_state_secret(os.environ, config_doc)
+        if not secret:
+            await interaction.response.send_message("Roblox linking is not configured yet. Tell an admin.", ephemeral=True)
+            return
+        state = sign_state(interaction.user.id, secret)
+        login_link = f"{Config.CLIPS_SERVICE_URL.rstrip('/')}/api/roblox/login?state={state}"
         
         # Create a button for them to click
         view = discord.ui.View()
@@ -316,7 +325,7 @@ class RobloxStats(commands.Cog):
         view.add_item(button)
 
         await interaction.response.send_message(
-            "Click the button below to securely link your Roblox account! We only request permission to view your username.",
+            "Click the button below to securely link your Roblox account! We only request permission to view your username. This link expires in 10 minutes and only works for you.",
             view=view,
             ephemeral=True
         )
